@@ -12,6 +12,7 @@ import MyProfileScreen from "./src/screens/MyProfileScreen";
 import ProfileScreen from "./src/screens/ProfileScreen"; // other users
 import SettingsScreen from "./src/screens/SettingsScreen";
 import CreatePostScreen from "./src/screens/CreatePostScreen";
+import { PostProvider } from "./context/PostContext";
 
 
 
@@ -71,8 +72,11 @@ function RootNavigator() {
 // App entry point
 export default function App() {
   return (
-    <AuthProvider>
-      <RootNavigator />
-    </AuthProvider>
+    <PostProvider>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </PostProvider>
+    
   );
 }
