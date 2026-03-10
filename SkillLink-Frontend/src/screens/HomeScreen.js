@@ -1,5 +1,5 @@
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { useCallback, useContext, useState } from "react";
+import { useNavigation } from "@react-navigation/native";
+import { useContext, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -12,9 +12,12 @@ import {
 
 import { AuthContext } from "../../context/AuthContext";
 import { getPosts, searchPosts, savePost } from "../services/api";
+import { PostContext } from "../../context/PostContext"; // new
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen() {
+  const navigation = useNavigation();
   const { logout, userToken } = useContext(AuthContext);
+  const { refreshFlag, newPost, clearNewPost } = useContext(PostContext); // new
 
   const [posts, setPosts] = useState([]);
   const [search, setSearch] = useState("");
@@ -22,7 +25,7 @@ export default function HomeScreen({ navigation }) {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  // Load posts
+  // Load posts from backend
   const loadPosts = async (pageNumber = 1) => {
     try {
       setLoading(true);
@@ -30,7 +33,9 @@ export default function HomeScreen({ navigation }) {
 
       if (response.success) {
         const rankedPosts = response.posts.sort(
-          (a, b) => (b.rating || 0) * (b.jobs || 0) - (a.rating || 0) * (a.jobs || 0)
+          (a, b) =>
+            (b.rating || 0) * (b.jobsCompleted || 0) -
+            (a.rating || 0) * (a.jobsCompleted || 0)
         );
 
         if (pageNumber === 1) {
@@ -55,13 +60,15 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Search
+  // Search posts
   const handleSearch = async (text) => {
     setSearch(text);
+
     if (!text) {
       loadPosts(1);
       return;
     }
+
     try {
       const results = await searchPosts(text);
       setPosts(results);
@@ -70,10 +77,11 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Save post
+  // Save / Unsave post
   const toggleSave = async (id) => {
     try {
       await savePost(id, userToken);
+
       if (savedPosts.includes(id)) {
         setSavedPosts(savedPosts.filter((postId) => postId !== id));
       } else {
@@ -84,19 +92,22 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Refresh callback from CreatePostScreen
-  const handleRefresh = () => {
+  // Refresh posts
+  const refreshPosts = () => {
     setPage(1);
     loadPosts(1);
   };
 
-  // Load posts on focus
-  useFocusEffect(
-    useCallback(() => {
-      setPage(1);
-      loadPosts(1);
-    }, [])
-  );
+  // Refresh posts whenever refreshFlag changes OR newPost exists
+  useEffect(() => {
+    refreshPosts();
+
+    // Prepend optimistic post if available
+    if (newPost) {
+      setPosts((prev) => [newPost, ...prev]);
+      clearNewPost();
+    }
+  }, [refreshFlag]);
 
   // Render post card
   const renderItem = ({ item }) => (
@@ -107,11 +118,13 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.name}>{item.name}</Text>
           <Text style={styles.skill}>{item.skill}</Text>
           <Text style={styles.rating}>
-            ⭐ {item.rating || 0} • {item.jobs || 0} jobs completed
+            ⭐ {item.rating || 0} • {item.jobsCompleted || 0} jobs completed
           </Text>
         </View>
       </View>
+
       <Text style={styles.description}>{item.description}</Text>
+
       <View style={styles.tagContainer}>
         {item.tags?.map((tag, index) => (
           <Text key={index} style={styles.tag}>
@@ -119,15 +132,19 @@ export default function HomeScreen({ navigation }) {
           </Text>
         ))}
       </View>
+
       <View style={styles.actionRow}>
         <TouchableOpacity onPress={() => toggleSave(item._id)}>
           <Text style={styles.secondaryAction}>
             {savedPosts.includes(item._id) ? "💙 Saved" : "🤍 Save"}
           </Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.bookButton}
-          onPress={() => navigation.navigate("UsersProfile", { userId: item.user })}
+          onPress={() =>
+            navigation.navigate("UsersProfile", { userId: item.user._id })
+          }
         >
           <Text style={styles.bookText}>View Profile</Text>
         </TouchableOpacity>
@@ -160,13 +177,15 @@ export default function HomeScreen({ navigation }) {
         onEndReached={loadMorePosts}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
-          <Text style={{ marginTop: 20, textAlign: "center" }}>No results found</Text>
+          <Text style={{ marginTop: 20, textAlign: "center" }}>
+            No results found
+          </Text>
         }
       />
 
       <TouchableOpacity
         style={styles.floatingButton}
-        onPress={() => navigation.navigate("CreatePostScreen", { onRefresh: handleRefresh })}
+        onPress={() => navigation.navigate("CreatePostScreen")}
       >
         <Text style={styles.floatingText}>+ Post</Text>
       </TouchableOpacity>
@@ -176,10 +195,26 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 15, backgroundColor: "#F5F6FA" },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
   title: { fontSize: 22, fontWeight: "bold" },
-  searchInput: { backgroundColor: "#FFF", padding: 12, borderRadius: 12, marginBottom: 15 },
-  card: { backgroundColor: "#FFF", padding: 15, borderRadius: 16, marginBottom: 15, elevation: 2 },
+  searchInput: {
+    backgroundColor: "#FFF",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 15,
+  },
+  card: {
+    backgroundColor: "#FFF",
+    padding: 15,
+    borderRadius: 16,
+    marginBottom: 15,
+    elevation: 2,
+  },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
   avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#D1D5DB", marginRight: 12 },
   name: { fontWeight: "700", fontSize: 15 },
@@ -187,20 +222,20 @@ const styles = StyleSheet.create({
   rating: { fontSize: 12, color: "#F59E0B", marginTop: 2 },
   description: { marginTop: 6, fontSize: 14, color: "#374151" },
   tagContainer: { flexDirection: "row", flexWrap: "wrap", marginTop: 10 },
-  tag: { backgroundColor: "#EEF2FF", color: "#4F46E5", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, fontSize: 12, marginRight: 6, marginBottom: 6 },
+  tag: {
+    backgroundColor: "#EEF2FF",
+    color: "#4F46E5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    fontSize: 12,
+    marginRight: 6,
+    marginBottom: 6,
+  },
   actionRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 },
   secondaryAction: { fontWeight: "600", color: "#6B7280" },
   bookButton: { backgroundColor: "#0A66FF", paddingVertical: 10, paddingHorizontal: 18, borderRadius: 10 },
   bookText: { color: "#FFF", fontWeight: "600" },
-  floatingButton: {
-    position: "absolute",
-    bottom: 25,
-    right: 25,
-    backgroundColor: "#0A66FF",
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    elevation: 5,
-  },
+  floatingButton: { position: "absolute", bottom: 25, right: 25, backgroundColor: "#0A66FF", paddingVertical: 15, paddingHorizontal: 20, borderRadius: 30, elevation: 5 },
   floatingText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
 });
