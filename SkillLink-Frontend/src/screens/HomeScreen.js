@@ -101,12 +101,13 @@ export default function HomeScreen() {
   // Refresh posts whenever refreshFlag changes OR newPost exists
   useEffect(() => {
     refreshPosts();
-
-    // Prepend optimistic post if available
-    if (newPost) {
-      setPosts((prev) => [newPost, ...prev]);
-      clearNewPost();
-    }
+  }, []);
+  useEffect(() => {
+  if (newPost) {
+    setPosts((prev) => [newPost, ...prev]);
+    clearNewPost();
+  }
+  refreshPosts();
   }, [refreshFlag]);
 
   // Render post card

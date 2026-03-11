@@ -8,7 +8,7 @@ import Landing from "./src/screens/LandingScreen";
 import Register from "./src/screens/Register";
 import Login from "./src/screens/Login";
 import HomeScreen from "./src/screens/HomeScreen";
-import MyProfileScreen from "./src/screens/MyProfileScreen";
+import UserProfileScreen from "./src/screens/UserProfileScreen";
 import ProfileScreen from "./src/screens/ProfileScreen"; // other users
 import SettingsScreen from "./src/screens/SettingsScreen";
 import CreatePostScreen from "./src/screens/CreatePostScreen";
@@ -30,7 +30,7 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Profile" component={MyProfileScreen} />
+      <Tab.Screen name="Profile" component={UserProfileScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
