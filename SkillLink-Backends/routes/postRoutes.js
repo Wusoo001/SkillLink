@@ -62,7 +62,10 @@ router.get("/", async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    res.json(posts);
+    res.json({
+      success: true,
+      posts: posts
+    });
 
   } catch (error) {
     res.status(500).json({ message: "Server error" });
