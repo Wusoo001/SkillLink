@@ -9,7 +9,7 @@ import Register from "./src/screens/Register";
 import Login from "./src/screens/Login";
 import HomeScreen from "./src/screens/HomeScreen";
 import UserProfileScreen from "./src/screens/UserProfileScreen";
-import ProfileScreen from "./src/screens/ProfileScreen"; // other users
+import EditProfileScreen from "./src/screens/EditProfileScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import CreatePostScreen from "./src/screens/CreatePostScreen";
 import { PostProvider } from "./context/PostContext";
@@ -30,7 +30,7 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Profile" component={UserProfileScreen} />
+      <Tab.Screen name="UsersProfile" component={UserProfileScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
@@ -53,7 +53,8 @@ function AppStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="CreatePostScreen" component={CreatePostScreen} options={{ title: "New Post" }} />
-      <Stack.Screen name="UsersProfile" component={ProfileScreen} />
+      <Stack.Screen name="UsersProfile" component={UserProfileScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen}/>
     </Stack.Navigator>
   );
 }

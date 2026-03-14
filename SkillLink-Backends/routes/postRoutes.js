@@ -165,6 +165,14 @@ router.get("/myposts", protect, async (req, res) => {
 
 });
 
-
-
+router.get("/user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const posts = await Post.find({ user: userId }).sort({ createdAt: -1 });
+    res.json(posts);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 module.exports = router;
