@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
+import axios from "axios";
 const API_BASE = "http://192.168.1.22:5000/api"; // Replace with your IPv4 if needed
 const AUTH_URL = `${API_BASE}/auth`;
 const POSTS_URL = `${API_BASE}/posts`;
@@ -34,6 +34,7 @@ export const registerUser = async (userData) => {
     return { success: false, message: "Network error" };
   }
 };
+
 
 /*
 ========================================
@@ -157,3 +158,66 @@ export const getMyPosts = async () => {
     return [];
   }
 };
+
+export const getUserProfile = async (userId, token) => {
+  try {
+    const res = await fetch(`${API_BASE}/users/${userId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.log("Fetch profile error:", error);
+    return { success: false };
+  }
+};
+
+export const getUserPosts = async (userId, token) => {
+  try {
+    const res = await fetch(`${API_BASE}/posts/user/${userId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.log("Fetch user posts error:", error);
+    return { success: false };
+  }
+};
+
+/*
+========================================
+AXIOS INSTANCE (for screens like EditProfile)
+========================================
+*/
+
+const api = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// Automatically attach token
+api.interceptors.request.use(
+  async (config) => {
+    const token = await AsyncStorage.getItem("userToken");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+export { api };
