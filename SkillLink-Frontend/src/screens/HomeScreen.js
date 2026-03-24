@@ -20,7 +20,9 @@ export default function HomeScreen() {
   const { logout, userToken } = useContext(AuthContext);
   const { refreshFlag, newPost, clearNewPost } = useContext(PostContext);
 
-  const [posts, setPosts] = useState([]);
+  const [allPosts, setAllPosts] = useState([]); // MASTER DATA
+  const [posts, setPosts] = useState([]); // UI DATA
+
   const [search, setSearch] = useState("");
   const [savedPosts, setSavedPosts] = useState([]);
   const [page, setPage] = useState(1);
@@ -38,10 +40,10 @@ export default function HomeScreen() {
     "Carpenter",
   ];
 
-  const categoryListRef = useRef(null); // FlatList ref
+  const categoryListRef = useRef(null);
   const scaleAnim = useRef(
     categories.map(() => new Animated.Value(1))
-  ).current; // animation value for each chip
+  ).current;
 
   // Load posts
   const loadPosts = async (pageNumber = 1) => {
@@ -57,8 +59,10 @@ export default function HomeScreen() {
         );
 
         if (pageNumber === 1) {
+          setAllPosts(rankedPosts);
           setPosts(rankedPosts);
         } else {
+          setAllPosts((prev) => [...prev, ...rankedPosts]);
           setPosts((prev) => [...prev, ...rankedPosts]);
         }
       }
@@ -81,7 +85,7 @@ export default function HomeScreen() {
     setSearch(text);
 
     if (!text) {
-      loadPosts(1);
+      setPosts(allPosts);
       return;
     }
 
@@ -115,7 +119,6 @@ export default function HomeScreen() {
   const handleCategoryPress = (category, index) => {
     setSelectedCategory(category);
 
-    // Animate chip scale
     Animated.sequence([
       Animated.timing(scaleAnim[index], {
         toValue: 1.2,
@@ -129,7 +132,6 @@ export default function HomeScreen() {
       }),
     ]).start();
 
-    // Scroll selected chip into view
     if (categoryListRef.current) {
       categoryListRef.current.scrollToIndex({
         animated: true,
@@ -138,11 +140,11 @@ export default function HomeScreen() {
       });
     }
 
-    // Filter posts
+    // FILTER from MASTER DATA
     if (category === "All") {
-      refreshPosts();
+      setPosts(allPosts);
     } else {
-      const filtered = posts.filter((post) =>
+      const filtered = allPosts.filter((post) =>
         post.tags?.some((tag) =>
           tag.toLowerCase().includes(category.toLowerCase())
         )
@@ -157,6 +159,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (newPost) {
+      setAllPosts((prev) => [newPost, ...prev]);
       setPosts((prev) => [newPost, ...prev]);
       clearNewPost();
     }
@@ -239,7 +242,6 @@ export default function HomeScreen() {
         style={styles.searchInput}
       />
 
-      {/* Animated Responsive Horizontal Category Carousel */}
       <View style={{ width: "100%", marginBottom: 15 }}>
         <FlatList
           ref={categoryListRef}

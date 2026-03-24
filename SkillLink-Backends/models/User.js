@@ -21,6 +21,11 @@ const userSchema = new mongoose.Schema(
     skills: [String],
     bio: String,
 
+    profileImage: {
+    type: String,
+    default: "",
+    },
+
     rating: {
       type: Number,
       default: 0,
