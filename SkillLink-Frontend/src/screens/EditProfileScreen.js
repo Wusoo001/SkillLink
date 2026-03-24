@@ -1,191 +1,246 @@
 import React, { useContext, useState, useEffect } from "react";
 import {
-View,
-Text,
-StyleSheet,
-TextInput,
-TouchableOpacity,
-ScrollView,
-Alert
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  Image,
 } from "react-native";
+
+import * as ImagePicker from "expo-image-picker";
+import { Ionicons } from "@expo/vector-icons";
+
 import { AuthContext } from "../../context/AuthContext";
-import{api} from "../services/api";
+import { api } from "../services/api";
 
-export default function EditProfileScreen({ navigation }) {
+// 🔐 Cloudinary Config (replace with your own)
+const CLOUD_NAME = "dz2te6uth";
+const UPLOAD_PRESET = "SkillLink";
 
-const { user } = useContext(AuthContext);
+export default function EditProfileScreen({ navigation, route }) {
+  const { user, updateUser } = useContext(AuthContext);
 
-const [name, setName] = useState("");
-const [skills, setSkills] = useState("");
-const [responseTime, setResponseTime] = useState("");
-const [portfolioTitle, setPortfolioTitle] = useState("");
-const [portfolioDesc, setPortfolioDesc] = useState("");
-const [loading, setLoading] = useState(false);
+  const initialUser = route.params?.userInfo || user || null;
 
-useEffect(() => {
-loadProfile();
-}, []);
+  const [name, setName] = useState("");
+  const [about, setAbout] = useState("");
+  const [profileImage, setProfileImage] = useState(null);
+  const [skills, setSkills] = useState("");
+  const [loading, setLoading] = useState(false);
 
-const loadProfile = async () => {
+  useEffect(() => {
+    loadProfile();
+  }, []);
 
-try {
+  const loadProfile = async () => {
+    try {
+      if (!initialUser?._id) return;
 
-const res = await api.get(`/users/${user._id}`);
+      const res = await api.get(`/users/${initialUser._id}`);
+      const data = res.data;
 
-setName(res.data.name || "");
-setSkills(res.data.skills?.join(", ") || "");
-setResponseTime(res.data.responseTime || "");
+      setName(data.name || "");
+      setAbout(data.bio || "");
+      setProfileImage(data.profileImage || null);
+      setSkills(data.skills?.join(", ") || "");
+    } catch (error) {
+      console.log("Profile load error", error);
+    }
+  };
 
-if (res.data.portfolio?.length) {
-setPortfolioTitle(res.data.portfolio[0].title);
-setPortfolioDesc(res.data.portfolio[0].description);
-}
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+    });
 
-} catch (error) {
-console.log("Profile load error", error);
-}
+    if (!result.canceled) {
+      setProfileImage(result.assets[0].uri);
+    }
+  };
 
-};
+  const uploadImageToCloudinary = async (imageUri) => {
+    const formData = new FormData();
 
-const updateProfile = async () => {
+    formData.append("file", {
+      uri: imageUri,
+      type: "image/jpeg",
+      name: "profile.jpg",
+    });
 
-try {
+    formData.append("upload_preset", UPLOAD_PRESET);
 
-setLoading(true);
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
 
-await api.put(`/users/${user._id}`, {
-name,
-skills: skills.split(",").map(s => s.trim()),
-responseTime,
-portfolio: [
-{
-title: portfolioTitle,
-description: portfolioDesc
-}
-]
-});
+    const data = await response.json();
 
-Alert.alert("Success", "Profile updated");
+    if (!data.secure_url) {
+      throw new Error("Image upload failed");
+    }
 
-navigation.goBack();
+    return data.secure_url;
+  };
 
-} catch (error) {
+  const updateProfile = async () => {
+    try {
+      if (!initialUser?._id) {
+        Alert.alert("Error", "User not found");
+        return;
+      }
 
-console.log("Update error", error);
-Alert.alert("Error", "Profile update failed");
+      setLoading(true);
 
-} finally {
-setLoading(false);
-}
+      let imageUrl = profileImage;
 
-};
+      // ✅ Upload only if it's a local image
+      if (profileImage && profileImage.startsWith("file://")) {
+        imageUrl = await uploadImageToCloudinary(profileImage);
+      }
 
-return (
+      const payload = {
+        name,
+        bio: about,
+        profileImage: imageUrl,
+        skills: skills.split(",").map((s) => s.trim()),
+      };
 
-<ScrollView style={styles.container}>
+      const res = await api.put(`/users/${initialUser._id}`, payload);
 
-<Text style={styles.title}>Edit Profile</Text>
+      if (updateUser) {
+        updateUser(res.data);
+      }
 
-<Text style={styles.label}>Name</Text>
-<TextInput
-style={styles.input}
-value={name}
-onChangeText={setName}
-/>
+      Alert.alert("Success", "Profile updated");
+      navigation.goBack();
+    } catch (error) {
+      console.log("Update error", error);
+      Alert.alert("Error", "Profile update failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-<Text style={styles.label}>Skills (comma separated)</Text>
-<TextInput
-style={styles.input}
-value={skills}
-onChangeText={setSkills}
-placeholder="Web Design, Plumbing, Photography"
-/>
+  if (!initialUser?._id) {
+    return (
+      <View style={styles.loader}>
+        <Text>Loading user data...</Text>
+      </View>
+    );
+  }
 
-<Text style={styles.label}>Response Time</Text>
-<TextInput
-style={styles.input}
-value={responseTime}
-onChangeText={setResponseTime}
-placeholder="30m, 1h"
-/>
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+        >
+          <Ionicons name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
 
-<Text style={styles.section}>Portfolio</Text>
+        <Text style={styles.title}>Edit Profile</Text>
+      </View>
 
-<Text style={styles.label}>Project Title</Text>
-<TextInput
-style={styles.input}
-value={portfolioTitle}
-onChangeText={setPortfolioTitle}
-/>
+      <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
+        {profileImage ? (
+          <Image source={{ uri: profileImage }} style={styles.image} />
+        ) : (
+          <Text style={{ color: "#666" }}>Tap to add profile image</Text>
+        )}
+      </TouchableOpacity>
 
-<Text style={styles.label}>Description</Text>
-<TextInput
-style={[styles.input, { height: 80 }]}
-value={portfolioDesc}
-onChangeText={setPortfolioDesc}
-multiline
-/>
+      <Text style={styles.label}>Name</Text>
+      <TextInput style={styles.input} value={name} onChangeText={setName} />
 
-<TouchableOpacity
-style={styles.saveBtn}
-onPress={updateProfile}
-disabled={loading}
->
-<Text style={styles.saveText}>
-{loading ? "Updating..." : "Save Changes"}
-</Text>
-</TouchableOpacity>
+      <Text style={styles.label}>About</Text>
+      <TextInput
+        style={[styles.input, { height: 80 }]}
+        value={about}
+        onChangeText={setAbout}
+        multiline
+      />
 
-</ScrollView>
+      <Text style={styles.label}>Skills</Text>
+      <TextInput
+        style={styles.input}
+        value={skills}
+        onChangeText={setSkills}
+      />
 
-);
-
+      <TouchableOpacity
+        style={styles.saveBtn}
+        onPress={updateProfile}
+        disabled={loading}
+      >
+        <Text style={styles.saveText}>
+          {loading ? "Updating..." : "Save Changes"}
+        </Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
-
-container:{
-flex:1,
-backgroundColor:"#F5F6FA",
-padding:20
-},
-
-title:{
-fontSize:22,
-fontWeight:"bold",
-marginBottom:20
-},
-
-label:{
-marginBottom:5,
-fontWeight:"600"
-},
-
-input:{
-backgroundColor:"white",
-padding:12,
-borderRadius:8,
-marginBottom:15
-},
-
-section:{
-fontSize:18,
-fontWeight:"bold",
-marginTop:20,
-marginBottom:10
-},
-
-saveBtn:{
-backgroundColor:"#3B6EF6",
-padding:15,
-borderRadius:8,
-alignItems:"center",
-marginTop:20
-},
-
-saveText:{
-color:"white",
-fontWeight:"bold"
-}
-
+  container: {
+    flex: 1,
+    backgroundColor: "#F5F6FA",
+    padding: 20,
+  },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  backBtn: {
+    marginRight: 10,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+  },
+  imageContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  image: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  label: {
+    marginBottom: 5,
+    fontWeight: "600",
+  },
+  input: {
+    backgroundColor: "white",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  saveBtn: {
+    backgroundColor: "#3B6EF6",
+    padding: 15,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  saveText: {
+    color: "white",
+    fontWeight: "bold",
+  },
 });

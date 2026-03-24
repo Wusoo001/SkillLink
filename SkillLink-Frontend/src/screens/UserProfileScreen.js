@@ -1,254 +1,281 @@
-import React, { useContext, useEffect, useState } from "react";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { useContext, useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
+  FlatList,
   StyleSheet,
   ActivityIndicator,
-  ScrollView,
   Image,
   TouchableOpacity,
-  FlatList,
-  RefreshControl,
 } from "react-native";
+
+import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
-import api from "../services/api";
+import { getPosts, api } from "../services/api";
 
-export default function UserProfileScreen({ navigation, route }) {
-  const { user } = useContext(AuthContext);
+export default function UserProfileScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
 
-  const routeUserId = route?.params?.userId;
-  const profileId = routeUserId || user?._id;
+  const { userToken } = useContext(AuthContext);
+  const { userId } = route.params || {};
 
-  const [profile, setProfile] = useState(null);
-  const [posts, setPosts] = useState([]);
+  const [userPosts, setUserPosts] = useState([]);
+  const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchUserData();
-  }, [profileId]);
-
-  const fetchUserData = async () => {
+  // ==============================
+  // FETCH USER INFO
+  // ==============================
+  const loadUserInfo = async () => {
     try {
-      if (!refreshing) setLoading(true);
-      const profileRes = await api.get(`/users/${profileId}`);
-      const postRes = await api.get(`/posts/user/${profileId}`);
-
-      setProfile(profileRes.data);
-
-      const userPosts = Array.isArray(postRes.data)
-        ? postRes.data
-        : postRes.data.posts || [];
-
-      setPosts(userPosts);
+      const res = await api.get(`/users/${userId}`);
+      setUserInfo(res.data);
     } catch (error) {
-      console.log("Fetch profile error:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      console.log("User fetch error:", error);
     }
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchUserData();
+  // ==============================
+  // FETCH USER POSTS
+  // ==============================
+  const loadUserPosts = async () => {
+    try {
+      const response = await getPosts(1);
+
+      if (response?.success) {
+        const posts = response.posts || [];
+
+        const filteredPosts = posts.filter(
+          (post) => post?.user?._id === userId
+        );
+
+        setUserPosts(filteredPosts);
+      }
+    } catch (error) {
+      console.log("User profile load error:", error);
+    }
   };
 
+  // ==============================
+  // INITIAL LOAD
+  // ==============================
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      await loadUserInfo();
+      await loadUserPosts();
+      setLoading(false);
+    };
+
+    init();
+  }, [userId]);
+
+  // ==============================
+  // REFRESH ON FOCUS
+  // ==============================
+  useFocusEffect(
+    useCallback(() => {
+      loadUserInfo();
+      loadUserPosts();
+    }, [userId])
+  );
+
+  // ==============================
+  // RENDER POST
+  // ==============================
+  const renderPost = ({ item }) => (
+    <View style={styles.card}>
+      <Text style={styles.description}>{item.description}</Text>
+
+      <View style={styles.tagContainer}>
+        {item.tags?.map((tag, index) => (
+          <Text key={index} style={styles.tag}>
+            #{tag}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+
+  // ==============================
+  // LOADING STATE
+  // ==============================
   if (loading) {
     return (
       <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#0A66FF" />
+        <ActivityIndicator size="large" />
       </View>
     );
   }
 
-  const isOwner = profile?._id === user?._id;
-
-  const renderPost = ({ item }) => (
-    <View style={styles.postCard}>
-      <Text style={styles.postTitle}>{item.title}</Text>
-      <Text style={styles.postDescription}>{item.description}</Text>
-      <Text style={styles.postMeta}>Budget: ₦{item.budget || "N/A"}</Text>
-    </View>
-  );
-
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 30 }}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
+    <View style={styles.container}>
       {/* PROFILE HEADER */}
-      <View style={styles.profileCard}>
-        <Image
-          source={{
-            uri:
-              profile?.avatar ||
-              "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-          }}
-          style={styles.avatar}
-        />
-
-        <Text style={styles.name}>{profile?.name}</Text>
-        <Text style={styles.email}>{profile?.email}</Text>
-
-        {/* USER STATS */}
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statNumber}>{profile?.jobsCompleted || 0}</Text>
-            <Text style={styles.statLabel}>Jobs</Text>
-          </View>
-
-          <View style={styles.stat}>
-            <Text style={styles.statNumber}>{profile?.rating || 0}</Text>
-            <Text style={styles.statLabel}>Rating</Text>
-          </View>
-
-          <View style={styles.stat}>
-            <Text style={styles.statNumber}>
-              {profile?.responseTime || "1h"}
+      <View style={styles.header}>
+        {userInfo?.profileImage ? (
+          <Image
+            source={{ uri: userInfo.profileImage }}
+            style={styles.avatarImage}
+          />
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {userInfo?.name?.charAt(0) || "U"}
             </Text>
-            <Text style={styles.statLabel}>Response</Text>
           </View>
-        </View>
-
-        {/* ACTION BUTTON */}
-        <View style={styles.buttonRow}>
-          {isOwner ? (
-            <TouchableOpacity
-              style={styles.editBtn}
-              onPress={() => navigation.navigate("EditProfile")}
-            >
-              <Text style={styles.btnText}>Edit Profile</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.bookBtn}
-              onPress={() =>
-                navigation.navigate("BookingScreen", { providerId: profile._id })
-              }
-            >
-              <Text style={styles.btnText}>Book Service</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* SKILLS */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Skills</Text>
-        {profile?.skills?.length ? (
-          <View style={styles.skillsList}>
-            {profile.skills.map((skill, index) => (
-              <View key={index} style={styles.skillBadge}>
-                <Text style={styles.skillText}>{skill}</Text>
-              </View>
-            ))}
-          </View>
-        ) : (
-          <Text style={styles.empty}>No skills added</Text>
         )}
-      </View>
 
-      {/* PORTFOLIO */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Portfolio</Text>
-        {profile?.portfolio?.length ? (
-          profile.portfolio.map((item, index) => (
-            <View key={index} style={styles.portfolioItem}>
-              <Text style={styles.portfolioTitle}>{item.title}</Text>
-              <Text>{item.description}</Text>
-            </View>
-          ))
-        ) : (
-          <Text style={styles.empty}>No portfolio uploaded</Text>
-        )}
+        <Text style={styles.name}>{userInfo?.name || "User"}</Text>
+
+        <Text style={styles.skill}>
+          {userInfo?.bio || "No description provided"}
+        </Text>
+
+        <Text style={styles.rating}>
+          ⭐ {userInfo?.rating || 0} •{" "}
+          {userInfo?.jobsCompleted || 0} jobs completed
+        </Text>
+
+        {/* EDIT PROFILE */}
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() =>
+            navigation.navigate("EditProfile", {
+              userInfo,
+            })
+          }
+        >
+          <Text style={styles.editText}>Edit Profile</Text>
+        </TouchableOpacity>
       </View>
 
       {/* SERVICES / POSTS */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Services</Text>
+      <Text style={styles.sectionTitle}>Services</Text>
 
-        {posts.length === 0 ? (
-          <Text style={styles.empty}>No services posted</Text>
-        ) : (
-          <FlatList
-            data={posts}
-            keyExtractor={(item) => item._id}
-            renderItem={renderPost}
-            scrollEnabled={false} // main ScrollView handles scrolling
-          />
-        )}
-      </View>
-    </ScrollView>
+      <FlatList
+        data={userPosts}
+        keyExtractor={(item) => item._id}
+        renderItem={renderPost}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        ListEmptyComponent={
+          <Text style={{ textAlign: "center", marginTop: 20 }}>
+            No services available
+          </Text>
+        }
+      />
+    </View>
   );
 }
 
+// ==============================
+// STYLES (RESTORED - REQUIRED)
+// ==============================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F6FA" },
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-
-  profileCard: {
-    alignItems: "center",
-    padding: 25,
-    backgroundColor: "white",
-    marginBottom: 10,
-    borderRadius: 12,
-    elevation: 2,
-  },
-  avatar: { width: 100, height: 100, borderRadius: 50, marginBottom: 10 },
-  name: { fontSize: 22, fontWeight: "bold" },
-  email: { color: "gray" },
-
-  statsRow: { flexDirection: "row", marginTop: 15 },
-  stat: { alignItems: "center", marginHorizontal: 20 },
-  statNumber: { fontWeight: "bold", fontSize: 16 },
-  statLabel: { color: "gray", fontSize: 12 },
-
-  buttonRow: { flexDirection: "row", marginTop: 15 },
-  editBtn: { backgroundColor: "#4CAF50", padding: 10, borderRadius: 6 },
-  bookBtn: { backgroundColor: "#3B6EF6", padding: 10, borderRadius: 6 },
-  btnText: { color: "white", fontWeight: "bold" },
-
-  card: {
-    backgroundColor: "white",
+  container: {
+    flex: 1,
     padding: 15,
+    backgroundColor: "#F5F6FA",
+  },
+
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  header: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 10,
-    borderRadius: 12,
-    elevation: 1,
   },
 
-  sectionTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-
-  skillsList: { flexDirection: "row", flexWrap: "wrap" },
-  skillBadge: {
-    backgroundColor: "#EAF2FF",
-    padding: 8,
-    borderRadius: 12,
-    marginRight: 8,
-    marginBottom: 8,
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 10,
   },
-  skillText: { color: "#3B6EF6", fontWeight: "600" },
 
-  portfolioItem: {
-    backgroundColor: "#f9f9f9",
-    padding: 10,
-    marginBottom: 8,
+  avatarText: {
+    color: "#FFF",
+    fontSize: 26,
+    fontWeight: "bold",
+  },
+
+  name: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+
+  skill: {
+    color: "#6B7280",
+    marginTop: 6,
+    textAlign: "center",
+  },
+
+  rating: {
+    marginTop: 6,
+    color: "#F59E0B",
+  },
+
+  editButton: {
+    marginTop: 12,
+    backgroundColor: "#0A66FF",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 8,
   },
-  portfolioTitle: { fontWeight: "bold" },
 
-  postCard: {
-    backgroundColor: "#F9F9F9",
-    padding: 12,
-    borderRadius: 10,
+  editText: {
+    color: "#FFF",
+    fontWeight: "600",
+  },
+
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
     marginBottom: 10,
   },
-  postTitle: { fontWeight: "bold", fontSize: 16 },
-  postDescription: { color: "#555" },
-  postMeta: { fontSize: 12, color: "#777" },
 
-  empty: { color: "gray", fontStyle: "italic" },
+  card: {
+    backgroundColor: "#FFF",
+    padding: 15,
+    borderRadius: 14,
+    marginBottom: 12,
+    elevation: 2,
+  },
+
+  description: {
+    fontSize: 14,
+    color: "#374151",
+  },
+
+  tagContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 10,
+  },
+
+  tag: {
+    backgroundColor: "#EEF2FF",
+    color: "#4F46E5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    fontSize: 12,
+    marginRight: 6,
+    marginBottom: 6,
+  },
 });
