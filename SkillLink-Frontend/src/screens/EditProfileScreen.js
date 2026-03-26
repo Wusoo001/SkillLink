@@ -30,6 +30,7 @@ export default function EditProfileScreen({ navigation, route }) {
   const [profileImage, setProfileImage] = useState(null);
   const [skills, setSkills] = useState("");
   const [loading, setLoading] = useState(false);
+  
 
   useEffect(() => {
     loadProfile();
@@ -52,45 +53,67 @@ export default function EditProfileScreen({ navigation, route }) {
   };
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.7,
-    });
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    quality: 0.7,
+    base64: true,
+  });
 
-    if (!result.canceled) {
-      setProfileImage(result.assets[0].uri);
+  if (!result.canceled) {
+    const asset = result.assets[0];
+
+    console.log("Picked Image URI:", asset.uri);
+    console.log("Base64 exists:", !!asset.base64);
+
+    // ✅ FORCE BASE64 (ignore blob completely)
+    if (asset.base64) {
+      const base64Image = `data:image/jpeg;base64,${asset.base64}`;
+      setProfileImage(base64Image);
+       console.log("Stored Image:", base64Image.substring(0, 50));
+    } else {
+      Alert.alert("Error", "Image processing failed. Try another image.");
     }
-  };
+  }
+};
 
   const uploadImageToCloudinary = async (imageUri) => {
-    const formData = new FormData();
+  const formData = new FormData();
 
+  // ✅ Handle base64 (web)
+  if (imageUri.startsWith("data:image")) {
+    formData.append("file", imageUri);
+  } else {
+    // ✅ Handle file:// (mobile)
     formData.append("file", {
       uri: imageUri,
       type: "image/jpeg",
       name: "profile.jpg",
     });
+  }
 
-    formData.append("upload_preset", UPLOAD_PRESET);
+  formData.append("upload_preset", UPLOAD_PRESET);
 
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-      {
-        method: "POST",
-        body: formData,
-      }
-    );
-
-    const data = await response.json();
-
-    if (!data.secure_url) {
-      throw new Error("Image upload failed");
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+    {
+      method: "POST",
+      body: formData,
     }
+  );
 
-    return data.secure_url;
-  };
+  const data = await response.json();
 
+  console.log("Cloudinary response:", data); // 🔍 CRITICAL DEBUG
+  console.log("Secure URL:", data.secure_url);
+
+  if (!data.secure_url) {
+    throw new Error(data?.error?.message || "Image upload failed");
+  }
+
+  return data.secure_url;
+};
+    
   const updateProfile = async () => {
     try {
       if (!initialUser?._id) {
@@ -103,9 +126,13 @@ export default function EditProfileScreen({ navigation, route }) {
       let imageUrl = profileImage;
 
       // ✅ Upload only if it's a local image
-      if (profileImage && profileImage.startsWith("file://")) {
-        imageUrl = await uploadImageToCloudinary(profileImage);
-      }
+      if (
+      profileImage &&
+       (profileImage.startsWith("file://") ||
+        profileImage.startsWith("data:image"))
+      ) {
+  imageUrl = await uploadImageToCloudinary(profileImage);
+  }
 
       const payload = {
         name,
