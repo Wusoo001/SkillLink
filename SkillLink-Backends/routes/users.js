@@ -26,7 +26,7 @@ UPDATE USER PROFILE
 
 router.put("/:id", async (req, res) => {
   try {
-    const { name, bio, image, skills, location, phone } = req.body;
+    const { name, bio, profileImage, skills, location, phone } = req.body;
 
     const user = await User.findById(req.params.id);
 
@@ -37,7 +37,7 @@ router.put("/:id", async (req, res) => {
     // ✅ ONLY update fields that exist in schema
     if (name !== undefined) user.name = name;
     if (bio !== undefined) user.bio = bio;
-    if (image !== undefined) user.image = image; // only if you add it
+    if (profileImage !== undefined) user.profileImage = profileImage; // only if you add it
     if (location !== undefined) user.location = location;
     if (phone !== undefined) user.phone = phone;
 

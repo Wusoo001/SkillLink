@@ -14,6 +14,7 @@ import {
 import { AuthContext } from "../../context/AuthContext";
 import { getPosts, searchPosts, savePost } from "../services/api";
 import { PostContext } from "../../context/PostContext";
+import { Image } from "react-native";
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -170,9 +171,16 @@ export default function HomeScreen() {
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
-          <Text style={styles.avatarText}>
-            {item.user?.name?.charAt(0) || "U"}
-          </Text>
+            {item.user?.profileImage ? (
+        <Image
+           source={{ uri: item.user.profileImage }}
+            style={{ width: 50, height: 50, borderRadius: 25 }}
+    />
+        ) : (
+         <Text style={styles.avatarText}>
+        {item.user?.name?.charAt(0) || "U"}
+        </Text>
+         )}
         </View>
 
         <View style={{ flex: 1 }}>

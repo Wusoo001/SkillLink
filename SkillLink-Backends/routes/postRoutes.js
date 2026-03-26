@@ -57,7 +57,7 @@ router.get("/", async (req, res) => {
     const limit = 10;
 
     const posts = await Post.find()
-      .populate("user", "name email")
+      .populate("user", "name profileImage email")
       .sort({ rating: -1, jobsCompleted: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
