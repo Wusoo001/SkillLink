@@ -18,14 +18,13 @@ export default function UserProfileScreen() {
   const navigation = useNavigation();
   const route = useRoute();
 
-  const { user, loadingUser } = useContext(AuthContext); // make sure AuthContext provides loadingUser
+  const { user, loading } = useContext(AuthContext); // make sure AuthContext provides loadingUser
   const { userId: routeUserId } = route.params || {};
-
   const resolvedUserId = routeUserId || user?._id;
 
   const [userPosts, setUserPosts] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [load, setLoading] = useState(true);
 
   // ==============================
   // FETCH USER DATA
@@ -55,8 +54,9 @@ export default function UserProfileScreen() {
   // INITIAL LOAD
   // ==============================
   useEffect(() => {
-    if (!resolvedUserId) return;
+    if (resolvedUserId){
     loadUserData(resolvedUserId);
+  }
   }, [resolvedUserId]);
 
   // ==============================
@@ -72,7 +72,7 @@ export default function UserProfileScreen() {
   // ==============================
   // LOADING STATE
   // ==============================
-  if (loading || loadingUser || !resolvedUserId) {
+  if (load || loading || !resolvedUserId) {
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" />

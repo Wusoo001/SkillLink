@@ -32,17 +32,18 @@ router.post("/register", async (req, res) => {
 });
 
 // LOGIN
+// LOGIN
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
     const user = await User.findOne({ email });
     if (!user)
-      return res.json({ message: "Invalid credentials" });
+      return res.json({ success: false, message: "Invalid credentials" }); // added success: false
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch)
-      return res.json({ message: "Invalid credentials" });
+      return res.json({ success: false, message: "Invalid credentials" });
 
     const token = jwt.sign(
       { id: user._id },
@@ -50,8 +51,27 @@ router.post("/login", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    res.json({ token });
+    // Return user object without password
+    const userResponse = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      bio: user.bio || "",
+      profileImage: user.profileImage || "",
+      rating: user.rating || 0,
+      jobsCompleted: user.jobsCompleted || 0,
+      skills: user.skills || [],
+      location: user.location || "",
+    };
+
+    res.json({
+      success: true,
+      token,
+      user: userResponse
+    });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 });

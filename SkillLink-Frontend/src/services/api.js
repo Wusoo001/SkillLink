@@ -62,6 +62,7 @@ export const loginUser = async (userData) => {
     return {
       success: !!res.data.token,
       token: res.data.token,
+      user: res.data.user,
       message: res.data.message,
     };
   } catch (error) {
@@ -135,6 +136,18 @@ export const getUserPosts = async (userId) => {
 };
 
 // ================================
+// ================================
+// GET CURRENT USER (using token)
+// ================================
+export const getCurrentUser = async () => {
+  try {
+    const res = await api.get("/users/me");  // expects backend endpoint
+    return { success: true, user: res.data };
+  } catch (error) {
+    console.log("Get current user error:", error.response?.data || error.message);
+    return { success: false, message: "Failed to fetch user" };
+  }
+};
 // USER PROFILE
 // ================================
 export const getUserProfile = async (userId) => {

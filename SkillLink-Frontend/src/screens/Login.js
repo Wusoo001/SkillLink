@@ -25,8 +25,8 @@ export default function Login({ navigation }) {
     const response = await loginUser({ email, password });
     console.log("Login response:", response);
 
-    if (response.token) {
-      login(response.token); // saves token + navigates
+    if (response.token && response.user) {
+      login(response.token, response.user); // user is already included
     } else {
       Alert.alert("Error", response.message || "Invalid credentials");
     }

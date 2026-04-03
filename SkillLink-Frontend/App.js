@@ -3,6 +3,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { useContext } from "react";
 import { AuthContext, AuthProvider } from "./context/AuthContext";
+import { ActivityIndicator, View } from "react-native";
 
 import Landing from "./src/screens/LandingScreen";
 import Register from "./src/screens/Register";
@@ -30,7 +31,7 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="UsersProfile" component={UserProfileScreen} />
+      <Tab.Screen name="MyProfile" component={UserProfileScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
@@ -61,7 +62,14 @@ function AppStack() {
 
 // Root navigator: decides whether to show Auth or App
 function RootNavigator() {
-  const { userToken } = useContext(AuthContext);
+  const { userToken, loading } = useContext(AuthContext);
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#0A66FF" />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
