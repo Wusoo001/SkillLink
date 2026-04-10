@@ -11,6 +11,7 @@ import Login from "./src/screens/Login";
 import HomeScreen from "./src/screens/HomeScreen";
 import UserProfileScreen from "./src/screens/UserProfileScreen";
 import EditProfileScreen from "./src/screens/EditProfileScreen";
+import BookingScreen from "./src/screens/BookingScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import CreatePostScreen from "./src/screens/CreatePostScreen";
 import { PostProvider } from "./context/PostContext";
@@ -56,6 +57,7 @@ function AppStack() {
       <Stack.Screen name="CreatePostScreen" component={CreatePostScreen} options={{ title: "New Post" }} />
       <Stack.Screen name="UsersProfile" component={UserProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen}/>
+      <Stack.Screen name="BookingScreen" component={BookingScreen}/>
     </Stack.Navigator>
   );
 }
