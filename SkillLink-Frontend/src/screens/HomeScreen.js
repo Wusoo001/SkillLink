@@ -1,3 +1,4 @@
+
 import { useNavigation } from "@react-navigation/native";
 import { useContext, useEffect, useState, useRef } from "react";
 import {
@@ -21,8 +22,8 @@ export default function HomeScreen() {
   const { logout, userToken } = useContext(AuthContext);
   const { refreshFlag, newPost, clearNewPost } = useContext(PostContext);
 
-  const [allPosts, setAllPosts] = useState([]); // MASTER DATA
-  const [posts, setPosts] = useState([]); // UI DATA
+  const [allPosts, setAllPosts] = useState([]);
+  const [posts, setPosts] = useState([]);
 
   const [search, setSearch] = useState("");
   const [savedPosts, setSavedPosts] = useState([]);
@@ -46,7 +47,23 @@ export default function HomeScreen() {
     categories.map(() => new Animated.Value(1))
   ).current;
 
-  // Load posts
+  // ✅ Navigation handler
+  const goToUserProfile = (userId) => {
+    if (!userId) return;
+    navigation.navigate("UsersProfile", { userId });
+  };
+
+  // ✅ Deduplication helper
+  const mergeUniquePosts = (prev, incoming) => {
+    const map = new Map();
+    [...prev, ...incoming].forEach((post) => {
+      if (post?._id) {
+        map.set(post._id, post);
+      }
+    });
+    return Array.from(map.values());
+  };
+
   const loadPosts = async (pageNumber = 1) => {
     try {
       setLoading(true);
@@ -63,8 +80,8 @@ export default function HomeScreen() {
           setAllPosts(rankedPosts);
           setPosts(rankedPosts);
         } else {
-          setAllPosts((prev) => [...prev, ...rankedPosts]);
-          setPosts((prev) => [...prev, ...rankedPosts]);
+          setAllPosts((prev) => mergeUniquePosts(prev, rankedPosts));
+          setPosts((prev) => mergeUniquePosts(prev, rankedPosts));
         }
       }
     } catch (error) {
@@ -141,7 +158,6 @@ export default function HomeScreen() {
       });
     }
 
-    // FILTER from MASTER DATA
     if (category === "All") {
       setPosts(allPosts);
     } else {
@@ -154,9 +170,13 @@ export default function HomeScreen() {
     }
   };
 
+  // ✅ Reset state when user changes (CRITICAL FIX)
   useEffect(() => {
+    setAllPosts([]);
+    setPosts([]);
+    setPage(1);
     refreshPosts();
-  }, []);
+  }, [userToken]);
 
   useEffect(() => {
     if (newPost) {
@@ -170,18 +190,20 @@ export default function HomeScreen() {
   const renderItem = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.avatarContainer}>
+        <TouchableOpacity onPress={() => goToUserProfile(item.user?._id)}>
+          <View style={styles.avatarContainer}>
             {item.user?.profileImage ? (
-        <Image
-           source={{ uri: item.user.profileImage }}
-            style={{ width: 50, height: 50, borderRadius: 25 }}
-    />
-        ) : (
-         <Text style={styles.avatarText}>
-        {item.user?.name?.charAt(0) || "U"}
-        </Text>
-         )}
-        </View>
+              <Image
+                source={{ uri: item.user.profileImage }}
+                style={{ width: 50, height: 50, borderRadius: 25 }}
+              />
+            ) : (
+              <Text style={styles.avatarText}>
+                {item.user?.name?.charAt(0) || "U"}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
 
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{item.user?.name || "User"}</Text>
@@ -211,27 +233,7 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
-        <View style={{ flexDirection: "row" }}>
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() =>
-              navigation.navigate("UsersProfile", { userId: item.user?._id })
-            }
-          >
-            <Text style={styles.profileText}>Profile</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.bookButton}
-            onPress={() =>
-              navigation.navigate("BookingScreen", {
-                providerId: item.user?._id,
-              })
-            }
-          >
-            <Text style={styles.bookText}>Book</Text>
-          </TouchableOpacity>
-        </View>
+        <View />
       </View>
     </View>
   );
@@ -275,7 +277,8 @@ export default function HomeScreen() {
                 <Text
                   style={[
                     styles.categoryText,
-                    selectedCategory === item && styles.activeCategoryText,
+                    selectedCategory === item &&
+                      styles.activeCategoryText,
                   ]}
                 >
                   {item}
@@ -288,7 +291,7 @@ export default function HomeScreen() {
 
       <FlatList
         data={posts}
-        keyExtractor={(item) => item._id}
+        keyExtractor={(item, index) => item._id || index.toString()}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
         initialNumToRender={5}
@@ -381,21 +384,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   secondaryAction: { fontWeight: "600", color: "#6B7280" },
-  profileButton: {
-    backgroundColor: "#E5E7EB",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    marginRight: 8,
-  },
-  profileText: { fontWeight: "600" },
-  bookButton: {
-    backgroundColor: "#0A66FF",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-  },
-  bookText: { color: "#FFF", fontWeight: "600" },
   floatingButton: {
     position: "absolute",
     bottom: 25,
@@ -408,3 +396,4 @@ const styles = StyleSheet.create({
   },
   floatingText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
 });
+

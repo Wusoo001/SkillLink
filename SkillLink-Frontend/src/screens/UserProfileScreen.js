@@ -1,3 +1,4 @@
+
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useContext, useEffect, useState, useCallback } from "react";
 import {
@@ -18,13 +19,16 @@ export default function UserProfileScreen() {
   const navigation = useNavigation();
   const route = useRoute();
 
-  const { user, loading } = useContext(AuthContext); // make sure AuthContext provides loadingUser
+  const { user, loading: authLoading } = useContext(AuthContext);
   const { userId: routeUserId } = route.params || {};
   const resolvedUserId = routeUserId || user?._id;
 
   const [userPosts, setUserPosts] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
-  const [load, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+
+  // ✅ Ownership check (KEY FIX)
+  const isOwnProfile = user?._id === resolvedUserId;
 
   // ==============================
   // FETCH USER DATA
@@ -54,9 +58,9 @@ export default function UserProfileScreen() {
   // INITIAL LOAD
   // ==============================
   useEffect(() => {
-    if (resolvedUserId){
-    loadUserData(resolvedUserId);
-  }
+    if (resolvedUserId) {
+      loadUserData(resolvedUserId);
+    }
   }, [resolvedUserId]);
 
   // ==============================
@@ -72,7 +76,7 @@ export default function UserProfileScreen() {
   // ==============================
   // LOADING STATE
   // ==============================
-  if (load || loading || !resolvedUserId) {
+  if (loading || authLoading || !resolvedUserId) {
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" />
@@ -121,16 +125,30 @@ export default function UserProfileScreen() {
           ⭐ {userInfo?.rating || 0} • {userInfo?.jobsCompleted || 0} jobs completed
         </Text>
 
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() =>
-            navigation.navigate("EditProfile", {
-              userInfo,
-            })
-          }
-        >
-          <Text style={styles.editText}>Edit Profile</Text>
-        </TouchableOpacity>
+        {/* ✅ CONDITIONAL BUTTON (FIXED) */}
+        {isOwnProfile ? (
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() =>
+              navigation.navigate("EditProfile", {
+                userInfo,
+              })
+            }
+          >
+            <Text style={styles.editText}>Edit Profile</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.editButton} // 👈 reuse same style (UI unchanged)
+            onPress={() =>
+              navigation.navigate("BookingScreen", {
+                providerId: resolvedUserId,
+              })
+            }
+          >
+            <Text style={styles.editText}>Book</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* SERVICES / POSTS */}
@@ -182,8 +200,24 @@ const styles = StyleSheet.create({
   },
   editText: { color: "#FFF", fontWeight: "600" },
   sectionTitle: { fontSize: 18, fontWeight: "700", marginBottom: 10 },
-  card: { backgroundColor: "#FFF", padding: 15, borderRadius: 14, marginBottom: 12, elevation: 2 },
+  card: {
+    backgroundColor: "#FFF",
+    padding: 15,
+    borderRadius: 14,
+    marginBottom: 12,
+    elevation: 2,
+  },
   description: { fontSize: 14, color: "#374151" },
   tagContainer: { flexDirection: "row", flexWrap: "wrap", marginTop: 10 },
-  tag: { backgroundColor: "#EEF2FF", color: "#4F46E5", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, fontSize: 12, marginRight: 6, marginBottom: 6 },
+  tag: {
+    backgroundColor: "#EEF2FF",
+    color: "#4F46E5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    fontSize: 12,
+    marginRight: 6,
+    marginBottom: 6,
+  },
 });
+
