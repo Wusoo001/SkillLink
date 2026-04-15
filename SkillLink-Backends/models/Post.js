@@ -40,6 +40,17 @@ const postSchema = new mongoose.Schema(
       ref: "User",
     },
   ],
+   // ✅ ADD THIS
+    media: {
+      type: String, // Cloudinary URL
+      default: null,
+    },
+
+    mediaType: {
+      type: String,
+      enum: ["image", "video"],
+      default: "image",
+    },
 },
 {
   timestamps: true

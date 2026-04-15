@@ -1,4 +1,3 @@
-
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useContext, useEffect, useState, useCallback } from "react";
 import {
@@ -10,6 +9,7 @@ import {
   Image,
   TouchableOpacity,
 } from "react-native";
+import { Video } from "expo-av"; // ✅ added for video playback
 
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
@@ -27,7 +27,7 @@ export default function UserProfileScreen() {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Ownership check (KEY FIX)
+  // ✅ Ownership check
   const isOwnProfile = user?._id === resolvedUserId;
 
   // ==============================
@@ -85,11 +85,30 @@ export default function UserProfileScreen() {
   }
 
   // ==============================
-  // RENDER POST
+  // RENDER POST (with media)
   // ==============================
   const renderPost = ({ item }) => (
     <View style={styles.card}>
       <Text style={styles.description}>{item.description}</Text>
+
+      {/* ✅ Image preview */}
+      {item.media && item.mediaType === "image" && (
+        <Image
+          source={{ uri: item.media }}
+          style={styles.mediaImage}
+        />
+      )}
+
+      {/* ✅ Video preview using expo-av */}
+      {item.media && item.mediaType === "video" && (
+        <Video
+          source={{ uri: item.media }}
+          style={styles.mediaVideo}
+          useNativeControls
+          resizeMode="cover"
+        />
+      )}
+
       <View style={styles.tagContainer}>
         {item.tags?.map((tag, index) => (
           <Text key={index} style={styles.tag}>
@@ -125,7 +144,7 @@ export default function UserProfileScreen() {
           ⭐ {userInfo?.rating || 0} • {userInfo?.jobsCompleted || 0} jobs completed
         </Text>
 
-        {/* ✅ CONDITIONAL BUTTON (FIXED) */}
+        {/* ✅ CONDITIONAL BUTTON */}
         {isOwnProfile ? (
           <TouchableOpacity
             style={styles.editButton}
@@ -139,7 +158,7 @@ export default function UserProfileScreen() {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={styles.editButton} // 👈 reuse same style (UI unchanged)
+            style={styles.editButton}
             onPress={() =>
               navigation.navigate("BookingScreen", {
                 providerId: resolvedUserId,
@@ -171,7 +190,7 @@ export default function UserProfileScreen() {
 }
 
 // ==============================
-// STYLES
+// STYLES (added mediaImage and mediaVideo)
 // ==============================
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 15, backgroundColor: "#F5F6FA" },
@@ -208,6 +227,20 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   description: { fontSize: 14, color: "#374151" },
+  // ✅ new styles for media
+  mediaImage: {
+    width: "100%",
+    height: 200,
+    borderRadius: 10,
+    marginTop: 10,
+    resizeMode: "cover",
+  },
+  mediaVideo: {
+    width: "100%",
+    height: 200,
+    borderRadius: 10,
+    marginTop: 10,
+  },
   tagContainer: { flexDirection: "row", flexWrap: "wrap", marginTop: 10 },
   tag: {
     backgroundColor: "#EEF2FF",
@@ -220,4 +253,3 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
 });
-
