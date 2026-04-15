@@ -16,11 +16,13 @@ import { AuthContext } from "../../context/AuthContext";
 import { getPosts, searchPosts, savePost } from "../services/api";
 import { PostContext } from "../../context/PostContext";
 import { Image } from "react-native";
+import { Video } from "expo-av";
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { logout, userToken } = useContext(AuthContext);
   const { refreshFlag, newPost, clearNewPost } = useContext(PostContext);
+  const [hasMore, setHasMore] = useState(true);
 
   const [allPosts, setAllPosts] = useState([]);
   const [posts, setPosts] = useState([]);
@@ -70,6 +72,7 @@ export default function HomeScreen() {
       const response = await getPosts(pageNumber);
 
       if (response.success) {
+        setHasMore(response.hasMore);
         const rankedPosts = response.posts.sort(
           (a, b) =>
             (b.user?.rating || 0) * (b.user?.jobsCompleted || 0) -
@@ -92,12 +95,15 @@ export default function HomeScreen() {
   };
 
   const loadMorePosts = () => {
-    if (!loading) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      loadPosts(nextPage);
-    }
-  };
+  if (loading || !hasMore) return;
+
+  const nextPage = page + 1;
+  setPage(nextPage);
+
+  console.log("Loading page:", nextPage); // DEBUG
+
+  loadPosts(nextPage);
+};
 
   const handleSearch = async (text) => {
     setSearch(text);
@@ -217,6 +223,21 @@ export default function HomeScreen() {
       </View>
 
       <Text style={styles.description}>{item.description}</Text>
+      {item.media && item.mediaType === "image" && (
+      <Image
+         source={{ uri: item.media }}
+         style={{ width: "100%", height: 200, borderRadius: 10, marginTop: 10 }}
+      />
+      )}
+
+      {item.media && item.mediaType === "video" && (
+      <Video
+        source={{ uri: item.media }}
+        style={{ width: "100%", height: 200, borderRadius: 10, marginTop: 10 }}
+        useNativeControls
+         resizeMode="cover"
+        />
+      )}
 
       <View style={styles.tagContainer}>
         {item.tags?.map((tag, index) => (
@@ -298,7 +319,7 @@ export default function HomeScreen() {
         maxToRenderPerBatch={5}
         windowSize={5}
         onEndReached={loadMorePosts}
-        onEndReachedThreshold={0.5}
+        onEndReachedThreshold={0.2}
         ListEmptyComponent={
           <Text style={{ marginTop: 20, textAlign: "center" }}>
             No results found

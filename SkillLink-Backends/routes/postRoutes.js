@@ -17,7 +17,7 @@ router.post("/", protect, async (req, res) => {
 
   try {
 
-    const { skill, description, tags, location } = req.body;
+    const { skill, description, tags, location, media, mediaType } = req.body;
 
     const user = await User.findById(req.user.id);
 
@@ -27,7 +27,9 @@ router.post("/", protect, async (req, res) => {
       skill,
       description,
       tags,
-      location
+      location,
+      media,
+      mediaType
     });
 
     await post.save();
@@ -55,16 +57,22 @@ router.get("/", async (req, res) => {
 
     const page = parseInt(req.query.page) || 1;
     const limit = 10;
+    const totalPosts = await Post.countDocuments();
 
     const posts = await Post.find()
-      .populate("user", "name profileImage email")
+      .populate("user", "name profileImage email ")
       .sort({ rating: -1, jobsCompleted: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
     res.json({
       success: true,
-      posts: posts
+      hasMore: page * limit < totalPosts,
+      posts: posts.map(post => ({
+      ...post._doc,
+      media: post.media || null,
+      mediaType: post.mediaType || "image"
+     }))
     });
 
   } catch (error) {
