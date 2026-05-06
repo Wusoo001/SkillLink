@@ -2,19 +2,27 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const userRoutes = require("./routes/users");
+const webhookRoutes = require("./routes/webhookRoutes");
+const bookingRoutes = require("./routes/bookingRoutes");
 require("dotenv").config();
 
 const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 
 // Routes
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/posts", require("./routes/postRoutes"));
 app.use("/api/users", userRoutes);
+app.use("/api/webhooks", webhookRoutes);
+app.use("/api/bookings", bookingRoutes);
 
 
 mongoose

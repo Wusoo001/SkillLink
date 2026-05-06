@@ -19,7 +19,9 @@ const bookingSchema = new mongoose.Schema(
       required: true,
     },
 
-    description: String,
+    description: {
+      type: String,
+    },
 
     scheduledDate: {
       type: Date,
@@ -47,14 +49,49 @@ const bookingSchema = new mongoose.Schema(
     },
 
     payment: {
-      reference: String,
-      provider: String,
-      escrowHeld: { type: Boolean, default: false },
-      paidAt: Date,
-      releasedAt: Date,
+      reference: {
+        type: String,
+      },
+
+      provider: {
+        type: String,
+        default: "paystack",
+      },
+
+      status: {
+        type: String,
+        enum: ["pending", "success", "failed"],
+        default: "pending",
+      },
+
+      escrowStatus: {
+        type: String,
+        enum: ["not_funded", "held", "released"],
+        default: "not_funded",
+      },
+
+      escrowHeld: {
+        type: Boolean,
+        default: false,
+      },
+
+      amountPaid: {
+        type: Number,
+      },
+
+      paidAt: {
+        type: Date,
+      },
+
+      releasedAt: {
+        type: Date,
+      },
     },
   },
   { timestamps: true }
 );
+
+// 🔥 index for fast lookup during webhook processing
+bookingSchema.index({ "payment.reference": 1 });
 
 module.exports = mongoose.model("Booking", bookingSchema);
