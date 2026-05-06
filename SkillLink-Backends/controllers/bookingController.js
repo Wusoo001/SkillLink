@@ -1,5 +1,7 @@
 const Booking = require("../models/Booking");
 const escrowService = require("../services/escrowService");
+const paystackService = require("../services/paystackService");
+const { v4: uuidv4 } = require("uuid");
 
 /**
  * CREATE BOOKING
@@ -34,26 +36,71 @@ const getBookings = async (req, res) => {
       data: bookings,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
 /**
- * HOLD PAYMENT IN ESCROW
+ * INITIATE PAYMENT (PAYSTACK)
+ */
+const initializePayment = async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+
+    const booking = await Booking.findById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    const reference = `skilllink_${uuidv4()}`;
+
+    const payment = await paystackService.initializePayment({
+      email: req.user?.email || "test@example.com",
+      amount: booking.price,
+      reference,
+    });
+
+    // update booking
+    booking.payment.reference = reference;
+    booking.payment.status = "pending";
+    booking.status = "awaiting_payment";
+
+    await booking.save();
+
+    return res.json({
+      success: true,
+      authorization_url: payment.authorization_url,
+      reference,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * HOLD PAYMENT IN ESCROW (DISABLED - SECURITY LAYER)
  */
 const holdPayment = async (req, res) => {
   try {
-    const { bookingId, reference } = req.body;
-
-    const updated = await escrowService.holdFunds(bookingId, reference);
-
-    res.json({
-      success: true,
-      message: "Funds held in escrow",
-      data: updated,
+    return res.status(403).json({
+      success: false,
+      message: "Manual escrow hold is disabled. Use payment flow.",
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
@@ -72,13 +119,17 @@ const releasePayment = async (req, res) => {
       data: updated,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
 module.exports = {
   createBooking,
   getBookings,
+  initializePayment, // 🔥 newly added
   holdPayment,
   releasePayment,
 };
