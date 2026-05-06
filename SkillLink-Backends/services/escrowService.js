@@ -1,4 +1,6 @@
 const Booking = require("../models/Booking");
+const Wallet = require("../models/Wallet");
+const walletService = require("./walletService");
 
 const holdFunds = async (bookingId, reference) => {
   console.log("💰 ESCROW TRIGGERED");
@@ -27,15 +29,32 @@ const holdFunds = async (bookingId, reference) => {
 };
 
 const releaseFunds = async (bookingId) => {
+  console.log("🔓 RELEASE FUNCTION TRIGGERED");
+  console.log("Booking ID:", bookingId);
+
   const booking = await Booking.findById(bookingId);
 
   if (!booking) throw new Error("Booking not found");
 
-  // prevent double release
-  if (booking.payment?.escrowStatus === "released") {
-    return booking;
+  // ❌ Prevent release if not in escrow
+  if (booking.status !== "paid_in_escrow") {
+    throw new Error("Funds are not in escrow");
   }
 
+  // ✅ Prevent double release
+  if (booking.payment?.escrowStatus === "released") {
+    console.log("⚠️ Already released");
+    return booking;
+  }
+   // 🔥 WALLET CREDIT (NEW CORE INTEGRATION)
+  await walletService.creditWallet(
+    booking.provider,
+    booking.price,
+    booking._id,
+    booking.payment.reference
+  );
+
+  // ✅ Update state
   booking.status = "released";
 
   booking.payment.escrowHeld = false;
@@ -43,6 +62,8 @@ const releaseFunds = async (bookingId) => {
   booking.payment.releasedAt = new Date();
 
   await booking.save();
+
+  console.log("✅ FUNDS RELEASED");
 
   return booking;
 };
