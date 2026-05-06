@@ -109,9 +109,9 @@ const holdPayment = async (req, res) => {
  */
 const releasePayment = async (req, res) => {
   try {
-    const { bookingId } = req.body;
+    const { id } = req.params; // ✅ from URL now
 
-    const updated = await escrowService.releaseFunds(bookingId);
+    const updated = await escrowService.releaseFunds(id);
 
     res.json({
       success: true,
@@ -119,7 +119,9 @@ const releasePayment = async (req, res) => {
       data: updated,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Release error:", error.message);
+
+    res.status(400).json({
       success: false,
       message: error.message,
     });
