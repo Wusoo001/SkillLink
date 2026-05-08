@@ -37,8 +37,8 @@ const releaseFunds = async (bookingId) => {
   if (!booking) throw new Error("Booking not found");
 
   // ❌ Prevent release if not in escrow
-  if (booking.status !== "paid_in_escrow") {
-    throw new Error("Funds are not in escrow");
+  if (booking.status !== "completed") {
+  throw new Error("Booking must be completed before release");
   }
 
   // ✅ Prevent double release
