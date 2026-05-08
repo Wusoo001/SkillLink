@@ -2,7 +2,7 @@ const Booking = require("../models/Booking");
 const escrowService = require("../services/escrowService");
 const paystackService = require("../services/paystackService");
 const { v4: uuidv4 } = require("uuid");
-
+const walletService = require("../services/walletService");
 /**
  * CREATE BOOKING
  */
@@ -127,11 +127,74 @@ const releasePayment = async (req, res) => {
     });
   }
 };
+const markBookingCompleted = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    const booking = await Booking.findById(id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    // only escrowed bookings can be completed
+    if (booking.status !== "paid_in_escrow") {
+      return res.status(400).json({
+        success: false,
+        message: "Booking is not in escrow",
+      });
+    }
+
+    booking.status = "completed";
+
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: "Booking marked as completed",
+      data: booking,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const withdrawFunds = async (req, res) => {
+  try {
+    const { providerId, amount } = req.body;
+
+    const wallet = await walletService.debitWallet(
+      providerId,
+      amount,
+      "Provider withdrawal"
+    );
+
+    res.json({
+      success: true,
+      message: "Withdrawal successful",
+      data: wallet,
+    });
+  } catch (error) {
+    console.error("Withdrawal error:", error.message);
+
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 module.exports = {
   createBooking,
   getBookings,
   initializePayment, // 🔥 newly added
   holdPayment,
   releasePayment,
+  markBookingCompleted,
+  withdrawFunds,
 };
