@@ -3,6 +3,7 @@ const escrowService = require("../services/escrowService");
 const paystackService = require("../services/paystackService");
 const { v4: uuidv4 } = require("uuid");
 const walletService = require("../services/walletService");
+
 /**
  * CREATE BOOKING
  */
@@ -189,12 +190,73 @@ const withdrawFunds = async (req, res) => {
     });
   }
 };
+
+const verifyPaymentStatus = async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    const paystackData = await paystackService.verifyPayment(reference);
+
+    if (!paystackData || paystackData.status !== "success") {
+      return res.status(400).json({
+        success: false,
+        message: "Payment not successful",
+      });
+    }
+
+    const booking = await Booking.findOne({
+      "payment.reference": reference,
+    });
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    // 🔒 IDEMPOTENCY GUARD
+    if (booking.payment.status === "paid") {
+      return res.json({
+        success: true,
+        message: "Already verified",
+        data: booking,
+      });
+    }
+
+    // 🧠 STATE TRANSITION (CLEAN & CONSISTENT)
+    booking.payment.status = "paid";
+    booking.payment.escrowStatus = "funded";
+    booking.payment.escrowHeld = true;
+    booking.payment.amountPaid = paystackData.amount / 100;
+    booking.payment.paidAt = new Date();
+
+    booking.status = "paid_in_escrow";
+
+    await booking.save();
+
+    return res.json({
+      success: true,
+      message: "Payment verified and escrow funded",
+      data: booking,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   createBooking,
   getBookings,
+  verifyPaymentStatus,
   initializePayment, // 🔥 newly added
   holdPayment,
   releasePayment,
   markBookingCompleted,
   withdrawFunds,
+  
 };

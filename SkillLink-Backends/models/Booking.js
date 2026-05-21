@@ -60,13 +60,13 @@ const bookingSchema = new mongoose.Schema(
 
       status: {
         type: String,
-        enum: ["pending", "success", "failed"],
+        enum: ["pending", "paid", "failed"],
         default: "pending",
       },
 
       escrowStatus: {
         type: String,
-        enum: ["not_funded", "held", "released"],
+        enum: ["not_funded", "funded", "released"],
         default: "not_funded",
       },
 

@@ -108,6 +108,18 @@ export default function UserProfileScreen() {
           resizeMode="cover"
         />
       )}
+      <TouchableOpacity
+      style={styles.editButton}
+      onPress={() =>
+        navigation.navigate("BookingScreen", {
+          providerId: resolvedUserId,
+          serviceTitle: item.description,
+          price: item.price,
+        })
+      }
+    >
+      <Text style={styles.editText}>Book This Service</Text>
+    </TouchableOpacity>
 
       <View style={styles.tagContainer}>
         {item.tags?.map((tag, index) => (
@@ -145,29 +157,15 @@ export default function UserProfileScreen() {
         </Text>
 
         {/* ✅ CONDITIONAL BUTTON */}
-        {isOwnProfile ? (
+        {isOwnProfile && (
           <TouchableOpacity
-            style={styles.editButton}
-            onPress={() =>
-              navigation.navigate("EditProfile", {
-                userInfo,
-              })
-            }
-          >
-            <Text style={styles.editText}>Edit Profile</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() =>
-              navigation.navigate("BookingScreen", {
-                providerId: resolvedUserId,
-              })
-            }
-          >
-            <Text style={styles.editText}>Book</Text>
-          </TouchableOpacity>
-        )}
+          style={styles.editButton}
+          onPress={() =>
+           navigation.navigate("EditProfile", { userInfo })}
+           >
+          <Text style={styles.editText}>Edit Profile</Text>
+        </TouchableOpacity>
+      )}
       </View>
 
       {/* SERVICES / POSTS */}
