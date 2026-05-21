@@ -15,6 +15,9 @@ import BookingScreen from "./src/screens/BookingScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import CreatePostScreen from "./src/screens/CreatePostScreen";
 import { PostProvider } from "./context/PostContext";
+import PaymentScreen from "./src/screens/PaymentScreen";
+import PaymentReturnHandler from "./src/screens/PaymentReturnHandler";
+import PaymentDashboard from "./src/screens/PaymentDashboard";
 
 
 
@@ -34,6 +37,7 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="MyProfile" component={UserProfileScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
+      
     </Tab.Navigator>
   );
 }
@@ -58,6 +62,9 @@ function AppStack() {
       <Stack.Screen name="UsersProfile" component={UserProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen}/>
       <Stack.Screen name="BookingScreen" component={BookingScreen}/>
+      <Stack.Screen name="PaymentScreen" component={PaymentScreen}/>
+       <Stack.Screen name="PaymentReturnHandler" component={PaymentReturnHandler}/>
+       <Stack.Screen name="PaymentDashboard" component={PaymentDashboard}/>
     </Stack.Navigator>
   );
 }
