@@ -72,8 +72,17 @@ const debitWallet = async (providerId, amount, description = "Withdrawal") => {
   return wallet;
 };
 
+/**
+ * GET BALANCE for a provider
+ */
+const getBalance = async (providerId) => {
+  const wallet = await Wallet.findOne({ provider: providerId });
+  return wallet ? wallet.balance : 0;
+};
+
 module.exports = {
   getOrCreateWallet,
   creditWallet,
   debitWallet,
+  getBalance,
 };
