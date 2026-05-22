@@ -12,12 +12,12 @@ import HomeScreen from "./src/screens/HomeScreen";
 import UserProfileScreen from "./src/screens/UserProfileScreen";
 import EditProfileScreen from "./src/screens/EditProfileScreen";
 import BookingScreen from "./src/screens/BookingScreen";
-import SettingsScreen from "./src/screens/SettingsScreen";
 import CreatePostScreen from "./src/screens/CreatePostScreen";
 import { PostProvider } from "./context/PostContext";
 import PaymentScreen from "./src/screens/PaymentScreen";
 import PaymentReturnHandler from "./src/screens/PaymentReturnHandler";
-import PaymentDashboard from "./src/screens/PaymentDashboard";
+import PaymentDashboard from "./src/screens/Dashboard";
+import Dashboard from "./src/screens/Dashboard";
 
 
 
@@ -36,7 +36,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="MyProfile" component={UserProfileScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen name="Dashboard" component={Dashboard} />
       
     </Tab.Navigator>
   );

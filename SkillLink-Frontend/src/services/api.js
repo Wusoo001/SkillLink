@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
-const API_BASE = "http://192.168.1.22:5000/api";
+const API_BASE = "http://192.168.1.38:5000/api";
 
 // ================================
 // AXIOS INSTANCE
@@ -172,5 +172,64 @@ export const updateUserProfile = async (userId, payload) => {
   }
 };
 
+// services/api.js
+
+// Get all bookings (from your backend)
+export const getMyBookings = async () => {
+  try {
+    const response = await api.get('/bookings');
+    // Your backend returns { success: true, data: [...] }
+    return response.data; // now contains { success, data }
+  } catch (error) {
+    console.log('Get bookings error:', error);
+    throw error;
+  }
+};
+
+// Get wallet balance
+
+// Get wallet balance – manually attach token
+export const getWalletBalance = async () => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.get("/wallet/balance", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  } catch (error) {
+    console.log("Get wallet balance error:", error);
+    throw error;
+  }
+};
+
+// Request withdrawal – manually attach token
+export const requestWithdrawal = async (amount) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.post("/wallet/withdraw", { amount }, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  } catch (error) {
+    console.log("Withdrawal error:", error);
+    throw error;
+  }
+};
+
+api.interceptors.request.use(
+  async (config) => {
+    const token = await AsyncStorage.getItem("userToken");
+    console.log("🔑 [API] Token being sent to", config.url, ":", token ? `${token.slice(0,20)}...` : "NO TOKEN");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 // ================================
 export  {api} ;

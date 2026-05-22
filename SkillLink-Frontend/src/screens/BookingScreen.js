@@ -1,19 +1,30 @@
-import React, { useMemo, useContext } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import React, { useMemo, useContext, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  SafeAreaView,
+  Animated,
+  ScrollView,
+} from "react-native";
 import { AuthContext } from "../../context/AuthContext";
 import { api } from "../services/api";
 
 export default function BookingScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
-
   const { providerId, serviceTitle, price, description } = route.params;
 
-  // 🧠 Invoice Engine
+  // Button animations (purely visual)
+  const primaryScale = useRef(new Animated.Value(1)).current;
+  const secondaryScale = useRef(new Animated.Value(1)).current;
+
+  // 🧠 Invoice Engine (unchanged)
   const invoice = useMemo(() => {
     const serviceFee = Number(price) || 500;
     const platformFee = 0;
     const total = serviceFee + platformFee;
-
     return { serviceFee, platformFee, total };
   }, [price]);
 
@@ -21,7 +32,6 @@ export default function BookingScreen({ navigation, route }) {
     try {
       console.log("CREATING BOOKING...");
 
-      // ✅ CREATE BOOKING FIRST
       const res = await api.post("/bookings", {
         client: user?._id,
         provider: providerId,
@@ -38,15 +48,9 @@ export default function BookingScreen({ navigation, route }) {
       }
 
       const booking = res.data.data;
-
-      // ✅ GO TO PAYMENT SCREEN
-      navigation.navigate("PaymentScreen", {
-        bookingId: booking._id,
-      });
-
+      navigation.navigate("PaymentScreen", { bookingId: booking._id });
     } catch (error) {
       console.log("BOOKING ERROR:", error.response?.data || error.message);
-
       Alert.alert(
         "Booking Error",
         error.response?.data?.message || "Something went wrong"
@@ -54,110 +58,211 @@ export default function BookingScreen({ navigation, route }) {
     }
   };
 
+  const animatePrimaryIn = () => {
+    Animated.spring(primaryScale, { toValue: 0.96, useNativeDriver: true }).start();
+  };
+  const animatePrimaryOut = () => {
+    Animated.spring(primaryScale, { toValue: 1, useNativeDriver: true }).start();
+  };
+  const animateSecondaryIn = () => {
+    Animated.spring(secondaryScale, { toValue: 0.96, useNativeDriver: true }).start();
+  };
+  const animateSecondaryOut = () => {
+    Animated.spring(secondaryScale, { toValue: 1, useNativeDriver: true }).start();
+  };
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.container}>
+          {/* Provider Info Card */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Service Summary</Text>
+              <View style={styles.titleAccent} />
+            </View>
+            <Text style={styles.serviceTitle}>{serviceTitle}</Text>
+            {description ? (
+              <Text style={styles.serviceDescription}>{description}</Text>
+            ) : null}
+          </View>
 
-      {/* Provider Info */}
-      <View style={styles.card}>
-        <Text style={styles.title}>Service Summary</Text>
-        <Text style={styles.text}>{serviceTitle}</Text>
-        <Text style={styles.subText}>{description}</Text>
-      </View>
+          {/* Invoice Card */}
+          <View style={[styles.card, styles.invoiceCard]}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Invoice</Text>
+              <View style={styles.titleAccent} />
+            </View>
 
-      {/* Invoice Section */}
-      <View style={styles.card}>
-        <Text style={styles.title}>Invoice</Text>
+            <View style={styles.invoiceRow}>
+              <Text style={styles.invoiceLabel}>Service Fee</Text>
+              <Text style={styles.invoiceValue}>₦{invoice.serviceFee.toLocaleString()}</Text>
+            </View>
 
-        <View style={styles.row}>
-          <Text>Service Fee</Text>
-          <Text>₦{invoice.serviceFee}</Text>
+            <View style={styles.invoiceRow}>
+              <Text style={styles.invoiceLabel}>Platform Fee</Text>
+              <Text style={styles.invoiceValue}>₦{invoice.platformFee.toLocaleString()}</Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={[styles.invoiceRow, styles.totalRow]}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalAmount}>₦{invoice.total.toLocaleString()}</Text>
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleConfirmBooking}
+              onPressIn={animatePrimaryIn}
+              onPressOut={animatePrimaryOut}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.primaryText}>Confirm & Pay</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Animated.View style={{ transform: [{ scale: secondaryScale }] }}>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => navigation.goBack()}
+              onPressIn={animateSecondaryIn}
+              onPressOut={animateSecondaryOut}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.secondaryText}>Cancel</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
-
-        <View style={styles.row}>
-          <Text>Platform Fee</Text>
-          <Text>₦{invoice.platformFee}</Text>
-        </View>
-
-        <View style={[styles.row, styles.totalRow]}>
-          <Text style={styles.totalText}>Total</Text>
-          <Text style={styles.totalText}>₦{invoice.total}</Text>
-        </View>
-      </View>
-
-      {/* Actions */}
-      <TouchableOpacity
-        style={styles.primaryBtn}
-        onPress={handleConfirmBooking}
-      >
-        <Text style={styles.primaryText}>Confirm & Pay</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.secondaryBtn}
-        onPress={() => navigation.goBack()}
-      >
-        <Text style={styles.secondaryText}>Cancel</Text>
-      </TouchableOpacity>
-
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: "#F5F6FA",
+    paddingHorizontal: 20,
+    paddingVertical: 24,
   },
   card: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 15,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "#F0F2F5",
   },
-  title: {
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 10,
+  invoiceCard: {
+    backgroundColor: "#FFFFFF",
   },
-  text: {
-    fontSize: 15,
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  titleAccent: {
+    width: 4,
+    height: 20,
+    backgroundColor: "#2563EB",
+    borderRadius: 2,
+    marginLeft: 10,
+  },
+  serviceTitle: {
+    fontSize: 17,
     fontWeight: "600",
+    color: "#1E293B",
+    marginBottom: 6,
   },
-  subText: {
-    color: "#6B7280",
-    marginTop: 5,
+  serviceDescription: {
+    fontSize: 14,
+    color: "#64748B",
+    lineHeight: 20,
   },
-  row: {
+  invoiceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginVertical: 5,
+    alignItems: "center",
+    marginVertical: 8,
+  },
+  invoiceLabel: {
+    fontSize: 15,
+    color: "#475569",
+    fontWeight: "500",
+  },
+  invoiceValue: {
+    fontSize: 15,
+    color: "#1E293B",
+    fontWeight: "600",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#E2E8F0",
+    marginVertical: 12,
   },
   totalRow: {
-    borderTopWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingTop: 10,
-    marginTop: 10,
+    marginTop: 4,
   },
-  totalText: {
-    fontWeight: "bold",
+  totalLabel: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  totalAmount: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#2563EB",
   },
   primaryBtn: {
-    backgroundColor: "#0A66FF",
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: "#2563EB",
+    paddingVertical: 16,
+    borderRadius: 48,
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 12,
+    marginBottom: 12,
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 5,
   },
   primaryText: {
-    color: "#fff",
-    fontWeight: "bold",
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 17,
+    letterSpacing: 0.3,
   },
   secondaryBtn: {
-    padding: 15,
+    paddingVertical: 14,
     alignItems: "center",
+    borderRadius: 48,
+    backgroundColor: "#F1F5F9",
+    marginBottom: 20,
   },
   secondaryText: {
-    color: "#6B7280",
+    color: "#475569",
+    fontWeight: "600",
+    fontSize: 16,
   },
 });

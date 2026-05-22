@@ -43,6 +43,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await AsyncStorage.setItem("userToken", token);
       await AsyncStorage.setItem("userData", JSON.stringify(userData));
+      console.log("✅ Token saved:", token);
       setUserToken(token);
       setUser(userData);
     } catch (error) {
