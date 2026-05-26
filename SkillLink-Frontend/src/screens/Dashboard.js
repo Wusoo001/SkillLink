@@ -14,7 +14,13 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
-import { getMyBookings, getWalletBalance, requestWithdrawal } from "../services/api";
+import {
+  getMyBookings,
+  getWalletBalance,
+  requestWithdrawal,
+  markBookingCompleted,      // ✅ new
+  confirmBookingCompletion,  // ✅ new
+} from "../services/api";
 
 // Status color mapping (supports your backend statuses)
 const STATUS_COLORS = {
@@ -35,11 +41,38 @@ const STATUS_LABELS = {
   paid_in_escrow: "Escrow Funded",
 };
 
-// ------------------ Booking Card Component ------------------
-const BookingCard = ({ booking, role, onPress }) => {
+// ------------------ Booking Card Component (with actions) ------------------
+const BookingCard = ({ booking, role, onPress, onStatusChange }) => {
   const isClient = role === "client";
   const otherParty = isClient ? booking.provider : booking.client;
   const otherPartyName = otherParty?.name || "User";
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const handleMarkCompleted = async () => {
+    setActionLoading(true);
+    try {
+      await markBookingCompleted(booking._id);
+      Alert.alert("Success", "Job marked as completed. Waiting for client confirmation.");
+      onStatusChange(); // refresh list
+    } catch (error) {
+      Alert.alert("Error", error.response?.data?.message || "Action failed");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmCompletion = async () => {
+    setActionLoading(true);
+    try {
+      await confirmBookingCompletion(booking._id);
+      Alert.alert("Success", "Job confirmed! Funds have been released to the provider.");
+      onStatusChange(); // refresh list
+    } catch (error) {
+      Alert.alert("Error", error.response?.data?.message || "Action failed");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
@@ -64,11 +97,37 @@ const BookingCard = ({ booking, role, onPress }) => {
           </Text>
         </View>
       </View>
+
       <Text style={styles.serviceTitle}>{booking.serviceTitle}</Text>
       <Text style={styles.price}>₦{booking.price?.toLocaleString()}</Text>
       <Text style={styles.date}>
         {new Date(booking.createdAt).toLocaleDateString()}
       </Text>
+
+      {/* Action Buttons */}
+      {!isClient && booking.status === "paid_in_escrow" && (
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={handleMarkCompleted}
+          disabled={actionLoading}
+        >
+          <Text style={styles.actionButtonText}>
+            {actionLoading ? "Processing..." : "Mark as Completed"}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {isClient && booking.status === "completed" && (
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={handleConfirmCompletion}
+          disabled={actionLoading}
+        >
+          <Text style={styles.actionButtonText}>
+            {actionLoading ? "Processing..." : "Confirm Completion"}
+          </Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 };
@@ -106,7 +165,6 @@ export default function Dashboard({ navigation }) {
       setWalletBalance(res.balance || 0);
     } catch (error) {
       console.log("Wallet balance error:", error);
-      // Optionally show a non-blocking alert
     }
   };
 
@@ -234,6 +292,10 @@ export default function Dashboard({ navigation }) {
                 onPress={() =>
                   navigation.navigate("PaymentDashboard", { bookingId: item._id })
                 }
+                onStatusChange={() => {
+                  fetchBookings();
+                  fetchWalletBalance();
+                }}
               />
             )}
             contentContainerStyle={styles.listContent}
@@ -290,7 +352,7 @@ export default function Dashboard({ navigation }) {
   );
 }
 
-// ------------------ Modern Styles ------------------
+// ------------------ Styles (unchanged, but actionButton added) ------------------
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
   container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
@@ -319,6 +381,18 @@ const styles = StyleSheet.create({
   serviceTitle: { fontSize: 16, fontWeight: "500", color: "#1E293B", marginBottom: 6 },
   price: { fontSize: 18, fontWeight: "700", color: "#2563EB", marginBottom: 4 },
   date: { fontSize: 13, color: "#94A3B8" },
+  actionButton: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 10,
+    borderRadius: 40,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  actionButtonText: {
+    color: "#FFF",
+    fontWeight: "600",
+    fontSize: 14,
+  },
   emptyContainer: { alignItems: "center", paddingVertical: 60 },
   emptyIcon: { fontSize: 48, marginBottom: 16, opacity: 0.6 },
   emptyTitle: { fontSize: 18, fontWeight: "600", color: "#1E293B", marginBottom: 6 },
@@ -327,7 +401,6 @@ const styles = StyleSheet.create({
   skeletonCard: { backgroundColor: "#FFF", borderRadius: 24, padding: 18, marginBottom: 4 },
   skeletonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E2E8F0", marginBottom: 12 },
   skeletonLine: { height: 14, backgroundColor: "#E2E8F0", borderRadius: 8, marginVertical: 6, width: "80%" },
-  // Modal styles
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
   modalContainer: { backgroundColor: "#FFF", borderRadius: 28, padding: 24, width: "85%", alignItems: "center" },
   modalTitle: { fontSize: 20, fontWeight: "700", color: "#0F172A", marginBottom: 8 },

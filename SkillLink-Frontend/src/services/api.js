@@ -14,11 +14,12 @@ const api = axios.create({
 });
 
 // ================================
-// REQUEST INTERCEPTOR (Attach Token)
+// REQUEST INTERCEPTOR (Attach Token + Debug)
 // ================================
 api.interceptors.request.use(
   async (config) => {
     const token = await AsyncStorage.getItem("userToken");
+    console.log("🔑 [API] Token being sent to", config.url, ":", token ? `${token.slice(0,20)}...` : "NO TOKEN");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -136,20 +137,18 @@ export const getUserPosts = async (userId) => {
 };
 
 // ================================
-// ================================
-// GET CURRENT USER (using token)
+// USER
 // ================================
 export const getCurrentUser = async () => {
   try {
-    const res = await api.get("/users/me");  // expects backend endpoint
+    const res = await api.get("/users/me");
     return { success: true, user: res.data };
   } catch (error) {
     console.log("Get current user error:", error.response?.data || error.message);
     return { success: false, message: "Failed to fetch user" };
   }
 };
-// USER PROFILE
-// ================================
+
 export const getUserProfile = async (userId) => {
   try {
     const res = await api.get(`/users/${userId}`);
@@ -172,23 +171,42 @@ export const updateUserProfile = async (userId, payload) => {
   }
 };
 
-// services/api.js
-
-// Get all bookings (from your backend)
+// ================================
+// BOOKINGS
+// ================================
 export const getMyBookings = async () => {
   try {
     const response = await api.get('/bookings');
-    // Your backend returns { success: true, data: [...] }
-    return response.data; // now contains { success, data }
+    return response.data; // { success, data }
   } catch (error) {
     console.log('Get bookings error:', error);
     throw error;
   }
 };
 
-// Get wallet balance
+export const markBookingCompleted = async (bookingId) => {
+  try {
+    const response = await api.put(`/bookings/${bookingId}/complete`);
+    return response.data;
+  } catch (error) {
+    console.log('Mark completed error:', error);
+    throw error;
+  }
+};
 
-// Get wallet balance – manually attach token
+export const confirmBookingCompletion = async (bookingId) => {
+  try {
+    const response = await api.put(`/bookings/${bookingId}/confirm`);
+    return response.data;
+  } catch (error) {
+    console.log('Confirm completion error:', error);
+    throw error;
+  }
+};
+
+// ================================
+// WALLET
+// ================================
 export const getWalletBalance = async () => {
   try {
     const token = await AsyncStorage.getItem("userToken");
@@ -204,7 +222,6 @@ export const getWalletBalance = async () => {
   }
 };
 
-// Request withdrawal – manually attach token
 export const requestWithdrawal = async (amount) => {
   try {
     const token = await AsyncStorage.getItem("userToken");
@@ -220,16 +237,7 @@ export const requestWithdrawal = async (amount) => {
   }
 };
 
-api.interceptors.request.use(
-  async (config) => {
-    const token = await AsyncStorage.getItem("userToken");
-    console.log("🔑 [API] Token being sent to", config.url, ":", token ? `${token.slice(0,20)}...` : "NO TOKEN");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 // ================================
-export  {api} ;
+// EXPORT API INSTANCE (if needed)
+// ================================
+export { api };

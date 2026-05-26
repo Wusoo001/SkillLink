@@ -106,28 +106,46 @@ const holdPayment = async (req, res) => {
 };
 
 /**
- * RELEASE PAYMENT
+ * RELEASE PAYMENT (modified to use helper and check client confirmation)
  */
 const releasePayment = async (req, res) => {
   try {
-    const { id } = req.params; // ✅ from URL now
+    const { id } = req.params;
+    const booking = await Booking.findById(id);
 
-    const updated = await escrowService.releaseFunds(id);
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
 
+    if (booking.status !== "ready_for_release") {
+      return res.status(400).json({
+        success: false,
+        message: "Booking not ready for release (client must confirm first)",
+      });
+    }
+
+    const updated = await releaseFundsToProvider(id);
     res.json({
       success: true,
-      message: "Funds released",
+      message: "Funds released to provider's wallet",
       data: updated,
     });
   } catch (error) {
     console.error("Release error:", error.message);
-
     res.status(400).json({
       success: false,
       message: error.message,
     });
   }
 };
+
+/**
+ * MARK BOOKING AS COMPLETED (PROVIDER SIDE)
+ * Now sets status to "completed" (waiting for client confirmation)
+ */
 const markBookingCompleted = async (req, res) => {
   try {
     const { id } = req.params;
@@ -141,21 +159,20 @@ const markBookingCompleted = async (req, res) => {
       });
     }
 
-    // only escrowed bookings can be completed
+    // only escrowed bookings can be marked as completed
     if (booking.status !== "paid_in_escrow") {
       return res.status(400).json({
         success: false,
-        message: "Booking is not in escrow",
+        message: "Only bookings with funds in escrow can be marked as completed",
       });
     }
 
     booking.status = "completed";
-
     await booking.save();
 
     res.json({
       success: true,
-      message: "Booking marked as completed",
+      message: "Job marked as completed. Waiting for client confirmation.",
       data: booking,
     });
   } catch (error) {
@@ -166,6 +183,83 @@ const markBookingCompleted = async (req, res) => {
   }
 };
 
+/**
+ * CLIENT CONFIRMS COMPLETION → TRIGGER FUND RELEASE
+ */
+const clientConfirmCompletion = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const booking = await Booking.findById(id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    // Only allow if provider has marked as completed
+    if (booking.status !== "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Job not yet marked as completed by provider",
+      });
+    }
+
+    // Update status and trigger release
+    booking.status = "ready_for_release";
+    await booking.save();
+
+    // Now release funds (credits provider wallet)
+    const releasedBooking = await releaseFundsToProvider(booking._id);
+
+    return res.json({
+      success: true,
+      message: "Job confirmed, funds released to provider's wallet",
+      data: releasedBooking,
+    });
+  } catch (error) {
+    console.error("Confirmation error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * INTERNAL HELPER: Release funds and credit provider's wallet
+ * (used by releasePayment and clientConfirmCompletion)
+ */
+const releaseFundsToProvider = async (bookingId) => {
+  const booking = await Booking.findById(bookingId);
+  if (!booking) throw new Error("Booking not found");
+
+  if (booking.status !== "ready_for_release") {
+    throw new Error("Booking not ready for release");
+  }
+
+  // Credit provider's wallet using your walletService
+  await walletService.creditWallet(
+    booking.provider,
+    booking.price,
+    booking._id,
+    booking.payment?.reference || "no_reference"
+  );
+
+  // Update booking status
+  booking.status = "released";
+  if (booking.payment) {
+    booking.payment.escrowStatus = "released";
+  }
+  await booking.save();
+
+  return booking;
+};
+
+/**
+ * WITHDRAW FUNDS (unchanged)
+ */
 const withdrawFunds = async (req, res) => {
   try {
     const { providerId, amount } = req.body;
@@ -183,7 +277,6 @@ const withdrawFunds = async (req, res) => {
     });
   } catch (error) {
     console.error("Withdrawal error:", error.message);
-
     res.status(400).json({
       success: false,
       message: error.message,
@@ -191,6 +284,9 @@ const withdrawFunds = async (req, res) => {
   }
 };
 
+/**
+ * VERIFY PAYMENT STATUS (unchanged)
+ */
 const verifyPaymentStatus = async (req, res) => {
   try {
     const { reference } = req.params;
@@ -240,7 +336,6 @@ const verifyPaymentStatus = async (req, res) => {
       message: "Payment verified and escrow funded",
       data: booking,
     });
-
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -253,10 +348,10 @@ module.exports = {
   createBooking,
   getBookings,
   verifyPaymentStatus,
-  initializePayment, // 🔥 newly added
+  initializePayment,
   holdPayment,
   releasePayment,
   markBookingCompleted,
   withdrawFunds,
-  
+  clientConfirmCompletion,   // ✅ new endpoint
 };
