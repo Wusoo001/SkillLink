@@ -4,46 +4,56 @@ const User = require("../models/User");
 const protect = require("../middleware/authMiddleware");
 
 const router = express.Router();
-
-
+const jwt = require("jsonwebtoken"); 
 
 /*
 ========================================
 CREATE POST
 ========================================
 */
-
-router.post("/", protect, async (req, res) => {
-
+router.post("/", async (req, res) => {
   try {
+    console.log("📦 POST /posts body:", req.body); 
+    // 1. Get token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "No token provided" });
+    }
+    const token = authHeader.split(" ")[1];
 
-    const { skill, description, tags, location, media, mediaType } = req.body;
+    // 2. Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id || decoded.userId;
+    if (!userId) throw new Error("Invalid token payload");
 
-    const user = await User.findById(req.user.id);
+    // 3. Get user
+    const user = await User.findById(userId);
+    if (!user) return res.status(401).json({ message: "User not found" });
 
+    // 4. Create post (ignore extra fields like 'price')
+    const { skill, description, tags, location, media, price, mediaType } = req.body;
     const post = new Post({
       user: user._id,
       name: user.name,
       skill,
       description,
-      tags,
-      location,
-      media,
-      mediaType
+      price: Number(price),
+      tags: tags || [],
+      location: location || "",
+      media: media || null,
+      mediaType: mediaType || "image"
     });
 
     await post.save();
-
     res.json(post);
-
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ POST /posts error:", error);
+    if (error.name === "JsonWebTokenError" || error.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+    res.status(500).json({ message: error.message || "Server error" });
   }
-
 });
-
-
 
 /*
 ========================================

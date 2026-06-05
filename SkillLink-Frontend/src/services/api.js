@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
-const API_BASE = "http://192.168.1.38:5000/api";
+const API_BASE = "http://192.168.1.22:5000/api";
 
 // ================================
 // AXIOS INSTANCE
@@ -101,10 +101,7 @@ export const createPost = async (postData) => {
     const res = await api.post("/posts", postData);
     return { success: true, ...res.data };
   } catch (error) {
-    return {
-      success: false,
-      message: error.response?.data?.message || "Create post failed",
-    };
+    return { success: false, message: error.response?.data?.message || "Create post failed" };
   }
 };
 

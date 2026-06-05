@@ -1,9 +1,10 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { AuthContext, AuthProvider } from "./context/AuthContext";
 import { ActivityIndicator, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import Landing from "./src/screens/LandingScreen";
 import Register from "./src/screens/Register";
@@ -16,10 +17,7 @@ import CreatePostScreen from "./src/screens/CreatePostScreen";
 import { PostProvider } from "./context/PostContext";
 import PaymentScreen from "./src/screens/PaymentScreen";
 import PaymentReturnHandler from "./src/screens/PaymentReturnHandler";
-import PaymentDashboard from "./src/screens/Dashboard";
 import Dashboard from "./src/screens/Dashboard";
-
-
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -37,7 +35,6 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="MyProfile" component={UserProfileScreen} />
       <Tab.Screen name="Dashboard" component={Dashboard} />
-      
     </Tab.Navigator>
   );
 }
@@ -60,11 +57,11 @@ function AppStack() {
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="CreatePostScreen" component={CreatePostScreen} options={{ title: "New Post" }} />
       <Stack.Screen name="UsersProfile" component={UserProfileScreen} />
-      <Stack.Screen name="EditProfile" component={EditProfileScreen}/>
-      <Stack.Screen name="BookingScreen" component={BookingScreen}/>
-      <Stack.Screen name="PaymentScreen" component={PaymentScreen}/>
-       <Stack.Screen name="PaymentReturnHandler" component={PaymentReturnHandler}/>
-       <Stack.Screen name="PaymentDashboard" component={PaymentDashboard}/>
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="BookingScreen" component={BookingScreen} />
+      <Stack.Screen name="PaymentScreen" component={PaymentScreen} />
+      <Stack.Screen name="PaymentReturnHandler" component={PaymentReturnHandler} />
+      <Stack.Screen name="PaymentDashboard" component={Dashboard} />
     </Stack.Navigator>
   );
 }
@@ -72,7 +69,27 @@ function AppStack() {
 // Root navigator: decides whether to show Auth or App
 function RootNavigator() {
   const { userToken, loading } = useContext(AuthContext);
-  if (loading) {
+  const [isReady, setIsReady] = useState(false);
+  const [initialState, setInitialState] = useState();
+
+  // Restore navigation state on mount
+  useEffect(() => {
+    const restoreNavigationState = async () => {
+      try {
+        const savedStateString = await AsyncStorage.getItem("NAVIGATION_STATE");
+        if (savedStateString) {
+          setInitialState(JSON.parse(savedStateString));
+        }
+      } catch (e) {
+        // ignore parsing errors
+      } finally {
+        setIsReady(true);
+      }
+    };
+    restoreNavigationState();
+  }, []);
+
+  if (loading || !isReady) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" color="#0A66FF" />
@@ -81,7 +98,14 @@ function RootNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      initialState={initialState}
+      onStateChange={(state) => {
+        if (state) {
+          AsyncStorage.setItem("NAVIGATION_STATE", JSON.stringify(state));
+        }
+      }}
+    >
       {userToken ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
   );
@@ -95,6 +119,5 @@ export default function App() {
         <RootNavigator />
       </AuthProvider>
     </PostProvider>
-    
   );
 }
