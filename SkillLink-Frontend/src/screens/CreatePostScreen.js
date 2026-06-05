@@ -31,19 +31,16 @@ export default function CreatePostScreen({ navigation }) {
 
   const [skill, setSkill] = useState("");
   const [description, setDescription] = useState("");
+  const [price, setPrice] = useState("");           // ✅ new state
   const [tags, setTags] = useState("");
   const [location, setLocation] = useState("");
   const [mediaBase64, setMediaBase64] = useState(null);
   const [mediaType, setMediaType] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  // Animation for buttons
   const postScale = useRef(new Animated.Value(1)).current;
   const pickScale = useRef(new Animated.Value(1)).current;
 
-  // ==============================
-  // PICK MEDIA (unchanged logic)
-  // ==============================
   const pickMedia = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
@@ -51,7 +48,6 @@ export default function CreatePostScreen({ navigation }) {
       quality: 0.7,
       base64: true,
     });
-
     if (!result.canceled) {
       const asset = result.assets[0];
       const type = asset.type;
@@ -74,39 +70,31 @@ export default function CreatePostScreen({ navigation }) {
     setMediaType(null);
   };
 
-  // ==============================
-  // UPLOAD TO CLOUDINARY (unchanged)
-  // ==============================
   const uploadMedia = async (base64Data, type) => {
     const formData = new FormData();
     formData.append("file", base64Data);
     formData.append("upload_preset", UPLOAD_PRESET);
     formData.append("cloud_name", CLOUD_NAME);
-
     const endpoint = type === "video"
       ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`
       : `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
-
-    console.log("Uploading to:", endpoint);
     const res = await fetch(endpoint, {
       method: "POST",
       body: formData,
       headers: { "Accept": "application/json" },
     });
     const data = await res.json();
-    console.log("Cloudinary response:", data);
-    if (!data.secure_url) {
-      throw new Error(data.error?.message || "Upload failed");
-    }
+    if (!data.secure_url) throw new Error(data.error?.message || "Upload failed");
     return data.secure_url;
   };
 
-  // ==============================
-  // CREATE POST (unchanged)
-  // ==============================
   const handlePost = async () => {
     if (!skill || !description) {
       return Alert.alert("Error", "Skill and description are required");
+    }
+    const priceNum = parseFloat(price);
+    if (!price || isNaN(priceNum) || priceNum <= 0) {
+      return Alert.alert("Error", "Please enter a valid service fee (greater than 0)");
     }
 
     setUploading(true);
@@ -117,37 +105,27 @@ export default function CreatePostScreen({ navigation }) {
         mediaUrl = await uploadMedia(mediaBase64, mediaType);
       }
 
-      const tempPost = {
-        _id: Math.random().toString(),
+      const postData = {
         skill,
         description,
+        price: priceNum,
         tags: tags.split(",").filter(t => t.trim()),
         location,
         media: mediaUrl,
         mediaType,
+      };
+
+      const tempPost = {
+        _id: Math.random().toString(),
+        ...postData,
         user: { _id: "me", name: "You" },
       };
       addNewPost(tempPost);
 
-      const response = await createPost(
-        {
-          skill,
-          description,
-          tags: tags.split(",").filter(t => t.trim()),
-          location,
-          media: mediaUrl,
-          mediaType,
-        },
-        userToken
-      );
-
+      const response = await createPost(postData, userToken);
       if (response.success) {
         Alert.alert("Success", "Post created!");
-        if (navigation.canGoBack()) {
-          navigation.goBack();
-        } else {
-          navigation.navigate("Home");
-        }
+        navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Home");
       } else {
         Alert.alert("Error", response.message || "Failed to create post");
       }
@@ -168,78 +146,44 @@ export default function CreatePostScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardView}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={styles.container}>
-            {/* Header */}
             <View style={styles.header}>
-              <TouchableOpacity
-                onPress={() => navigation.goBack()}
-                style={styles.backButton}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} activeOpacity={0.7}>
                 <Ionicons name="arrow-back" size={24} color="#0F172A" />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Create New Service</Text>
               <View style={styles.placeholder} />
             </View>
 
-            {/* Form Card */}
             <View style={styles.card}>
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Skill *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={skill}
-                  onChangeText={setSkill}
-                  placeholder="e.g., Plumbing, Electrical, Carpentry"
-                  placeholderTextColor="#94A3B8"
-                />
+                <TextInput style={styles.input} value={skill} onChangeText={setSkill} placeholder="e.g., Plumbing, Electrical, Carpentry" placeholderTextColor="#94A3B8" />
               </View>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Description *</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder="Describe your service..."
-                  placeholderTextColor="#94A3B8"
-                  multiline
-                  numberOfLines={4}
-                />
+                <TextInput style={[styles.input, styles.textArea]} value={description} onChangeText={setDescription} placeholder="Describe your service..." placeholderTextColor="#94A3B8" multiline numberOfLines={4} />
+              </View>
+
+              {/* ✅ Service Fee (Price) */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Service Fee (₦) *</Text>
+                <TextInput style={styles.input} value={price} onChangeText={setPrice} placeholder="e.g., 5000" placeholderTextColor="#94A3B8" keyboardType="numeric" />
               </View>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Tags (comma separated)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={tags}
-                  onChangeText={setTags}
-                  placeholder="e.g., fast, affordable, expert"
-                  placeholderTextColor="#94A3B8"
-                />
+                <TextInput style={styles.input} value={tags} onChangeText={setTags} placeholder="e.g., fast, affordable, expert" placeholderTextColor="#94A3B8" />
               </View>
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Location</Text>
-                <TextInput
-                  style={styles.input}
-                  value={location}
-                  onChangeText={setLocation}
-                  placeholder="City or area"
-                  placeholderTextColor="#94A3B8"
-                />
+                <TextInput style={styles.input} value={location} onChangeText={setLocation} placeholder="City or area" placeholderTextColor="#94A3B8" />
               </View>
 
-              {/* Media Preview */}
               {mediaBase64 && (
                 <View style={styles.mediaPreviewContainer}>
                   {mediaType === "image" ? (
@@ -250,41 +194,22 @@ export default function CreatePostScreen({ navigation }) {
                       <Text style={styles.videoText}>Video selected</Text>
                     </View>
                   )}
-                  <TouchableOpacity
-                    style={styles.removeMediaButton}
-                    onPress={removeMedia}
-                    activeOpacity={0.7}
-                  >
+                  <TouchableOpacity style={styles.removeMediaButton} onPress={removeMedia} activeOpacity={0.7}>
                     <Ionicons name="close-circle" size={24} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
               )}
 
-              {/* Pick Media Button */}
               <Animated.View style={{ transform: [{ scale: pickScale }] }}>
-                <TouchableOpacity
-                  style={styles.pickButton}
-                  onPress={pickMedia}
-                  onPressIn={() => animatePressIn(pickScale)}
-                  onPressOut={() => animatePressOut(pickScale)}
-                  activeOpacity={0.9}
-                >
+                <TouchableOpacity style={styles.pickButton} onPress={pickMedia} onPressIn={() => animatePressIn(pickScale)} onPressOut={() => animatePressOut(pickScale)} activeOpacity={0.9}>
                   <Ionicons name="cloud-upload-outline" size={20} color="#2563EB" />
                   <Text style={styles.pickButtonText}>Pick Image or Video</Text>
                 </TouchableOpacity>
               </Animated.View>
             </View>
 
-            {/* Post Button */}
             <Animated.View style={{ transform: [{ scale: postScale }] }}>
-              <TouchableOpacity
-                style={[styles.postButton, uploading && styles.postButtonDisabled]}
-                onPress={handlePost}
-                onPressIn={() => animatePressIn(postScale)}
-                onPressOut={() => animatePressOut(postScale)}
-                disabled={uploading}
-                activeOpacity={0.9}
-              >
+              <TouchableOpacity style={[styles.postButton, uploading && styles.postButtonDisabled]} onPress={handlePost} onPressIn={() => animatePressIn(postScale)} onPressOut={() => animatePressOut(postScale)} disabled={uploading} activeOpacity={0.9}>
                 {uploading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
@@ -301,7 +226,6 @@ export default function CreatePostScreen({ navigation }) {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
