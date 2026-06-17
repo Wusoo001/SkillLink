@@ -13,15 +13,16 @@ import {
 } from "react-native";
 import { api } from "../services/api";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../context/ThemeContext";
 
 export default function PaymentScreen({ route, navigation }) {
+  const { colors } = useTheme();
   const { bookingId, amount, serviceTitle } = route.params;
 
   const [loading, setLoading] = useState(false);
   const [reference, setReference] = useState(null);
   const [paymentUrl, setPaymentUrl] = useState(null);
   const [step, setStep] = useState("idle");
-  // idle → initialized → pending_verification → completed
 
   // Button animations
   const primaryScale = useRef(new Animated.Value(1)).current;
@@ -105,53 +106,71 @@ export default function PaymentScreen({ route, navigation }) {
   // Loading state
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.loadingText}>Processing transaction...</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textTertiary }]}>Processing transaction...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
-              style={styles.backButton}
+              style={[
+                styles.backButton,
+                {
+                  backgroundColor: colors.card,
+                  shadowColor: colors.shadowColor,
+                  shadowOpacity: colors.shadowOpacity,
+                },
+              ]}
               onPress={() => navigation.goBack()}
               activeOpacity={0.7}
             >
-              <Ionicons name="arrow-back" size={24} color="#0F172A" />
+              <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
-            <Text style={styles.title}>Secure Checkout</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Secure Checkout</Text>
             <View style={styles.placeholder} />
           </View>
 
           {/* Payment Details Card */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="receipt-outline" size={22} color="#2563EB" />
-              <Text style={styles.cardTitle}>Payment Summary</Text>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                shadowColor: colors.shadowColor,
+                shadowOpacity: colors.shadowOpacity,
+              },
+            ]}
+          >
+            <View style={[styles.cardHeader, { borderBottomColor: colors.cardBorder }]}>
+              <Ionicons name="receipt-outline" size={22} color={colors.primary} />
+              <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Payment Summary</Text>
             </View>
 
             <View style={styles.detailRow}>
-              <Text style={styles.label}>Service</Text>
-              <Text style={styles.value}>{serviceTitle}</Text>
+              <Text style={[styles.label, { color: colors.textTertiary }]}>Service</Text>
+              <Text style={[styles.value, { color: colors.textPrimary }]}>{serviceTitle}</Text>
             </View>
 
             <View style={styles.detailRow}>
-              <Text style={styles.label}>Amount</Text>
-              <Text style={styles.amountValue}>₦{amount?.toLocaleString()}</Text>
+              <Text style={[styles.label, { color: colors.textTertiary }]}>Amount</Text>
+              <Text style={[styles.amountValue, { color: colors.primary }]}>₦{amount?.toLocaleString()}</Text>
             </View>
 
             {reference && (
               <View style={styles.detailRow}>
-                <Text style={styles.label}>Reference</Text>
-                <Text style={styles.monoText}>{reference}</Text>
+                <Text style={[styles.label, { color: colors.textTertiary }]}>Reference</Text>
+                <Text style={[styles.monoText, { color: colors.textTertiary, backgroundColor: colors.inputBackground }]}>
+                  {reference}
+                </Text>
               </View>
             )}
           </View>
@@ -160,14 +179,21 @@ export default function PaymentScreen({ route, navigation }) {
           {step === "idle" && (
             <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[
+                  styles.primaryBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOpacity: 0.2,
+                  },
+                ]}
                 onPress={initializePayment}
                 onPressIn={() => animatePressIn(primaryScale)}
                 onPressOut={() => animatePressOut(primaryScale)}
                 activeOpacity={0.9}
               >
-                <Ionicons name="lock-closed-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.primaryText}>Proceed to Paystack</Text>
+                <Ionicons name="lock-closed-outline" size={20} color={colors.textInverse} />
+                <Text style={[styles.primaryText, { color: colors.textInverse }]}>Proceed to Paystack</Text>
               </TouchableOpacity>
             </Animated.View>
           )}
@@ -175,35 +201,41 @@ export default function PaymentScreen({ route, navigation }) {
           {step === "initialized" && (
             <Animated.View style={{ transform: [{ scale: secondaryScale }] }}>
               <TouchableOpacity
-                style={styles.secondaryBtn}
+                style={[
+                  styles.secondaryBtn,
+                  {
+                    backgroundColor: colors.gray,
+                    borderColor: colors.inputBorder,
+                  },
+                ]}
                 onPress={verifyPayment}
                 onPressIn={() => animatePressIn(secondaryScale)}
                 onPressOut={() => animatePressOut(secondaryScale)}
                 activeOpacity={0.9}
               >
-                <Ionicons name="refresh-outline" size={20} color="#475569" />
-                <Text style={styles.secondaryText}>Check Payment Status</Text>
+                <Ionicons name="refresh-outline" size={20} color={colors.textPrimary} />
+                <Text style={[styles.secondaryText, { color: colors.textPrimary }]}>Check Payment Status</Text>
               </TouchableOpacity>
             </Animated.View>
           )}
 
           {step === "pending_verification" && (
-            <View style={styles.statusBox}>
-              <ActivityIndicator size="small" color="#F59E0B" />
-              <Text style={styles.statusText}>Verifying payment on gateway...</Text>
+            <View style={[styles.statusBox, { backgroundColor: colors.warning + "20" }]}>
+              <ActivityIndicator size="small" color={colors.warning} />
+              <Text style={[styles.statusText, { color: colors.warning }]}>Verifying payment on gateway...</Text>
             </View>
           )}
 
           {step === "completed" && (
-            <View style={styles.successBox}>
-              <Ionicons name="checkmark-circle" size={32} color="#10B981" />
-              <Text style={styles.successText}>Payment completed successfully</Text>
+            <View style={[styles.successBox, { backgroundColor: colors.success + "20" }]}>
+              <Ionicons name="checkmark-circle" size={32} color={colors.success} />
+              <Text style={[styles.successText, { color: colors.success }]}>Payment completed successfully</Text>
             </View>
           )}
 
-          {/* Back Button (always visible) */}
+          {/* Cancel Button */}
           <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={[styles.cancelText, { color: colors.textTertiary }]}>Cancel</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -212,29 +244,16 @@ export default function PaymentScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
+  safeArea: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
   container: {
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 30,
   },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#64748B",
-  },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 12, fontSize: 16 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -245,32 +264,19 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#0F172A",
-    letterSpacing: -0.3,
-  },
-  placeholder: {
-    width: 40,
-  },
+  title: { fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
+  placeholder: { width: 40 },
   card: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 28,
     padding: 20,
     marginBottom: 24,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
     shadowRadius: 16,
     elevation: 4,
   },
@@ -281,37 +287,15 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F2F5",
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  detailRow: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "500",
-    marginBottom: 4,
-  },
-  value: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1E293B",
-  },
-  amountValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#2563EB",
-  },
+  cardTitle: { fontSize: 18, fontWeight: "700" },
+  detailRow: { marginBottom: 14 },
+  label: { fontSize: 13, fontWeight: "500", marginBottom: 4 },
+  value: { fontSize: 16, fontWeight: "600" },
+  amountValue: { fontSize: 22, fontWeight: "800" },
   monoText: {
     fontSize: 13,
     fontFamily: "monospace",
-    color: "#475569",
-    backgroundColor: "#F1F5F9",
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 8,
@@ -319,28 +303,19 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     flexDirection: "row",
-    backgroundColor: "#2563EB",
     paddingVertical: 16,
     borderRadius: 48,
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
     marginBottom: 16,
-    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 5,
   },
-  primaryText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 17,
-    letterSpacing: 0.3,
-  },
+  primaryText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
   secondaryBtn: {
     flexDirection: "row",
-    backgroundColor: "#F1F5F9",
     paddingVertical: 16,
     borderRadius: 48,
     alignItems: "center",
@@ -348,50 +323,28 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
   },
-  secondaryText: {
-    color: "#475569",
-    fontWeight: "600",
-    fontSize: 16,
-  },
+  secondaryText: { fontWeight: "600", fontSize: 16 },
   statusBox: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    backgroundColor: "#FEF3C7",
     paddingVertical: 16,
     borderRadius: 16,
     marginBottom: 16,
   },
-  statusText: {
-    fontSize: 15,
-    color: "#D97706",
-    fontWeight: "500",
-  },
+  statusText: { fontSize: 15, fontWeight: "500" },
   successBox: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    backgroundColor: "#F0FDF4",
     paddingVertical: 16,
     borderRadius: 16,
     marginBottom: 16,
   },
-  successText: {
-    fontSize: 15,
-    color: "#166534",
-    fontWeight: "600",
-  },
-  cancelBtn: {
-    alignItems: "center",
-    paddingVertical: 12,
-  },
-  cancelText: {
-    color: "#64748B",
-    fontWeight: "600",
-    fontSize: 15,
-  },
+  successText: { fontSize: 15, fontWeight: "600" },
+  cancelBtn: { alignItems: "center", paddingVertical: 12 },
+  cancelText: { fontWeight: "600", fontSize: 15 },
 });

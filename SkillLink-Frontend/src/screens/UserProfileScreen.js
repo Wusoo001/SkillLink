@@ -18,11 +18,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
 import { getPosts, api } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
 
 // ==============================
-// PostItem Component (unchanged)
+// PostItem Component (with theme)
 // ==============================
-const PostItem = ({ item, userId }) => {
+const PostItem = ({ item, userId, colors }) => {
   const navigation = useNavigation();
   const bookScale = useRef(new Animated.Value(1)).current;
 
@@ -34,8 +35,8 @@ const PostItem = ({ item, userId }) => {
   };
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.description}>{item.description}</Text>
+    <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+      <Text style={[styles.description, { color: colors.textSecondary }]}>{item.description}</Text>
       {item.media && item.mediaType === "image" && (
         <Image source={{ uri: item.media }} style={styles.mediaImage} />
       )}
@@ -49,14 +50,14 @@ const PostItem = ({ item, userId }) => {
       )}
       <View style={styles.tagContainer}>
         {item.tags?.map((tag, idx) => (
-          <View key={idx} style={styles.tag}>
-            <Text style={styles.tagText}>#{tag}</Text>
+          <View key={idx} style={[styles.tag, { backgroundColor: colors.primaryLight }]}>
+            <Text style={[styles.tagText, { color: colors.primary }]}>#{tag}</Text>
           </View>
         ))}
       </View>
       <Animated.View style={{ transform: [{ scale: bookScale }] }}>
         <TouchableOpacity
-          style={styles.bookButton}
+          style={[styles.bookButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
           onPress={() =>
             navigation.navigate("BookingScreen", {
               providerId: userId,
@@ -68,7 +69,7 @@ const PostItem = ({ item, userId }) => {
           onPressOut={handlePressOut}
           activeOpacity={0.9}
         >
-          <Text style={styles.bookButtonText}>Book This Service</Text>
+          <Text style={[styles.bookButtonText, { color: colors.textInverse }]}>Book This Service</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -83,6 +84,7 @@ export default function UserProfileScreen() {
   const route = useRoute();
 
   const { user, loading: authLoading } = useContext(AuthContext);
+  const { colors } = useTheme(); // we don't need toggle here, but we can use colors
   const { userId: routeUserId } = route.params || {};
   const resolvedUserId = routeUserId || user?._id;
 
@@ -134,9 +136,9 @@ export default function UserProfileScreen() {
 
   if (loading || authLoading || !resolvedUserId) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#2563EB" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -144,27 +146,27 @@ export default function UserProfileScreen() {
 
   // Header component that will be rendered above the list
   const ProfileHeader = () => (
-    <View style={styles.header}>
+    <View style={[styles.header, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
       {userInfo?.profileImage ? (
-        <Image source={{ uri: userInfo.profileImage }} style={styles.avatarImage} />
+        <Image source={{ uri: userInfo.profileImage }} style={[styles.avatarImage, { borderColor: colors.card }]} />
       ) : (
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{userInfo?.name?.charAt(0) || "U"}</Text>
+        <View style={[styles.avatar, { backgroundColor: colors.primary, borderColor: colors.card }]}>
+          <Text style={[styles.avatarText, { color: colors.textInverse }]}>{userInfo?.name?.charAt(0) || "U"}</Text>
         </View>
       )}
-      <Text style={styles.name}>{userInfo?.name || "User"}</Text>
-      <Text style={styles.skill}>{userInfo?.bio || "No description provided"}</Text>
-      <View style={styles.ratingContainer}>
-        <Text style={styles.ratingText}>⭐ {userInfo?.rating || 0}</Text>
-        <Text style={styles.jobsText}>• {userInfo?.jobsCompleted || 0} jobs completed</Text>
+      <Text style={[styles.name, { color: colors.textPrimary }]}>{userInfo?.name || "User"}</Text>
+      <Text style={[styles.skill, { color: colors.textTertiary }]}>{userInfo?.bio || "No description provided"}</Text>
+      <View style={[styles.ratingContainer, { backgroundColor: colors.inputBackground }]}>
+        <Text style={[styles.ratingText, { color: colors.warning }]}>⭐ {userInfo?.rating || 0}</Text>
+        <Text style={[styles.jobsText, { color: colors.textTertiary }]}>• {userInfo?.jobsCompleted || 0} jobs completed</Text>
       </View>
       {isOwnProfile && (
         <TouchableOpacity
-          style={styles.editButton}
+          style={[styles.editButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
           onPress={() => navigation.navigate("EditProfile", { userInfo })}
           activeOpacity={0.8}
         >
-          <Text style={styles.editButtonText}>Edit Profile</Text>
+          <Text style={[styles.editButtonText, { color: colors.textInverse }]}>Edit Profile</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -172,23 +174,23 @@ export default function UserProfileScreen() {
 
   const SectionHeader = () => (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>Services</Text>
-      <View style={styles.sectionBadge}>
-        <Text style={styles.sectionBadgeText}>{userPosts.length}</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Services</Text>
+      <View style={[styles.sectionBadge, { backgroundColor: colors.inputBackground }]}>
+        <Text style={[styles.sectionBadgeText, { color: colors.textSecondary }]}>{userPosts.length}</Text>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={["top"]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Back button - absolutely positioned */}
         <TouchableOpacity
-          style={styles.backButton}
+          style={[styles.backButton, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}
           onPress={() => navigation.goBack()}
           activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={24} color="#0F172A" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
 
         {/* The FlatList takes all available space */}
@@ -196,7 +198,7 @@ export default function UserProfileScreen() {
           key={resetKey}
           data={userPosts}
           keyExtractor={(item) => item._id}
-          renderItem={({ item }) => <PostItem item={item} userId={resolvedUserId} />}
+          renderItem={({ item }) => <PostItem item={item} userId={resolvedUserId} colors={colors} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
@@ -209,15 +211,15 @@ export default function UserProfileScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#2563EB"
-              colors={["#2563EB"]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>📦</Text>
-              <Text style={styles.emptyTitle}>No services yet</Text>
-              <Text style={styles.emptySubtitle}>
+              <Text style={[styles.emptyIcon, { color: colors.textTertiary }]}>📦</Text>
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No services yet</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
                 {isOwnProfile
                   ? "Create your first service post"
                   : "This user hasn't posted any services"}
@@ -234,10 +236,9 @@ export default function UserProfileScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
   },
   container: {
-    flex: 1, // critical: this View takes full height
+    flex: 1,
   },
   backButton: {
     position: "absolute",
@@ -247,12 +248,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
@@ -266,13 +264,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     paddingVertical: 20,
     paddingHorizontal: 20,
-    backgroundColor: "#FFFFFF",
     borderRadius: 32,
     marginHorizontal: 20,
     marginTop: 12,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
     shadowRadius: 12,
     elevation: 3,
   },
@@ -280,15 +275,11 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: "#4F46E5",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 4,
   },
@@ -298,15 +289,11 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 4,
   },
   avatarText: {
-    color: "#FFF",
     fontSize: 32,
     fontWeight: "bold",
   },
@@ -314,12 +301,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "800",
     letterSpacing: -0.3,
-    color: "#0F172A",
     marginBottom: 4,
   },
   skill: {
     fontSize: 14,
-    color: "#64748B",
     marginTop: 4,
     textAlign: "center",
     paddingHorizontal: 20,
@@ -328,7 +313,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginTop: 8,
-    backgroundColor: "#F1F5F9",
     paddingVertical: 6,
     paddingHorizontal: 14,
     borderRadius: 40,
@@ -337,26 +321,20 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#F59E0B",
   },
   jobsText: {
     fontSize: 14,
-    color: "#475569",
   },
   editButton: {
     marginTop: 16,
-    backgroundColor: "#2563EB",
     paddingVertical: 10,
     paddingHorizontal: 24,
     borderRadius: 40,
-    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 2,
   },
   editButtonText: {
-    color: "#FFF",
     fontWeight: "700",
     fontSize: 15,
   },
@@ -370,11 +348,9 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#0F172A",
     letterSpacing: -0.3,
   },
   sectionBadge: {
-    backgroundColor: "#E2E8F0",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
@@ -382,29 +358,23 @@ const styles = StyleSheet.create({
   sectionBadgeText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#475569",
   },
   listContent: {
     paddingBottom: 40,
     paddingHorizontal: 20,
-    // Ensure content is at least as tall as the screen to enable scrolling
     minHeight: "100%",
   },
   card: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 18,
     marginBottom: 16,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 3,
   },
   description: {
     fontSize: 15,
     lineHeight: 22,
-    color: "#334155",
     marginBottom: 12,
   },
   mediaImage: {
@@ -430,30 +400,24 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tag: {
-    backgroundColor: "#EFF6FF",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
   },
   tagText: {
-    color: "#2563EB",
     fontSize: 12,
     fontWeight: "500",
   },
   bookButton: {
-    backgroundColor: "#2563EB",
     paddingVertical: 12,
     borderRadius: 40,
     alignItems: "center",
     marginTop: 6,
-    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 2,
   },
   bookButtonText: {
-    color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 15,
   },
@@ -470,12 +434,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#1E293B",
     marginBottom: 6,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#64748B",
     textAlign: "center",
   },
 });

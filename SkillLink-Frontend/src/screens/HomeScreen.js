@@ -17,11 +17,15 @@ import { getPosts, searchPosts, savePost } from "../services/api";
 import { PostContext } from "../../context/PostContext";
 import { Image } from "react-native";
 import { Video } from "expo-av";
+import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../context/ThemeContext";
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const { logout, userToken } = useContext(AuthContext);
   const { refreshFlag, newPost, clearNewPost } = useContext(PostContext);
+  const { colors, toggleTheme, theme } = useTheme();
+
   const [hasMore, setHasMore] = useState(true);
 
   const [allPosts, setAllPosts] = useState([]);
@@ -217,17 +221,17 @@ export default function HomeScreen() {
     const animStyle = getCardAnimation(index);
     return (
       <Animated.View style={[styles.cardWrapper, animStyle]}>
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => goToUserProfile(item.user?._id)} activeOpacity={0.7}>
-              <View style={styles.avatarContainer}>
+              <View style={[styles.avatarContainer, { backgroundColor: colors.primary, borderColor: colors.card }]}>
                 {item.user?.profileImage ? (
                   <Image
                     source={{ uri: item.user.profileImage }}
                     style={styles.avatarImage}
                   />
                 ) : (
-                  <Text style={styles.avatarText}>
+                  <Text style={[styles.avatarText, { color: colors.textInverse }]}>
                     {item.user?.name?.charAt(0) || "U"}
                   </Text>
                 )}
@@ -235,16 +239,16 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerInfo}>
-              <Text style={styles.name}>{item.user?.name || "User"}</Text>
-              <Text style={styles.skill}>{item.user?.skill || "Skilled Worker"}</Text>
+              <Text style={[styles.name, { color: colors.textPrimary }]}>{item.user?.name || "User"}</Text>
+              <Text style={[styles.skill, { color: colors.textTertiary }]}>{item.user?.skill || "Skilled Worker"}</Text>
               <View style={styles.ratingContainer}>
-                <Text style={styles.ratingText}>⭐ {item.user?.rating || 0}</Text>
-                <Text style={styles.jobsText}>• {item.user?.jobsCompleted || 0} jobs</Text>
+                <Text style={[styles.ratingText, { color: colors.warning }]}>⭐ {item.user?.rating || 0}</Text>
+                <Text style={[styles.jobsText, { color: colors.textTertiary }]}>• {item.user?.jobsCompleted || 0} jobs</Text>
               </View>
             </View>
           </View>
 
-          <Text style={styles.description}>{item.description}</Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>{item.description}</Text>
           {item.media && item.mediaType === "image" && (
             <Image
               source={{ uri: item.media }}
@@ -262,19 +266,19 @@ export default function HomeScreen() {
 
           <View style={styles.tagContainer}>
             {item.tags?.map((tag, idx) => (
-              <View key={idx} style={styles.tag}>
-                <Text style={styles.tagText}>#{tag}</Text>
+              <View key={idx} style={[styles.tag, { backgroundColor: colors.primaryLight }]}>
+                <Text style={[styles.tagText, { color: colors.primary }]}>#{tag}</Text>
               </View>
             ))}
           </View>
 
           <View style={styles.actionRow}>
             <TouchableOpacity
-              style={styles.saveButton}
+              style={[styles.saveButton, { backgroundColor: colors.gray }]}
               onPress={() => toggleSave(item._id)}
               activeOpacity={0.7}
             >
-              <Text style={styles.saveButtonText}>
+              <Text style={[styles.saveButtonText, { color: colors.textPrimary }]}>
                 {savedPosts.includes(item._id) ? "❤️ Saved" : "🤍 Save"}
               </Text>
             </TouchableOpacity>
@@ -287,11 +291,11 @@ export default function HomeScreen() {
   const renderSkeleton = () => (
     <View style={styles.skeletonContainer}>
       {[1, 2, 3].map((_, idx) => (
-        <View key={idx} style={styles.skeletonCard}>
-          <View style={styles.skeletonAvatar} />
-          <View style={styles.skeletonText} />
-          <View style={styles.skeletonTextShort} />
-          <View style={styles.skeletonMedia} />
+        <View key={idx} style={[styles.skeletonCard, { backgroundColor: colors.card }]}>
+          <View style={[styles.skeletonAvatar, { backgroundColor: colors.inputBackground }]} />
+          <View style={[styles.skeletonText, { backgroundColor: colors.inputBackground }]} />
+          <View style={[styles.skeletonTextShort, { backgroundColor: colors.inputBackground }]} />
+          <View style={[styles.skeletonMedia, { backgroundColor: colors.inputBackground }]} />
         </View>
       ))}
     </View>
@@ -312,28 +316,31 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.topRow}>
-          <Text style={styles.title}>SkillLink</Text>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>SkillLink</Text>
           <View style={styles.topButtons}>
-            <TouchableOpacity style={styles.iconButton} onPress={refreshPosts} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.card }]} onPress={refreshPosts} activeOpacity={0.7}>
               <Text style={styles.iconButtonText}>🔄</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.logoutButton} onPress={logout} activeOpacity={0.7}>
-              <Text style={styles.logoutText}>Logout</Text>
+            <TouchableOpacity style={[styles.logoutButton, { backgroundColor: colors.gray }]} onPress={logout} activeOpacity={0.7}>
+              <Text style={[styles.logoutText, { color: colors.textPrimary }]}>Logout</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.card }]} onPress={toggleTheme} activeOpacity={0.7}>
+              <Ionicons name={theme === 'light' ? 'moon-outline' : 'sunny-outline'} size={22} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.searchWrapper}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Text style={[styles.searchIcon, { color: colors.textTertiary }]}>🔍</Text>
           <TextInput
             placeholder="Search skills, professionals..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={colors.textTertiary}
             value={search}
             onChangeText={handleSearch}
-            style={styles.searchInput}
+            style={[styles.searchInput, { backgroundColor: colors.card, color: colors.textPrimary, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}
           />
         </View>
 
@@ -355,7 +362,8 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   style={[
                     styles.categoryChip,
-                    selectedCategory === item && styles.activeCategory,
+                    { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity },
+                    selectedCategory === item && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => handleCategoryPress(item, index)}
                   activeOpacity={0.8}
@@ -363,7 +371,7 @@ export default function HomeScreen() {
                   <Text
                     style={[
                       styles.categoryText,
-                      selectedCategory === item && styles.activeCategoryText,
+                      { color: selectedCategory === item ? colors.textInverse : colors.textSecondary },
                     ]}
                   >
                     {item}
@@ -389,14 +397,14 @@ export default function HomeScreen() {
             onEndReachedThreshold={0.2}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>🔍</Text>
-                <Text style={styles.emptyTitle}>No results found</Text>
-                <Text style={styles.emptySubtitle}>Try adjusting your search or category</Text>
+                <Text style={[styles.emptyIcon, { color: colors.textTertiary }]}>🔍</Text>
+                <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No results found</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>Try adjusting your search or category</Text>
               </View>
             }
             ListFooterComponent={
               loading && posts.length > 0 ? (
-                <ActivityIndicator size="large" color="#2563EB" style={styles.footerLoader} />
+                <ActivityIndicator size="large" color={colors.primary} style={styles.footerLoader} />
               ) : null
             }
           />
@@ -404,13 +412,13 @@ export default function HomeScreen() {
 
         <Animated.View style={{ transform: [{ scale: fabScale }] }}>
           <TouchableOpacity
-            style={styles.floatingButton}
+            style={[styles.floatingButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
             onPress={() => navigation.navigate("CreatePostScreen")}
             onPressIn={handleFabPressIn}
             onPressOut={handleFabPressOut}
             activeOpacity={1}
           >
-            <Text style={styles.floatingText}>+</Text>
+            <Text style={[styles.floatingText, { color: colors.textInverse }]}>+</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -421,7 +429,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
   },
   container: {
     flex: 1,
@@ -438,7 +445,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.5,
-    color: "#0F172A",
   },
   topButtons: {
     flexDirection: "row",
@@ -448,10 +454,8 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
@@ -464,10 +468,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 40,
-    backgroundColor: "#F1F5F9",
   },
   logoutText: {
-    color: "#475569",
     fontWeight: "600",
     fontSize: 14,
   },
@@ -481,19 +483,14 @@ const styles = StyleSheet.create({
     top: 14,
     zIndex: 1,
     fontSize: 16,
-    color: "#94A3B8",
   },
   searchInput: {
-    backgroundColor: "#FFFFFF",
     paddingVertical: 14,
     paddingLeft: 44,
     paddingRight: 20,
     borderRadius: 32,
     fontSize: 16,
-    color: "#1E293B",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 2,
   },
@@ -505,38 +502,25 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   categoryChip: {
-    backgroundColor: "#FFFFFF",
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 40,
     marginRight: 8,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
-  activeCategory: {
-    backgroundColor: "#2563EB",
-  },
   categoryText: {
     fontWeight: "600",
-    color: "#334155",
     fontSize: 14,
-  },
-  activeCategoryText: {
-    color: "#FFFFFF",
   },
   cardWrapper: {
     marginBottom: 16,
   },
   card: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 18,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 3,
   },
@@ -549,13 +533,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#4F46E5",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
     borderWidth: 2,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -567,7 +548,6 @@ const styles = StyleSheet.create({
     borderRadius: 28,
   },
   avatarText: {
-    color: "#FFFFFF",
     fontWeight: "bold",
     fontSize: 22,
   },
@@ -577,11 +557,9 @@ const styles = StyleSheet.create({
   name: {
     fontWeight: "700",
     fontSize: 17,
-    color: "#0F172A",
     marginBottom: 2,
   },
   skill: {
-    color: "#64748B",
     fontSize: 13,
     marginBottom: 4,
   },
@@ -593,16 +571,13 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#F59E0B",
   },
   jobsText: {
     fontSize: 12,
-    color: "#94A3B8",
   },
   description: {
     fontSize: 15,
     lineHeight: 22,
-    color: "#334155",
     marginBottom: 14,
   },
   media: {
@@ -620,13 +595,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tag: {
-    backgroundColor: "#EFF6FF",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
   },
   tagText: {
-    color: "#2563EB",
     fontSize: 12,
     fontWeight: "500",
   },
@@ -636,14 +609,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   saveButton: {
-    backgroundColor: "#F1F5F9",
     paddingVertical: 8,
     paddingHorizontal: 18,
     borderRadius: 40,
   },
   saveButtonText: {
     fontWeight: "600",
-    color: "#475569",
     fontSize: 14,
   },
   floatingButton: {
@@ -653,17 +624,14 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#2563EB",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
   },
   floatingText: {
-    color: "#FFFFFF",
     fontSize: 28,
     fontWeight: "600",
     lineHeight: 32,
@@ -673,7 +641,6 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   skeletonCard: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 18,
     marginBottom: 16,
@@ -682,26 +649,22 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#E2E8F0",
     marginBottom: 12,
   },
   skeletonText: {
     height: 16,
-    backgroundColor: "#E2E8F0",
     borderRadius: 8,
     marginBottom: 8,
     width: "80%",
   },
   skeletonTextShort: {
     height: 14,
-    backgroundColor: "#E2E8F0",
     borderRadius: 8,
     marginBottom: 12,
     width: "50%",
   },
   skeletonMedia: {
     height: 180,
-    backgroundColor: "#E2E8F0",
     borderRadius: 18,
   },
   emptyContainer: {
@@ -716,12 +679,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#1E293B",
     marginBottom: 6,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#64748B",
   },
   footerLoader: {
     marginVertical: 24,
