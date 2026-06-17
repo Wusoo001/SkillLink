@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AuthContext } from "../../context/AuthContext";
 import { api } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
 
 // Cloudinary Config
 const CLOUD_NAME = "dz2te6uth";
@@ -26,6 +27,7 @@ const UPLOAD_PRESET = "SkillLink";
 export default function EditProfileScreen({ navigation, route }) {
   const { user, updateUser } = useContext(AuthContext);
   const initialUser = route.params?.userInfo || user || null;
+  const { colors } = useTheme();
 
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
@@ -137,96 +139,100 @@ export default function EditProfileScreen({ navigation, route }) {
 
   if (!initialUser?._id) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.loaderText}>Loading user data...</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loaderText, { color: colors.textTertiary }]}>Loading user data...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
               onPress={() => navigation.goBack()}
-              style={styles.backBtn}
+              style={[styles.backBtn, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}
               activeOpacity={0.7}
             >
-              <Ionicons name="arrow-back" size={24} color="#0F172A" />
+              <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
-            <Text style={styles.title}>Edit Profile</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Edit Profile</Text>
             <View style={styles.placeholder} />
           </View>
 
-          {/* Avatar Section - smaller to save space */}
+          {/* Avatar Section */}
           <TouchableOpacity
             onPress={pickImage}
             style={styles.avatarContainer}
             activeOpacity={0.8}
           >
             {profileImage ? (
-              <Image source={{ uri: profileImage }} style={styles.avatar} />
+              <Image source={{ uri: profileImage }} style={[styles.avatar, { borderColor: colors.card }]} />
             ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="camera" size={28} color="#64748B" />
-                <Text style={styles.avatarText}>Add photo</Text>
+              <View style={[styles.avatarPlaceholder, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
+                <Ionicons name="camera" size={28} color={colors.textTertiary} />
+                <Text style={[styles.avatarText, { color: colors.textTertiary }]}>Add photo</Text>
               </View>
             )}
-            <View style={styles.cameraBadge}>
-              <Ionicons name="camera" size={14} color="#FFFFFF" />
+            <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.card }]}>
+              <Ionicons name="camera" size={14} color={colors.textInverse} />
             </View>
           </TouchableOpacity>
 
-          {/* Form Fields - compact but readable */}
+          {/* Form Fields */}
           <View style={styles.formContainer}>
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Full Name</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.inputBorder, color: colors.textPrimary }]}
                 value={name}
                 onChangeText={setName}
                 placeholder="Your name"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={colors.textTertiary}
               />
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>About</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>About</Text>
               <TextInput
-                style={[styles.input, styles.textArea]}
+                style={[styles.input, styles.textArea, { backgroundColor: colors.card, borderColor: colors.inputBorder, color: colors.textPrimary }]}
                 value={about}
                 onChangeText={setAbout}
                 multiline
                 numberOfLines={3}
                 placeholder="Tell something about yourself..."
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={colors.textTertiary}
               />
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Skills (comma separated)</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Skills (comma separated)</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.inputBorder, color: colors.textPrimary }]}
                 value={skills}
                 onChangeText={setSkills}
                 placeholder="e.g., Plumbing, Electrical"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={colors.textTertiary}
               />
             </View>
           </View>
 
-          {/* Save Button - at bottom */}
+          {/* Save Button */}
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <TouchableOpacity
-              style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
+              style={[
+                styles.saveBtn,
+                { backgroundColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.2 },
+                loading && { backgroundColor: colors.gray, shadowOpacity: 0 },
+              ]}
               onPress={updateProfile}
               onPressIn={animatePressIn}
               onPressOut={animatePressOut}
@@ -234,9 +240,9 @@ export default function EditProfileScreen({ navigation, route }) {
               activeOpacity={0.9}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color={colors.textInverse} size="small" />
               ) : (
-                <Text style={styles.saveText}>Save Changes</Text>
+                <Text style={[styles.saveText, { color: colors.textInverse }]}>Save Changes</Text>
               )}
             </TouchableOpacity>
           </Animated.View>
@@ -247,13 +253,8 @@ export default function EditProfileScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  safeArea: { flex: 1 },
+  keyboardView: { flex: 1 },
   container: {
     flex: 1,
     paddingHorizontal: 20,
@@ -269,7 +270,6 @@ const styles = StyleSheet.create({
   loaderText: {
     marginTop: 12,
     fontSize: 16,
-    color: "#64748B",
   },
   header: {
     flexDirection: "row",
@@ -281,24 +281,18 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
   title: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#0F172A",
     letterSpacing: -0.3,
   },
-  placeholder: {
-    width: 40,
-  },
+  placeholder: { width: 40 },
   avatarContainer: {
     alignItems: "center",
     marginBottom: 20,
@@ -309,10 +303,7 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     borderWidth: 3,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
   },
@@ -320,33 +311,26 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
     borderStyle: "dashed",
   },
   avatarText: {
     fontSize: 11,
-    color: "#64748B",
     marginTop: 6,
   },
   cameraBadge: {
     position: "absolute",
     bottom: 2,
     right: 2,
-    backgroundColor: "#2563EB",
     width: 30,
     height: 30,
     borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -361,40 +345,29 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#334155",
     marginBottom: 4,
   },
   input: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 14,
     padding: 12,
     fontSize: 15,
-    color: "#1E293B",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
   },
   textArea: {
     height: 80,
     textAlignVertical: "top",
   },
   saveBtn: {
-    backgroundColor: "#2563EB",
     paddingVertical: 14,
     borderRadius: 48,
     alignItems: "center",
     marginTop: 8,
-    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 5,
   },
-  saveBtnDisabled: {
-    backgroundColor: "#94A3B8",
-    shadowOpacity: 0,
-  },
+  saveBtnDisabled: { shadowOpacity: 0 },
   saveText: {
-    color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 16,
     letterSpacing: 0.3,

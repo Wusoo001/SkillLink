@@ -34,6 +34,15 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    bankDetails: {
+      bankName: { type: String },
+      bankCode: { type: String }, 
+      accountNumber: { type: String }, 
+      accountName: { type: String },
+      verified: { type: Boolean, default: false },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
+    },
 
     savedPosts: [
       {

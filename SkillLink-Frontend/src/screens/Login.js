@@ -13,12 +13,14 @@ import {
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
 import { loginUser } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
 
 export default function Login({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const { login } = useContext(AuthContext);
-  
+  const { colors } = useTheme();
+
   // Purely visual animation – no logic change
   const buttonScale = useRef(new Animated.Value(1)).current;
 
@@ -58,22 +60,39 @@ export default function Login({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
       >
-        <View style={styles.gradientOverlay} />
-        <View style={styles.card}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
+        <View style={[styles.gradientOverlay, { backgroundColor: colors.background }]} />
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.card,
+              shadowColor: colors.shadowColor,
+              shadowOpacity: colors.shadowOpacity,
+            },
+          ]}
+        >
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Welcome Back</Text>
+          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>Sign in to continue</Text>
 
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputIcon}>✉️</Text>
+          <View
+            style={[
+              styles.inputWrapper,
+              {
+                backgroundColor: colors.inputBackground,
+                borderColor: colors.inputBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.inputIcon, { color: colors.textTertiary }]}>✉️</Text>
             <TextInput
               placeholder="Email address"
-              placeholderTextColor="#94A3B8"
-              style={styles.input}
+              placeholderTextColor={colors.textTertiary}
+              style={[styles.input, { color: colors.textPrimary }]}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -81,13 +100,21 @@ export default function Login({ navigation }) {
             />
           </View>
 
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputIcon}>🔒</Text>
+          <View
+            style={[
+              styles.inputWrapper,
+              {
+                backgroundColor: colors.inputBackground,
+                borderColor: colors.inputBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.inputIcon, { color: colors.textTertiary }]}>🔒</Text>
             <TextInput
               placeholder="Password"
               secureTextEntry
-              placeholderTextColor="#94A3B8"
-              style={styles.input}
+              placeholderTextColor={colors.textTertiary}
+              style={[styles.input, { color: colors.textPrimary }]}
               value={password}
               onChangeText={setPassword}
             />
@@ -95,13 +122,20 @@ export default function Login({ navigation }) {
 
           <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
             <TouchableOpacity
-              style={styles.button}
+              style={[
+                styles.button,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOpacity: 0.25,
+                },
+              ]}
               onPress={handleLogin}
               onPressIn={animateButtonIn}
               onPressOut={animateButtonOut}
               activeOpacity={0.9}
             >
-              <Text style={styles.buttonText}>Login</Text>
+              <Text style={[styles.buttonText, { color: colors.textInverse }]}>Login</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -111,10 +145,7 @@ export default function Login({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
+  safeArea: { flex: 1 },
   container: {
     flex: 1,
     justifyContent: "center",
@@ -126,71 +157,45 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "#F8FAFC",
   },
   card: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 32,
     paddingHorizontal: 24,
     paddingVertical: 40,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.08,
     shadowRadius: 24,
     elevation: 10,
   },
   title: {
     fontSize: 32,
     fontWeight: "800",
-    color: "#0F172A",
     letterSpacing: -0.5,
     marginBottom: 8,
     textAlign: "center",
   },
   subtitle: {
     fontSize: 16,
-    color: "#64748B",
     textAlign: "center",
     marginBottom: 32,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F1F5F9",
     borderRadius: 20,
     marginBottom: 18,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
   },
-  inputIcon: {
-    fontSize: 18,
-    marginRight: 12,
-    color: "#64748B",
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 16,
-    fontSize: 16,
-    color: "#1E293B",
-    fontWeight: "500",
-  },
+  inputIcon: { fontSize: 18, marginRight: 12 },
+  input: { flex: 1, paddingVertical: 16, fontSize: 16, fontWeight: "500" },
   button: {
-    backgroundColor: "#2563EB",
     paddingVertical: 16,
     borderRadius: 40,
     alignItems: "center",
     marginTop: 12,
-    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 5,
   },
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 17,
-    letterSpacing: 0.3,
-  },
+  buttonText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
 });

@@ -6,6 +6,7 @@ const webhookRoutes = require("./routes/webhookRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 require("dotenv").config();
 const walletRoutes = require("./routes/walletRoutes");
+const bankRoutes = require("./routes/bankRoutes");
 
 
 const app = express();
@@ -26,6 +27,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/wallet", walletRoutes);
+app.use("/api/bank", bankRoutes);
 
 
 mongoose

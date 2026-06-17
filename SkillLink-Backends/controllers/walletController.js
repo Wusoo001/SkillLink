@@ -22,19 +22,36 @@ const withdraw = async (req, res) => {
     const { amount } = req.body;
     const providerId = req.user._id;
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ success: false, message: "Invalid amount" });
+    // 1. Check bank details
+    const user = await User.findById(providerId);
+    if (!user.bankDetails || !user.bankDetails.verified) {
+      return res.status(400).json({
+        success: false,
+        message: "Please set up your bank account before withdrawing."
+      });
     }
 
-    const wallet = await walletService.debitWallet(providerId, amount, "Provider withdrawal");
+    // 2. Debit wallet (using walletService.debitWallet)
+    const wallet = await walletService.debitWallet(providerId, amount, "Withdrawal to bank");
+
+    // 3. Create recipient on Paystack (if not exists)
+    const recipientCode = await paystack.createRecipient(
+      user.bankDetails.accountName,
+      user.bankDetails.accountNumber,
+      user.bankDetails.bankCode // you need to store bankCode as well
+    );
+
+    // 4. Initiate transfer
+    const transfer = await paystack.initiateTransfer(amount, recipientCode);
 
     res.json({
       success: true,
-      message: "Withdrawal successful",
-      data: wallet,
+      message: "Withdrawal initiated. Funds will be sent to your bank account.",
+      data: transfer,
     });
   } catch (error) {
-    console.error("Withdrawal error:", error.message);
+    console.error("Withdrawal error:", error);
+    // If wallet was debited but transfer fails, you may need to reverse the debit.
     res.status(400).json({ success: false, message: error.message });
   }
 };

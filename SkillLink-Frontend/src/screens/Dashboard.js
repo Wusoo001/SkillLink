@@ -14,23 +14,15 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
+import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../context/ThemeContext"; // ✅ import theme
 import {
   getMyBookings,
   getWalletBalance,
   requestWithdrawal,
-  markBookingCompleted,      // ✅ new
-  confirmBookingCompletion,  // ✅ new
+  markBookingCompleted,
+  confirmBookingCompletion,
 } from "../services/api";
-
-// Status color mapping (supports your backend statuses)
-const STATUS_COLORS = {
-  pending: "#F59E0B",
-  confirmed: "#3B82F6",
-  completed: "#10B981",
-  cancelled: "#EF4444",
-  awaiting_payment: "#F59E0B",
-  paid_in_escrow: "#10B981",
-};
 
 const STATUS_LABELS = {
   pending: "Pending",
@@ -41,19 +33,21 @@ const STATUS_LABELS = {
   paid_in_escrow: "Escrow Funded",
 };
 
-// ------------------ Booking Card Component (with actions) ------------------
-const BookingCard = ({ booking, role, onPress, onStatusChange }) => {
+// ------------------ Booking Card ------------------
+const BookingCard = ({ booking, role, onPress, onStatusChange, colors }) => {
   const isClient = role === "client";
   const otherParty = isClient ? booking.provider : booking.client;
   const otherPartyName = otherParty?.name || "User";
   const [actionLoading, setActionLoading] = useState(false);
+
+  const statusColor = colors.status[booking.status] || "#64748B";
 
   const handleMarkCompleted = async () => {
     setActionLoading(true);
     try {
       await markBookingCompleted(booking._id);
       Alert.alert("Success", "Job marked as completed. Waiting for client confirmation.");
-      onStatusChange(); // refresh list
+      onStatusChange();
     } catch (error) {
       Alert.alert("Error", error.response?.data?.message || "Action failed");
     } finally {
@@ -66,7 +60,7 @@ const BookingCard = ({ booking, role, onPress, onStatusChange }) => {
     try {
       await confirmBookingCompletion(booking._id);
       Alert.alert("Success", "Job confirmed! Funds have been released to the provider.");
-      onStatusChange(); // refresh list
+      onStatusChange();
     } catch (error) {
       Alert.alert("Error", error.response?.data?.message || "Action failed");
     } finally {
@@ -75,43 +69,63 @@ const BookingCard = ({ booking, role, onPress, onStatusChange }) => {
   };
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          shadowColor: colors.shadowColor,
+          shadowOpacity: colors.shadowOpacity,
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
       <View style={styles.cardHeader}>
         <View style={styles.userInfo}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{otherPartyName.charAt(0)}</Text>
+          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+            <Text style={[styles.avatarText, { color: colors.textInverse }]}>
+              {otherPartyName.charAt(0)}
+            </Text>
           </View>
           <View>
-            <Text style={styles.userName}>{otherPartyName}</Text>
-            <Text style={styles.roleLabel}>{isClient ? "Provider" : "Client"}</Text>
+            <Text style={[styles.userName, { color: colors.textPrimary }]}>
+              {otherPartyName}
+            </Text>
+            <Text style={[styles.roleLabel, { color: colors.textTertiary }]}>
+              {isClient ? "Provider" : "Client"}
+            </Text>
           </View>
         </View>
         <View
           style={[
             styles.statusBadge,
-            { backgroundColor: (STATUS_COLORS[booking.status] || "#94A3B8") + "15" },
+            { backgroundColor: statusColor + "15" },
           ]}
         >
-          <Text style={[styles.statusText, { color: STATUS_COLORS[booking.status] || "#64748B" }]}>
+          <Text style={[styles.statusText, { color: statusColor }]}>
             {STATUS_LABELS[booking.status] || booking.status}
           </Text>
         </View>
       </View>
 
-      <Text style={styles.serviceTitle}>{booking.serviceTitle}</Text>
-      <Text style={styles.price}>₦{booking.price?.toLocaleString()}</Text>
-      <Text style={styles.date}>
+      <Text style={[styles.serviceTitle, { color: colors.textPrimary }]}>
+        {booking.serviceTitle}
+      </Text>
+      <Text style={[styles.price, { color: colors.primary }]}>
+        ₦{booking.price?.toLocaleString()}
+      </Text>
+      <Text style={[styles.date, { color: colors.textTertiary }]}>
         {new Date(booking.createdAt).toLocaleDateString()}
       </Text>
 
-      {/* Action Buttons */}
       {!isClient && booking.status === "paid_in_escrow" && (
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: colors.primary }]}
           onPress={handleMarkCompleted}
           disabled={actionLoading}
         >
-          <Text style={styles.actionButtonText}>
+          <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
             {actionLoading ? "Processing..." : "Mark as Completed"}
           </Text>
         </TouchableOpacity>
@@ -119,11 +133,11 @@ const BookingCard = ({ booking, role, onPress, onStatusChange }) => {
 
       {isClient && booking.status === "completed" && (
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: colors.primary }]}
           onPress={handleConfirmCompletion}
           disabled={actionLoading}
         >
-          <Text style={styles.actionButtonText}>
+          <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
             {actionLoading ? "Processing..." : "Confirm Completion"}
           </Text>
         </TouchableOpacity>
@@ -132,9 +146,10 @@ const BookingCard = ({ booking, role, onPress, onStatusChange }) => {
   );
 };
 
-// ------------------ Main Dashboard Component ------------------
+// ------------------ Main Dashboard ------------------
 export default function Dashboard({ navigation }) {
   const { user } = useContext(AuthContext);
+  const { colors, toggleTheme, theme } = useTheme(); // ✅ use theme
   const [activeTab, setActiveTab] = useState("client");
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -144,7 +159,7 @@ export default function Dashboard({ navigation }) {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
 
-  // Fetch bookings from backend
+  // ... all existing fetch functions (unchanged) ...
   const fetchBookings = async () => {
     try {
       const response = await getMyBookings();
@@ -158,7 +173,6 @@ export default function Dashboard({ navigation }) {
     }
   };
 
-  // Fetch real wallet balance
   const fetchWalletBalance = async () => {
     try {
       const res = await getWalletBalance();
@@ -168,7 +182,6 @@ export default function Dashboard({ navigation }) {
     }
   };
 
-  // Refresh both data when screen gains focus
   useFocusEffect(
     useCallback(() => {
       fetchBookings();
@@ -187,7 +200,6 @@ export default function Dashboard({ navigation }) {
     return booking.provider?._id === user?._id;
   });
 
-  // Withdrawal logic
   const openWithdrawModal = () => {
     setWithdrawAmount("");
     setWithdrawModalVisible(true);
@@ -210,9 +222,21 @@ export default function Dashboard({ navigation }) {
       Alert.alert("Success", res.message || "Withdrawal request submitted");
       setWithdrawModalVisible(false);
       setWithdrawAmount("");
-      fetchWalletBalance(); // refresh balance after withdrawal
+      fetchWalletBalance();
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.message || "Withdrawal failed");
+      const msg = error.response?.data?.message || "";
+      if (msg.toLowerCase().includes("bank account") || msg.toLowerCase().includes("bank details")) {
+        Alert.alert(
+          "Bank Account Required",
+          "Please set up your bank account before withdrawing.",
+          [
+            { text: "Set Up", onPress: () => navigation.navigate("BankSetup") },
+            { text: "Cancel" },
+          ]
+        );
+      } else {
+        Alert.alert("Error", msg || "Withdrawal failed");
+      }
     } finally {
       setWithdrawLoading(false);
     }
@@ -221,8 +245,10 @@ export default function Dashboard({ navigation }) {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyIcon}>📋</Text>
-      <Text style={styles.emptyTitle}>No bookings yet</Text>
-      <Text style={styles.emptySubtitle}>
+      <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+        No bookings yet
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
         {activeTab === "client"
           ? "Book a service to get started"
           : "Wait for clients to book your services"}
@@ -233,47 +259,130 @@ export default function Dashboard({ navigation }) {
   const renderSkeleton = () => (
     <View style={styles.skeletonContainer}>
       {[1, 2].map((_, idx) => (
-        <View key={idx} style={styles.skeletonCard}>
-          <View style={styles.skeletonAvatar} />
-          <View style={styles.skeletonLine} />
-          <View style={[styles.skeletonLine, { width: "60%" }]} />
+        <View key={idx} style={[styles.skeletonCard, { backgroundColor: colors.card }]}>
+          <View style={[styles.skeletonAvatar, { backgroundColor: colors.inputBackground }]} />
+          <View style={[styles.skeletonLine, { backgroundColor: colors.inputBackground }]} />
+          <View style={[styles.skeletonLine, { width: "60%", backgroundColor: colors.inputBackground }]} />
         </View>
       ))}
     </View>
   );
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Text style={styles.headerTitle}>Dashboard</Text>
+  const canGoBack = navigation.canGoBack();
 
-        {/* Wallet Card */}
-        <View style={styles.walletCard}>
-          <Text style={styles.walletTitle}>Wallet Balance</Text>
-          <Text style={styles.walletBalance}>₦{walletBalance.toLocaleString()}</Text>
-          <TouchableOpacity style={styles.withdrawButton} onPress={openWithdrawModal}>
-            <Text style={styles.withdrawText}>Withdraw</Text>
+  return (
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {/* Header with theme toggle */}
+        <View style={styles.header}>
+          {canGoBack && (
+            <TouchableOpacity
+              style={[styles.backButton, { backgroundColor: colors.card }]}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+          <Text
+            style={[
+              styles.headerTitle,
+              !canGoBack && styles.headerTitleCentered,
+              { color: colors.textPrimary },
+            ]}
+          >
+            Dashboard
+          </Text>
+          <TouchableOpacity onPress={toggleTheme} style={styles.themeToggle}>
+            <Ionicons
+              name={theme === "light" ? "moon-outline" : "sunny-outline"}
+              size={24}
+              color={colors.textPrimary}
+            />
           </TouchableOpacity>
         </View>
 
-        {/* Bookings Section */}
-        <Text style={styles.sectionTitle}>Recent Bookings</Text>
+        {/* Wallet Card */}
+        <View
+          style={[
+            styles.walletCard,
+            {
+              backgroundColor: colors.card,
+              shadowColor: colors.shadowColor,
+              shadowOpacity: colors.shadowOpacity,
+            },
+          ]}
+        >
+          <Text style={[styles.walletTitle, { color: colors.textTertiary }]}>
+            Wallet Balance
+          </Text>
+          <Text style={[styles.walletBalance, { color: colors.primary }]}>
+            ₦{walletBalance.toLocaleString()}
+          </Text>
+          <View style={styles.walletActions}>
+            <TouchableOpacity
+              style={[styles.withdrawButton, { backgroundColor: colors.primary }]}
+              onPress={openWithdrawModal}
+            >
+              <Text style={[styles.withdrawText, { color: colors.textInverse }]}>
+                Withdraw
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bankButton, { backgroundColor: colors.success }]}
+              onPress={() => navigation.navigate("BankSetup")}
+            >
+              <Text style={[styles.bankButtonText, { color: colors.textInverse }]}>
+                Bank Account
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-        {/* Segmented Control */}
-        <View style={styles.tabContainer}>
+        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+          Recent Bookings
+        </Text>
+
+        <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === "client" && styles.activeTab]}
+            style={[
+              styles.tab,
+              activeTab === "client" && {
+                backgroundColor: colors.background,
+                shadowColor: colors.shadowColor,
+                shadowOpacity: colors.shadowOpacity,
+              },
+            ]}
             onPress={() => setActiveTab("client")}
           >
-            <Text style={[styles.tabText, activeTab === "client" && styles.activeTabText]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "client" && { color: colors.primary },
+                { color: activeTab === "client" ? colors.primary : colors.textTertiary },
+              ]}
+            >
               Bookings I made
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === "worker" && styles.activeTab]}
+            style={[
+              styles.tab,
+              activeTab === "worker" && {
+                backgroundColor: colors.background,
+                shadowColor: colors.shadowColor,
+                shadowOpacity: colors.shadowOpacity,
+              },
+            ]}
             onPress={() => setActiveTab("worker")}
           >
-            <Text style={[styles.tabText, activeTab === "worker" && styles.activeTabText]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "worker" && { color: colors.primary },
+                { color: activeTab === "worker" ? colors.primary : colors.textTertiary },
+              ]}
+            >
               Bookings with me
             </Text>
           </TouchableOpacity>
@@ -296,11 +405,17 @@ export default function Dashboard({ navigation }) {
                   fetchBookings();
                   fetchWalletBalance();
                 }}
+                colors={colors}
               />
             )}
             contentContainerStyle={styles.listContent}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
             }
             ListEmptyComponent={renderEmpty}
             showsVerticalScrollIndicator={false}
@@ -316,31 +431,43 @@ export default function Dashboard({ navigation }) {
         onRequestClose={() => setWithdrawModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Withdraw Funds</Text>
-            <Text style={styles.modalSubtitle}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Withdraw Funds
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
               Available balance: ₦{walletBalance.toLocaleString()}
             </Text>
             <TextInput
-              style={styles.modalInput}
+              style={[
+                styles.modalInput,
+                {
+                  backgroundColor: colors.inputBackground,
+                  borderColor: colors.inputBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
               placeholder="Enter amount"
+              placeholderTextColor={colors.textTertiary}
               keyboardType="numeric"
               value={withdrawAmount}
               onChangeText={setWithdrawAmount}
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.gray }]}
                 onPress={() => setWithdrawModalVisible(false)}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { color: colors.textPrimary }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
+                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
                 onPress={submitWithdraw}
                 disabled={withdrawLoading}
               >
-                <Text style={styles.confirmButtonText}>
+                <Text style={[styles.confirmButtonText, { color: colors.textInverse }]}>
                   {withdrawLoading ? "Processing..." : "Withdraw"}
                 </Text>
               </TouchableOpacity>
@@ -352,64 +479,89 @@ export default function Dashboard({ navigation }) {
   );
 }
 
-// ------------------ Styles (unchanged, but actionButton added) ------------------
+// ------------------ Styles (keep static values, colors will be overridden) ------------------
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
-  headerTitle: { fontSize: 28, fontWeight: "800", color: "#0F172A", marginBottom: 20, letterSpacing: -0.5 },
-  walletCard: { backgroundColor: "#FFF", borderRadius: 24, padding: 20, marginBottom: 24, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 4, alignItems: "center" },
-  walletTitle: { fontSize: 16, color: "#64748B", marginBottom: 8 },
-  walletBalance: { fontSize: 36, fontWeight: "800", color: "#2563EB", marginBottom: 16 },
-  withdrawButton: { backgroundColor: "#2563EB", paddingVertical: 10, paddingHorizontal: 24, borderRadius: 40 },
-  withdrawText: { color: "#FFF", fontWeight: "600", fontSize: 14 },
-  sectionTitle: { fontSize: 20, fontWeight: "700", color: "#0F172A", marginBottom: 16 },
-  tabContainer: { flexDirection: "row", backgroundColor: "#F1F5F9", borderRadius: 40, padding: 4, marginBottom: 20 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    flex: 1,
+  },
+  headerTitleCentered: { textAlign: "center" },
+  themeToggle: { padding: 8 },
+  placeholder: { width: 40 },
+  walletCard: {
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 4,
+    alignItems: "center",
+  },
+  walletTitle: { fontSize: 16, marginBottom: 8 },
+  walletBalance: { fontSize: 36, fontWeight: "800", marginBottom: 16 },
+  walletActions: { flexDirection: "row", gap: 12, width: "100%", justifyContent: "center" },
+  withdrawButton: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 40, flex: 1, alignItems: "center" },
+  withdrawText: { fontWeight: "600", fontSize: 14 },
+  bankButton: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 40, flex: 1, alignItems: "center" },
+  bankButtonText: { fontWeight: "600", fontSize: 14 },
+  sectionTitle: { fontSize: 20, fontWeight: "700", marginBottom: 16 },
+  tabContainer: { flexDirection: "row", borderRadius: 40, padding: 4, marginBottom: 20 },
   tab: { flex: 1, paddingVertical: 10, borderRadius: 36, alignItems: "center" },
-  activeTab: { backgroundColor: "#FFF", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  tabText: { fontSize: 14, fontWeight: "600", color: "#64748B" },
-  activeTabText: { color: "#2563EB" },
+  tabText: { fontSize: 14, fontWeight: "600" },
   listContent: { paddingBottom: 40, gap: 16 },
-  card: { backgroundColor: "#FFF", borderRadius: 24, padding: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 3, marginBottom: 4 },
+  card: { borderRadius: 24, padding: 18, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 3, marginBottom: 4 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   userInfo: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#4F46E5", justifyContent: "center", alignItems: "center" },
-  avatarText: { color: "#FFF", fontSize: 18, fontWeight: "bold" },
-  userName: { fontSize: 16, fontWeight: "600", color: "#0F172A" },
-  roleLabel: { fontSize: 12, color: "#64748B" },
+  avatar: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+  avatarText: { fontSize: 18, fontWeight: "bold" },
+  userName: { fontSize: 16, fontWeight: "600" },
+  roleLabel: { fontSize: 12 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   statusText: { fontSize: 12, fontWeight: "600" },
-  serviceTitle: { fontSize: 16, fontWeight: "500", color: "#1E293B", marginBottom: 6 },
-  price: { fontSize: 18, fontWeight: "700", color: "#2563EB", marginBottom: 4 },
-  date: { fontSize: 13, color: "#94A3B8" },
-  actionButton: {
-    backgroundColor: "#2563EB",
-    paddingVertical: 10,
-    borderRadius: 40,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  actionButtonText: {
-    color: "#FFF",
-    fontWeight: "600",
-    fontSize: 14,
-  },
+  serviceTitle: { fontSize: 16, fontWeight: "500", marginBottom: 6 },
+  price: { fontSize: 18, fontWeight: "700", marginBottom: 4 },
+  date: { fontSize: 13 },
+  actionButton: { paddingVertical: 10, borderRadius: 40, alignItems: "center", marginTop: 12 },
+  actionButtonText: { fontWeight: "600", fontSize: 14 },
   emptyContainer: { alignItems: "center", paddingVertical: 60 },
   emptyIcon: { fontSize: 48, marginBottom: 16, opacity: 0.6 },
-  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#1E293B", marginBottom: 6 },
-  emptySubtitle: { fontSize: 14, color: "#64748B", textAlign: "center" },
+  emptyTitle: { fontSize: 18, fontWeight: "600", marginBottom: 6 },
+  emptySubtitle: { fontSize: 14, textAlign: "center" },
   skeletonContainer: { gap: 16 },
-  skeletonCard: { backgroundColor: "#FFF", borderRadius: 24, padding: 18, marginBottom: 4 },
-  skeletonAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E2E8F0", marginBottom: 12 },
-  skeletonLine: { height: 14, backgroundColor: "#E2E8F0", borderRadius: 8, marginVertical: 6, width: "80%" },
+  skeletonCard: { borderRadius: 24, padding: 18, marginBottom: 4 },
+  skeletonAvatar: { width: 44, height: 44, borderRadius: 22, marginBottom: 12 },
+  skeletonLine: { height: 14, borderRadius: 8, marginVertical: 6, width: "80%" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  modalContainer: { backgroundColor: "#FFF", borderRadius: 28, padding: 24, width: "85%", alignItems: "center" },
-  modalTitle: { fontSize: 20, fontWeight: "700", color: "#0F172A", marginBottom: 8 },
-  modalSubtitle: { fontSize: 14, color: "#64748B", marginBottom: 20 },
-  modalInput: { width: "100%", backgroundColor: "#F1F5F9", borderRadius: 16, padding: 14, fontSize: 16, marginBottom: 24 },
+  modalContainer: { borderRadius: 28, padding: 24, width: "85%", alignItems: "center" },
+  modalTitle: { fontSize: 20, fontWeight: "700", marginBottom: 8 },
+  modalSubtitle: { fontSize: 14, marginBottom: 20 },
+  modalInput: { width: "100%", borderRadius: 16, padding: 14, fontSize: 16, marginBottom: 24, borderWidth: 1 },
   modalButtons: { flexDirection: "row", gap: 12, width: "100%" },
   modalButton: { flex: 1, paddingVertical: 12, borderRadius: 40, alignItems: "center" },
-  cancelButton: { backgroundColor: "#F1F5F9" },
-  confirmButton: { backgroundColor: "#2563EB" },
-  cancelButtonText: { color: "#475569", fontWeight: "600" },
-  confirmButtonText: { color: "#FFF", fontWeight: "600" },
+  cancelButton: { /* bg set dynamically */ },
+  confirmButton: { /* bg set dynamically */ },
+  cancelButtonText: { fontWeight: "600" },
+  confirmButtonText: { fontWeight: "600" },
 });

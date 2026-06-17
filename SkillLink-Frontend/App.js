@@ -18,6 +18,8 @@ import { PostProvider } from "./context/PostContext";
 import PaymentScreen from "./src/screens/PaymentScreen";
 import PaymentReturnHandler from "./src/screens/PaymentReturnHandler";
 import Dashboard from "./src/screens/Dashboard";
+import BankSetupScreen from "./src/screens/BankSetupScreen";
+import { ThemeProvider } from "./src/context/ThemeContext";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -62,6 +64,7 @@ function AppStack() {
       <Stack.Screen name="PaymentScreen" component={PaymentScreen} />
       <Stack.Screen name="PaymentReturnHandler" component={PaymentReturnHandler} />
       <Stack.Screen name="PaymentDashboard" component={Dashboard} />
+      <Stack.Screen name="BankSetup" component={BankSetupScreen} />
     </Stack.Navigator>
   );
 }
@@ -114,10 +117,12 @@ function RootNavigator() {
 // App entry point
 export default function App() {
   return (
-    <PostProvider>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
-    </PostProvider>
+    <ThemeProvider>
+      <PostProvider>
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </PostProvider>
+    </ThemeProvider>  
   );
 }

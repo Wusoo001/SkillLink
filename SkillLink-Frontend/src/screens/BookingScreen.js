@@ -11,10 +11,12 @@ import {
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
 import { api } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
 
 export default function BookingScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
   const { providerId, serviceTitle, price, description } = route.params;
+  const { colors } = useTheme();
 
   // ✅ Validate price – must be a positive number
   const isValidPrice = useMemo(() => {
@@ -48,7 +50,7 @@ export default function BookingScreen({ navigation, route }) {
         provider: providerId,
         serviceTitle,
         scheduledDate: new Date(),
-        price: invoice.total, // same as serviceFee
+        price: invoice.total,
       });
 
       console.log("BOOKING RESPONSE:", res.data);
@@ -59,11 +61,11 @@ export default function BookingScreen({ navigation, route }) {
       }
 
       const booking = res.data.data;
-      navigation.navigate("PaymentScreen", { 
-                          bookingId: booking._id,
-                          amount: invoice.total,
-                          serviceTitle: serviceTitle
-                        });
+      navigation.navigate("PaymentScreen", {
+        bookingId: booking._id,
+        amount: invoice.total,
+        serviceTitle: serviceTitle,
+      });
     } catch (error) {
       console.log("BOOKING ERROR:", error.response?.data || error.message);
       Alert.alert(
@@ -89,18 +91,18 @@ export default function BookingScreen({ navigation, route }) {
   // Show error screen if price is invalid
   if (!isValidPrice) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorTitle}>Invalid Service Fee</Text>
-          <Text style={styles.errorMessage}>
+          <Text style={[styles.errorTitle, { color: colors.danger }]}>Invalid Service Fee</Text>
+          <Text style={[styles.errorMessage, { color: colors.textTertiary }]}>
             The service fee provided by the professional is invalid or missing.
             Please contact the service provider.
           </Text>
           <TouchableOpacity
-            style={styles.errorButton}
+            style={[styles.errorButton, { backgroundColor: colors.primary }]}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.errorButtonText}>Go Back</Text>
+            <Text style={[styles.errorButtonText, { color: colors.textInverse }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -108,68 +110,96 @@ export default function BookingScreen({ navigation, route }) {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.container}>
           {/* Provider Info Card */}
-          <View style={styles.card}>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.cardBorder,
+                shadowColor: colors.shadowColor,
+                shadowOpacity: colors.shadowOpacity,
+              },
+            ]}
+          >
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Service Summary</Text>
-              <View style={styles.titleAccent} />
+              <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Service Summary</Text>
+              <View style={[styles.titleAccent, { backgroundColor: colors.primary }]} />
             </View>
-            <Text style={styles.serviceTitle}>{serviceTitle}</Text>
+            <Text style={[styles.serviceTitle, { color: colors.textPrimary }]}>{serviceTitle}</Text>
             {description ? (
-              <Text style={styles.serviceDescription}>{description}</Text>
+              <Text style={[styles.serviceDescription, { color: colors.textTertiary }]}>{description}</Text>
             ) : null}
           </View>
 
           {/* Invoice Card */}
-          <View style={[styles.card, styles.invoiceCard]}>
+          <View
+            style={[
+              styles.card,
+              styles.invoiceCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.cardBorder,
+                shadowColor: colors.shadowColor,
+                shadowOpacity: colors.shadowOpacity,
+              },
+            ]}
+          >
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Invoice</Text>
-              <View style={styles.titleAccent} />
+              <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Invoice</Text>
+              <View style={[styles.titleAccent, { backgroundColor: colors.primary }]} />
             </View>
 
             <View style={styles.invoiceRow}>
-              <Text style={styles.invoiceLabel}>Service Fee</Text>
-              <Text style={styles.invoiceValue}>₦{invoice.serviceFee.toLocaleString()}</Text>
+              <Text style={[styles.invoiceLabel, { color: colors.textTertiary }]}>Service Fee</Text>
+              <Text style={[styles.invoiceValue, { color: colors.textPrimary }]}>₦{invoice.serviceFee.toLocaleString()}</Text>
             </View>
 
             <View style={styles.invoiceRow}>
-              <Text style={styles.invoiceLabel}>Platform Fee</Text>
-              <Text style={styles.invoiceValue}>₦{invoice.platformFee.toLocaleString()}</Text>
+              <Text style={[styles.invoiceLabel, { color: colors.textTertiary }]}>Platform Fee</Text>
+              <Text style={[styles.invoiceValue, { color: colors.textPrimary }]}>₦{invoice.platformFee.toLocaleString()}</Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.inputBorder }]} />
 
             <View style={[styles.invoiceRow, styles.totalRow]}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalAmount}>₦{invoice.total.toLocaleString()}</Text>
+              <Text style={[styles.totalLabel, { color: colors.textPrimary }]}>Total</Text>
+              <Text style={[styles.totalAmount, { color: colors.primary }]}>₦{invoice.total.toLocaleString()}</Text>
             </View>
           </View>
 
           {/* Action Buttons */}
           <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={[
+                styles.primaryBtn,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOpacity: 0.2,
+                },
+              ]}
               onPress={handleConfirmBooking}
               onPressIn={animatePrimaryIn}
               onPressOut={animatePrimaryOut}
               activeOpacity={0.9}
             >
-              <Text style={styles.primaryText}>Confirm & Pay</Text>
+              <Text style={[styles.primaryText, { color: colors.textInverse }]}>Confirm & Pay</Text>
             </TouchableOpacity>
           </Animated.View>
 
           <Animated.View style={{ transform: [{ scale: secondaryScale }] }}>
             <TouchableOpacity
-              style={styles.secondaryBtn}
+              style={[styles.secondaryBtn, { backgroundColor: colors.gray }]}
               onPress={() => navigation.goBack()}
               onPressIn={animateSecondaryIn}
               onPressOut={animateSecondaryOut}
               activeOpacity={0.8}
             >
-              <Text style={styles.secondaryText}>Cancel</Text>
+              <Text style={[styles.secondaryText, { color: colors.textPrimary }]}>Cancel</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -179,32 +209,58 @@ export default function BookingScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  // ... your existing styles (keep exactly as before)
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1 },
   scrollContent: { flexGrow: 1 },
   container: { flex: 1, paddingHorizontal: 20, paddingVertical: 24 },
-  card: { backgroundColor: "#FFF", borderRadius: 24, padding: 20, marginBottom: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 16, elevation: 4, borderWidth: 1, borderColor: "#F0F2F5" },
-  invoiceCard: { backgroundColor: "#FFF" },
+  card: {
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 16,
+    elevation: 4,
+    borderWidth: 1,
+  },
+  invoiceCard: {},
   cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  cardTitle: { fontSize: 18, fontWeight: "700", color: "#0F172A", letterSpacing: -0.3 },
-  titleAccent: { width: 4, height: 20, backgroundColor: "#2563EB", borderRadius: 2, marginLeft: 10 },
-  serviceTitle: { fontSize: 17, fontWeight: "600", color: "#1E293B", marginBottom: 6 },
-  serviceDescription: { fontSize: 14, color: "#64748B", lineHeight: 20 },
-  invoiceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginVertical: 8 },
-  invoiceLabel: { fontSize: 15, color: "#475569", fontWeight: "500" },
-  invoiceValue: { fontSize: 15, color: "#1E293B", fontWeight: "600" },
-  divider: { height: 1, backgroundColor: "#E2E8F0", marginVertical: 12 },
+  cardTitle: { fontSize: 18, fontWeight: "700", letterSpacing: -0.3 },
+  titleAccent: { width: 4, height: 20, borderRadius: 2, marginLeft: 10 },
+  serviceTitle: { fontSize: 17, fontWeight: "600", marginBottom: 6 },
+  serviceDescription: { fontSize: 14, lineHeight: 20 },
+  invoiceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 8,
+  },
+  invoiceLabel: { fontSize: 15, fontWeight: "500" },
+  invoiceValue: { fontSize: 15, fontWeight: "600" },
+  divider: { height: 1, marginVertical: 12 },
   totalRow: { marginTop: 4 },
-  totalLabel: { fontSize: 17, fontWeight: "700", color: "#0F172A" },
-  totalAmount: { fontSize: 20, fontWeight: "800", color: "#2563EB" },
-  primaryBtn: { backgroundColor: "#2563EB", paddingVertical: 16, borderRadius: 48, alignItems: "center", marginTop: 12, marginBottom: 12, shadowColor: "#2563EB", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 5 },
-  primaryText: { color: "#FFF", fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
-  secondaryBtn: { paddingVertical: 14, alignItems: "center", borderRadius: 48, backgroundColor: "#F1F5F9", marginBottom: 20 },
-  secondaryText: { color: "#475569", fontWeight: "600", fontSize: 16 },
+  totalLabel: { fontSize: 17, fontWeight: "700" },
+  totalAmount: { fontSize: 20, fontWeight: "800" },
+  primaryBtn: {
+    paddingVertical: 16,
+    borderRadius: 48,
+    alignItems: "center",
+    marginTop: 12,
+    marginBottom: 12,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  primaryText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
+  secondaryBtn: {
+    paddingVertical: 14,
+    alignItems: "center",
+    borderRadius: 48,
+    marginBottom: 20,
+  },
+  secondaryText: { fontWeight: "600", fontSize: 16 },
   // Error screen styles
   errorContainer: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 30 },
-  errorTitle: { fontSize: 22, fontWeight: "700", color: "#EF4444", marginBottom: 12 },
-  errorMessage: { fontSize: 16, color: "#475569", textAlign: "center", marginBottom: 24, lineHeight: 22 },
-  errorButton: { backgroundColor: "#2563EB", paddingVertical: 12, paddingHorizontal: 28, borderRadius: 40 },
-  errorButtonText: { color: "#FFF", fontWeight: "600", fontSize: 16 },
+  errorTitle: { fontSize: 22, fontWeight: "700", marginBottom: 12 },
+  errorMessage: { fontSize: 16, textAlign: "center", marginBottom: 24, lineHeight: 22 },
+  errorButton: { paddingVertical: 12, paddingHorizontal: 28, borderRadius: 40 },
+  errorButtonText: { fontWeight: "600", fontSize: 16 },
 });
