@@ -78,9 +78,9 @@ export const loginUser = async (userData) => {
 // ================================
 // POSTS
 // ================================
-export const getPosts = async (page = 1) => {
+export const getPosts = async (page = 1, limit = 20) => {
   try {
-    const res = await api.get(`/posts?page=${page}`);
+    const res = await api.get(`/posts?page=${page} & limit=${limit}`);
     return res.data;
   } catch (error) {
     return [];
@@ -234,6 +234,27 @@ export const requestWithdrawal = async (amount) => {
   }
 };
 
+// services/api.js – add these functions
+
+export const likePost = async (postId) => {
+  try {
+    const res = await api.post(`/posts/${postId}/like`);
+    return res.data;
+  } catch (error) {
+    console.log('Like error:', error);
+    return null;
+  }
+};
+
+export const unlikePost = async (postId) => {
+  try {
+    const res = await api.delete(`/posts/${postId}/like`);
+    return res.data;
+  } catch (error) {
+    console.log('Unlike error:', error);
+    return null;
+  }
+};
 // ================================
 // EXPORT API INSTANCE (if needed)
 // ================================

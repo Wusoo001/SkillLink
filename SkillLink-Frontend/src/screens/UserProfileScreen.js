@@ -21,7 +21,7 @@ import { getPosts, api } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 
 // ==============================
-// PostItem Component (with theme)
+// PostItem Component (with compact book button)
 // ==============================
 const PostItem = ({ item, userId, colors }) => {
   const navigation = useNavigation();
@@ -57,7 +57,7 @@ const PostItem = ({ item, userId, colors }) => {
       </View>
       <Animated.View style={{ transform: [{ scale: bookScale }] }}>
         <TouchableOpacity
-          style={[styles.bookButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
+          style={[styles.bookButton, { backgroundColor: colors.primary }]}
           onPress={() =>
             navigation.navigate("BookingScreen", {
               providerId: userId,
@@ -77,14 +77,14 @@ const PostItem = ({ item, userId, colors }) => {
 };
 
 // ==============================
-// Main UserProfileScreen
+// Main UserProfileScreen (unchanged)
 // ==============================
 export default function UserProfileScreen() {
   const navigation = useNavigation();
   const route = useRoute();
 
   const { user, loading: authLoading } = useContext(AuthContext);
-  const { colors } = useTheme(); // we don't need toggle here, but we can use colors
+  const { colors } = useTheme();
   const { userId: routeUserId } = route.params || {};
   const resolvedUserId = routeUserId || user?._id;
 
@@ -226,20 +226,19 @@ export default function UserProfileScreen() {
               </Text>
             </View>
           }
-          style={{ flex: 1 }} // ensure FlatList fills container
+          style={{ flex: 1 }}
         />
       </View>
     </SafeAreaView>
   );
 }
 
+// ==============================
+// Updated Styles – compact book button
+// ==============================
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
+  safeArea: { flex: 1 },
+  container: { flex: 1 },
   backButton: {
     position: "absolute",
     top: 12,
@@ -254,11 +253,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
     alignItems: "center",
     marginBottom: 20,
@@ -293,22 +288,9 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: "bold",
-  },
-  name: {
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    marginBottom: 4,
-  },
-  skill: {
-    fontSize: 14,
-    marginTop: 4,
-    textAlign: "center",
-    paddingHorizontal: 20,
-  },
+  avatarText: { fontSize: 32, fontWeight: "bold" },
+  name: { fontSize: 24, fontWeight: "800", letterSpacing: -0.3, marginBottom: 4 },
+  skill: { fontSize: 14, marginTop: 4, textAlign: "center", paddingHorizontal: 20 },
   ratingContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -318,13 +300,8 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     gap: 6,
   },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  jobsText: {
-    fontSize: 14,
-  },
+  ratingText: { fontSize: 14, fontWeight: "600" },
+  jobsText: { fontSize: 14 },
   editButton: {
     marginTop: 16,
     paddingVertical: 10,
@@ -334,10 +311,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  editButtonText: {
-    fontWeight: "700",
-    fontSize: 15,
-  },
+  editButtonText: { fontWeight: "700", fontSize: 15 },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -345,20 +319,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginHorizontal: 20,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    letterSpacing: -0.3,
-  },
-  sectionBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  sectionBadgeText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
+  sectionTitle: { fontSize: 20, fontWeight: "700", letterSpacing: -0.3 },
+  sectionBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  sectionBadgeText: { fontSize: 13, fontWeight: "600" },
   listContent: {
     paddingBottom: 40,
     paddingHorizontal: 20,
@@ -372,11 +335,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  description: {
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 12,
-  },
+  description: { fontSize: 15, lineHeight: 22, marginBottom: 12 },
   mediaImage: {
     width: "100%",
     height: 200,
@@ -399,45 +358,24 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 8,
   },
-  tag: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  tagText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
+  tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  tagText: { fontSize: 12, fontWeight: "500" },
+  // ✅ compact book button
   bookButton: {
-    paddingVertical: 12,
-    borderRadius: 40,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 30,
     alignItems: "center",
+    alignSelf: "flex-start",
     marginTop: 6,
     shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 1,
   },
-  bookButtonText: {
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-  },
-  emptyIcon: {
-    fontSize: 56,
-    marginBottom: 16,
-    opacity: 0.6,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: "center",
-  },
+  bookButtonText: { fontWeight: "600", fontSize: 13, letterSpacing: 0.2 },
+  emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
+  emptyIcon: { fontSize: 56, marginBottom: 16, opacity: 0.6 },
+  emptyTitle: { fontSize: 18, fontWeight: "600", marginBottom: 6 },
+  emptySubtitle: { fontSize: 14, textAlign: "center" },
 });

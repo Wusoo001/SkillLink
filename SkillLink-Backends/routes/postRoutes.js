@@ -66,7 +66,7 @@ router.get("/", async (req, res) => {
   try {
 
     const page = parseInt(req.query.page) || 1;
-    const limit = 10;
+    const limit = 20;
     const totalPosts = await Post.countDocuments();
 
     const posts = await Post.find()
@@ -192,5 +192,25 @@ router.get("/user/:userId", async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
+});
+router.post('/:id/like', protect, async (req, res) => {
+  const post = await Post.findById(req.params.id);
+  if (!post) return res.status(404).json({ message: 'Post not found' });
+  if (post.likes.includes(req.user.id)) {
+    return res.status(400).json({ message: 'Already liked' });
+  }
+  post.likes.push(req.user.id);
+  post.likesCount = post.likes.length;
+  await post.save();
+  res.json({ message: 'Liked', likesCount: post.likesCount });
+});
+
+router.delete('/:id/like', protect, async (req, res) => {
+  const post = await Post.findById(req.params.id);
+  if (!post) return res.status(404).json({ message: 'Post not found' });
+  post.likes = post.likes.filter(id => id.toString() !== req.user.id);
+  post.likesCount = post.likes.length;
+  await post.save();
+  res.json({ message: 'Unliked', likesCount: post.likesCount });
 });
 module.exports = router;
