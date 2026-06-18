@@ -13,7 +13,7 @@ import {
   Image as RNImage,
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
-import { getPosts, searchPosts, savePost } from "../services/api";
+import { getPosts, searchPosts, savePost, likePost, unlikePost } from "../services/api";
 import { PostContext } from "../../context/PostContext";
 import { Image } from "react-native";
 import { Video } from "expo-av";
@@ -33,6 +33,7 @@ export default function HomeScreen() {
 
   const [search, setSearch] = useState("");
   const [savedPosts, setSavedPosts] = useState([]);
+  const [likedPosts, setLikedPosts] = useState([]); // ✅ store liked post IDs
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -71,10 +72,10 @@ export default function HomeScreen() {
     return Array.from(map.values());
   };
 
-  const loadPosts = async (pageNumber = 1) => {
+  const loadPosts = async (pageNumber = 1, limit = 20) => {
     try {
       setLoading(true);
-      const response = await getPosts(pageNumber);
+      const response = await getPosts(pageNumber, limit);
 
       if (response.success) {
         setHasMore(response.hasMore);
@@ -138,9 +139,40 @@ export default function HomeScreen() {
     }
   };
 
+  // ✅ Toggle like
+  const toggleLike = async (postId) => {
+    const isLiked = likedPosts.includes(postId);
+    // Optimistically update UI
+    setLikedPosts((prev) =>
+      isLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
+    );
+    // Update like count locally
+    setPosts((prevPosts) =>
+      prevPosts.map((post) =>
+        post._id === postId
+          ? {
+              ...post,
+              likesCount: isLiked ? (post.likesCount || 1) - 1 : (post.likesCount || 0) + 1,
+            }
+          : post
+      )
+    );
+    // Call API (optional, handle errors)
+    try {
+      if (isLiked) {
+        await unlikePost(postId);
+      } else {
+        await likePost(postId);
+      }
+    } catch (error) {
+      // Revert on error if needed
+      console.log("Like API error:", error);
+    }
+  };
+
   const refreshPosts = () => {
     setPage(1);
-    loadPosts(1);
+    loadPosts(1, 20);
   };
 
   const handleCategoryPress = (category, index) => {
@@ -219,6 +251,9 @@ export default function HomeScreen() {
 
   const renderItem = ({ item, index }) => {
     const animStyle = getCardAnimation(index);
+    const isLiked = likedPosts.includes(item._id);
+    const likeCount = item.likesCount || 0;
+
     return (
       <Animated.View style={[styles.cardWrapper, animStyle]}>
         <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
@@ -273,16 +308,47 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.actionRow}>
+            {/* ✅ Like Button */}
             <TouchableOpacity
-              style={[styles.saveButton, { backgroundColor: colors.gray }]}
+              style={[styles.actionButton, { backgroundColor: colors.gray }]}
+              onPress={() => toggleLike(item._id)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isLiked ? "heart" : "heart-outline"}
+                size={20}
+                color={isLiked ? colors.danger : colors.textTertiary}
+              />
+              <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
+                {likeCount > 0 ? likeCount : ""}
+              </Text>
+            </TouchableOpacity>
+
+            {/* ✅ Save Button */}
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.gray }]}
               onPress={() => toggleSave(item._id)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.saveButtonText, { color: colors.textPrimary }]}>
+              <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
                 {savedPosts.includes(item._id) ? "❤️ Saved" : "🤍 Save"}
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Book Button */}
+          <TouchableOpacity
+            style={[styles.bookButton, { backgroundColor: colors.primary}]}
+            onPress={() =>
+              navigation.navigate("BookingScreen", {
+                providerId: item.user?._id,
+                serviceTitle: item.description,
+                price: item.price,
+              })
+            }
+          >
+            <Text style={[styles.bookButtonText, { color: colors.textInverse }]}>Book This Service</Text>
+          </TouchableOpacity>
         </View>
       </Animated.View>
     );
@@ -427,29 +493,16 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-  },
+  safeArea: { flex: 1 },
+  container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-  topButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
+  title: { fontSize: 28, fontWeight: "800", letterSpacing: -0.5 },
+  topButtons: { flexDirection: "row", gap: 12 },
   iconButton: {
     width: 40,
     height: 40,
@@ -461,22 +514,14 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  iconButtonText: {
-    fontSize: 18,
-  },
+  iconButtonText: { fontSize: 18 },
   logoutButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 40,
   },
-  logoutText: {
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  searchWrapper: {
-    position: "relative",
-    marginBottom: 20,
-  },
+  logoutText: { fontWeight: "600", fontSize: 14 },
+  searchWrapper: { position: "relative", marginBottom: 20 },
   searchIcon: {
     position: "absolute",
     left: 16,
@@ -494,13 +539,8 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  categorySection: {
-    marginBottom: 20,
-  },
-  categoryList: {
-    paddingRight: 20,
-    gap: 8,
-  },
+  categorySection: { marginBottom: 20 },
+  categoryList: { paddingRight: 20, gap: 8 },
   categoryChip: {
     paddingVertical: 10,
     paddingHorizontal: 20,
@@ -510,13 +550,8 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  categoryText: {
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  cardWrapper: {
-    marginBottom: 16,
-  },
+  categoryText: { fontWeight: "600", fontSize: 14 },
+  cardWrapper: { marginBottom: 16 },
   card: {
     borderRadius: 24,
     padding: 18,
@@ -524,11 +559,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-  },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   avatarContainer: {
     width: 56,
     height: 56,
@@ -542,81 +573,54 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  avatarImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
-  avatarText: {
-    fontWeight: "bold",
-    fontSize: 22,
-  },
-  headerInfo: {
-    flex: 1,
-  },
-  name: {
-    fontWeight: "700",
-    fontSize: 17,
-    marginBottom: 2,
-  },
-  skill: {
-    fontSize: 13,
-    marginBottom: 4,
-  },
-  ratingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  ratingText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  jobsText: {
-    fontSize: 12,
-  },
-  description: {
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 14,
-  },
-  media: {
-    width: "100%",
-    height: 200,
-    borderRadius: 18,
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  tagContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 6,
-    marginBottom: 12,
-    gap: 8,
-  },
-  tag: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  tagText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
+  avatarImage: { width: 56, height: 56, borderRadius: 28 },
+  avatarText: { fontWeight: "bold", fontSize: 22 },
+  headerInfo: { flex: 1 },
+  name: { fontWeight: "700", fontSize: 17, marginBottom: 2 },
+  skill: { fontSize: 13, marginBottom: 4 },
+  ratingContainer: { flexDirection: "row", alignItems: "center", gap: 6 },
+  ratingText: { fontSize: 12, fontWeight: "600" },
+  jobsText: { fontSize: 12 },
+  description: { fontSize: 15, lineHeight: 22, marginBottom: 14 },
+  media: { width: "100%", height: 200, borderRadius: 18, marginTop: 10, marginBottom: 10 },
+  tagContainer: { flexDirection: "row", flexWrap: "wrap", marginTop: 6, marginBottom: 12, gap: 8 },
+  tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  tagText: { fontSize: 12, fontWeight: "500" },
   actionRow: {
     flexDirection: "row",
-    justifyContent: "flex-start",
+    alignItems: "center",
+    gap: 10,
     marginTop: 6,
+    marginBottom: 10,
   },
-  saveButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 18,
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 40,
+    gap: 4,
   },
-  saveButtonText: {
-    fontWeight: "600",
-    fontSize: 14,
-  },
+  actionButtonText: { fontWeight: "600", fontSize: 14 },
+  bookButton: {
+  backgroundColor: "#2563EB", // will be overridden by theme
+  paddingVertical: 8,
+  paddingHorizontal: 16,
+  borderRadius: 30,
+  alignItems: "center",
+  alignSelf: "flex-start", // 👈 makes the button only as wide as its content
+  marginTop: 6,
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 4,
+  elevation: 1,
+},
+bookButtonText: {
+  color: "#FFFFFF",
+  fontWeight: "600",
+  fontSize: 13,
+  letterSpacing: 0.2,
+},
   floatingButton: {
     position: "absolute",
     bottom: 30,
@@ -631,60 +635,16 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  floatingText: {
-    fontSize: 28,
-    fontWeight: "600",
-    lineHeight: 32,
-  },
-  skeletonContainer: {
-    flex: 1,
-    gap: 16,
-  },
-  skeletonCard: {
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-  },
-  skeletonAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    marginBottom: 12,
-  },
-  skeletonText: {
-    height: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    width: "80%",
-  },
-  skeletonTextShort: {
-    height: 14,
-    borderRadius: 8,
-    marginBottom: 12,
-    width: "50%",
-  },
-  skeletonMedia: {
-    height: 180,
-    borderRadius: 18,
-  },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-  },
-  footerLoader: {
-    marginVertical: 24,
-  },
+  floatingText: { fontSize: 28, fontWeight: "600", lineHeight: 32 },
+  skeletonContainer: { flex: 1, gap: 16 },
+  skeletonCard: { borderRadius: 24, padding: 18, marginBottom: 16 },
+  skeletonAvatar: { width: 56, height: 56, borderRadius: 28, marginBottom: 12 },
+  skeletonText: { height: 16, borderRadius: 8, marginBottom: 8, width: "80%" },
+  skeletonTextShort: { height: 14, borderRadius: 8, marginBottom: 12, width: "50%" },
+  skeletonMedia: { height: 180, borderRadius: 18 },
+  emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
+  emptyIcon: { fontSize: 48, marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: "600", marginBottom: 6 },
+  emptySubtitle: { fontSize: 14 },
+  footerLoader: { marginVertical: 24 },
 });

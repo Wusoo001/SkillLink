@@ -57,6 +57,13 @@ const postSchema = new mongoose.Schema(
       enum: ["image", "video"],
       default: "image",
     },
+    likes: [{ type: mongoose.Schema.Types.ObjectId,
+               ref: 'User' 
+            }],
+    likesCount: {
+       type: Number, 
+       default: 0 
+      },
 },
 {
   timestamps: true
