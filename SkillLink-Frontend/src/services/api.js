@@ -80,7 +80,7 @@ export const loginUser = async (userData) => {
 // ================================
 export const getPosts = async (page = 1, limit = 20) => {
   try {
-    const res = await api.get(`/posts?page=${page} & limit=${limit}`);
+    const res = await api.get(`/posts?page=${page}&limit=${limit}`);
     return res.data;
   } catch (error) {
     return [];
@@ -133,6 +133,46 @@ export const getUserPosts = async (userId) => {
   }
 };
 
+export const likePost = async (postId) => {
+  try {
+    const res = await api.post(`/posts/${postId}/like`);
+    return res.data;
+  } catch (error) {
+    console.log('Like error:', error);
+    return null;
+  }
+};
+
+export const unlikePost = async (postId) => {
+  try {
+    const res = await api.delete(`/posts/${postId}/like`);
+    return res.data;
+  } catch (error) {
+    console.log('Unlike error:', error);
+    return null;
+  }
+};
+
+export const updatePost = async (postId, postData) => {
+  try {
+    const res = await api.put(`/posts/${postId}`, postData);
+    return res.data;
+  } catch (error) {
+    console.log('Update post error:', error);
+    throw error;
+  }
+};
+
+export const deletePost = async (postId) => {
+  try {
+    const res = await api.delete(`/posts/${postId}`);
+    return res.data;
+  } catch (error) {
+    console.log('Delete post error:', error);
+    throw error;
+  }
+};
+
 // ================================
 // USER
 // ================================
@@ -168,6 +208,14 @@ export const updateUserProfile = async (userId, payload) => {
   }
 };
 
+export const sendHeartbeat = async () => {
+  try {
+    await api.post("/users/heartbeat");
+  } catch (error) {
+    // silently fail
+  }
+};
+
 // ================================
 // BOOKINGS
 // ================================
@@ -177,6 +225,16 @@ export const getMyBookings = async () => {
     return response.data; // { success, data }
   } catch (error) {
     console.log('Get bookings error:', error);
+    throw error;
+  }
+};
+ 
+export const getBookingById = async (bookingId) => {
+  try {
+    const response = await api.get(`/bookings/${bookingId}`);
+    return response.data;
+  } catch (error) {
+    console.log('Get booking by ID error:', error);
     throw error;
   }
 };
@@ -197,6 +255,53 @@ export const confirmBookingCompletion = async (bookingId) => {
     return response.data;
   } catch (error) {
     console.log('Confirm completion error:', error);
+    throw error;
+  }
+};
+
+export const acceptBooking = async (bookingId) => {
+  try {
+    const response = await api.put(`/bookings/${bookingId}/accept`);
+    return response.data;
+  } catch (error) {
+    console.log('Accept booking error:', error);
+    throw error;
+  }
+};
+
+export const rejectBooking = async (bookingId) => {
+  try {
+    const response = await api.put(`/bookings/${bookingId}/reject`);
+    return response.data;
+  } catch (error) {
+    console.log('Reject booking error:', error);
+    throw error;
+  }
+};
+
+// ✅ FIXED: cancelBookingRequest with manual token fallback
+export const cancelBookingRequest = async (bookingId) => {
+  console.log("📞 [cancelBookingRequest] Called with ID:", bookingId);
+  try {
+    // Manually get token to ensure it's available
+    const token = await AsyncStorage.getItem("userToken");
+    console.log("📞 [cancelBookingRequest] Token exists:", !!token);
+    if (!token) throw new Error("No token available");
+
+    // Use api instance but override headers just in case
+    const response = await api.put(
+      `/bookings/${bookingId}/cancel-request`,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    console.log("📞 [cancelBookingRequest] Response:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("📞 [cancelBookingRequest] Error:", error.response?.data || error.message);
     throw error;
   }
 };
@@ -234,27 +339,9 @@ export const requestWithdrawal = async (amount) => {
   }
 };
 
-// services/api.js – add these functions
+//  add this function to get 
 
-export const likePost = async (postId) => {
-  try {
-    const res = await api.post(`/posts/${postId}/like`);
-    return res.data;
-  } catch (error) {
-    console.log('Like error:', error);
-    return null;
-  }
-};
 
-export const unlikePost = async (postId) => {
-  try {
-    const res = await api.delete(`/posts/${postId}/like`);
-    return res.data;
-  } catch (error) {
-    console.log('Unlike error:', error);
-    return null;
-  }
-};
 // ================================
 // EXPORT API INSTANCE (if needed)
 // ================================

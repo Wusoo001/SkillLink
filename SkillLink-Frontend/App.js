@@ -1,14 +1,13 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState, useRef } from "react";
 import { AuthContext, AuthProvider } from "./context/AuthContext";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, View, AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import Landing from "./src/screens/LandingScreen";
 import Register from "./src/screens/Register";
-import Login from "./src/screens/Login";
 import HomeScreen from "./src/screens/HomeScreen";
 import UserProfileScreen from "./src/screens/UserProfileScreen";
 import EditProfileScreen from "./src/screens/EditProfileScreen";
@@ -20,6 +19,8 @@ import PaymentReturnHandler from "./src/screens/PaymentReturnHandler";
 import Dashboard from "./src/screens/Dashboard";
 import BankSetupScreen from "./src/screens/BankSetupScreen";
 import { ThemeProvider } from "./src/context/ThemeContext";
+import { sendHeartbeat } from "./src/services/api";
+import SplashLogo from "./src/components/SplashLogo";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -47,7 +48,7 @@ function AuthStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Landing" component={Landing} />
       <Stack.Screen name="Register" component={Register} />
-      <Stack.Screen name="Login" component={Login} />
+     
     </Stack.Navigator>
   );
 }
@@ -69,11 +70,56 @@ function AppStack() {
   );
 }
 
+// HeartbeatManager: sends periodic ping to update lastActive
+function HeartbeatManager() {
+  const { userToken } = useContext(AuthContext);
+  const intervalRef = useRef(null);
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    if (!userToken) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
+    // Send heartbeat immediately on mount
+    sendHeartbeat();
+
+    // Set up interval
+    intervalRef.current = setInterval(() => {
+      sendHeartbeat();
+    }, 30000); // every 30 seconds
+
+    // Listen for app state changes (background/foreground)
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (appState.current.match(/inactive|background/) && nextAppState === "active") {
+        // App came to foreground – send heartbeat immediately
+        sendHeartbeat();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      subscription.remove();
+    };
+  }, [userToken]);
+
+  return null;
+}
+
 // Root navigator: decides whether to show Auth or App
 function RootNavigator() {
   const { userToken, loading } = useContext(AuthContext);
   const [isReady, setIsReady] = useState(false);
   const [initialState, setInitialState] = useState();
+  const [showSplash, setShowSplash] = useState(true);
 
   // Restore navigation state on mount
   useEffect(() => {
@@ -86,31 +132,33 @@ function RootNavigator() {
       } catch (e) {
         // ignore parsing errors
       } finally {
+        await new Promise(resolve => setTimeout(resolve, 2000));
         setIsReady(true);
+        setShowSplash(false);
       }
     };
     restoreNavigationState();
   }, []);
 
+ // Inside RootNavigator, replace the loading return with:
   if (loading || !isReady) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#0A66FF" />
-      </View>
-    );
+    return <SplashLogo/>; // instead of the ActivityIndicator
   }
 
   return (
-    <NavigationContainer
-      initialState={initialState}
-      onStateChange={(state) => {
-        if (state) {
-          AsyncStorage.setItem("NAVIGATION_STATE", JSON.stringify(state));
-        }
-      }}
-    >
-      {userToken ? <AppStack /> : <AuthStack />}
-    </NavigationContainer>
+    <>
+      <HeartbeatManager />
+      <NavigationContainer
+        initialState={initialState}
+        onStateChange={(state) => {
+          if (state) {
+            AsyncStorage.setItem("NAVIGATION_STATE", JSON.stringify(state));
+          }
+        }}
+      >
+        {userToken ? <AppStack /> : <AuthStack />}
+      </NavigationContainer>
+    </>
   );
 }
 
@@ -123,6 +171,6 @@ export default function App() {
           <RootNavigator />
         </AuthProvider>
       </PostProvider>
-    </ThemeProvider>  
+    </ThemeProvider>
   );
 }

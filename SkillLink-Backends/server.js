@@ -1,10 +1,11 @@
+require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const userRoutes = require("./routes/users");
 const webhookRoutes = require("./routes/webhookRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
-require("dotenv").config();
+console.log("🔍 bookingRoutes loaded:", bookingRoutes);
 const walletRoutes = require("./routes/walletRoutes");
 const bankRoutes = require("./routes/bankRoutes");
 
@@ -29,7 +30,10 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/bank", bankRoutes);
 
-
+// 🔧 DEBUG ROUTE – remove after testing
+app.get("/test", (req, res) => {
+  res.json({ success: true, message: "Server is running" });
+});
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))

@@ -11,7 +11,9 @@ import {
   Platform,
   ScrollView,
   Animated,
+  Image,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { registerUser } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 
@@ -22,6 +24,8 @@ export default function Register({ navigation }) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const buttonScale = useRef(new Animated.Value(1)).current;
 
@@ -46,7 +50,7 @@ export default function Register({ navigation }) {
 
       if (response.success) {
         Alert.alert("Success", "Account created");
-        navigation.replace("Login");
+        navigation.replace("Landing");
       } else {
         Alert.alert("Error", response.message);
       }
@@ -56,17 +60,10 @@ export default function Register({ navigation }) {
   };
 
   const animateButtonIn = () => {
-    Animated.spring(buttonScale, {
-      toValue: 0.96,
-      useNativeDriver: true,
-    }).start();
+    Animated.spring(buttonScale, { toValue: 0.96, useNativeDriver: true }).start();
   };
-
   const animateButtonOut = () => {
-    Animated.spring(buttonScale, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
+    Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true }).start();
   };
 
   return (
@@ -89,8 +86,16 @@ export default function Register({ navigation }) {
               },
             ]}
           >
+            {/* Image Logo */}
+            <Image
+              source={require('../../assets/images/street_logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+            <View style={styles.logoLine} />
+
             <Text style={[styles.title, { color: colors.textPrimary }]}>Create Account</Text>
-            <Text style={[styles.subtitle, { color: colors.textTertiary }]}>Join SkillLink today</Text>
+            <Text style={[styles.subtitle, { color: colors.textTertiary }]}>Join Street today</Text>
 
             <View
               style={[
@@ -101,7 +106,6 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
-              <Text style={[styles.inputIcon, { color: colors.textTertiary }]}>👤</Text>
               <TextInput
                 placeholder="Full Name"
                 placeholderTextColor={colors.textTertiary}
@@ -120,7 +124,6 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
-              <Text style={[styles.inputIcon, { color: colors.textTertiary }]}>✉️</Text>
               <TextInput
                 placeholder="Email Address"
                 placeholderTextColor={colors.textTertiary}
@@ -141,7 +144,6 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
-              <Text style={[styles.inputIcon, { color: colors.textTertiary }]}>📞</Text>
               <TextInput
                 placeholder="Phone Number"
                 placeholderTextColor={colors.textTertiary}
@@ -161,15 +163,25 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
-              <Text style={[styles.inputIcon, { color: colors.textTertiary }]}>🔒</Text>
               <TextInput
                 placeholder="Password"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, { color: colors.textPrimary }]}
                 value={password}
                 onChangeText={setPassword}
               />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeIcon}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={22}
+                  color={colors.textTertiary}
+                />
+              </TouchableOpacity>
             </View>
 
             <View
@@ -181,15 +193,25 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
-              <Text style={[styles.inputIcon, { color: colors.textTertiary }]}>✅</Text>
               <TextInput
                 placeholder="Confirm Password"
-                secureTextEntry
+                secureTextEntry={!showConfirmPassword}
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, { color: colors.textPrimary }]}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
               />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                style={styles.eyeIcon}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                  size={22}
+                  color={colors.textTertiary}
+                />
+              </TouchableOpacity>
             </View>
 
             <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
@@ -208,8 +230,21 @@ export default function Register({ navigation }) {
                 activeOpacity={0.9}
               >
                 <Text style={[styles.buttonText, { color: colors.textInverse }]}>Verify & Continue</Text>
+                <Ionicons name="arrow-forward" size={20} color={colors.textInverse} />
               </TouchableOpacity>
             </Animated.View>
+
+            <TouchableOpacity
+              style={styles.loginLink}
+              onPress={() => navigation.replace("Landing")}
+            >
+              <Text style={[styles.loginText, { color: colors.textTertiary }]}>
+                Already have an account?{" "}
+                <Text style={[styles.loginHighlight, { color: colors.primary }]}>
+                  Login
+                </Text>
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -233,9 +268,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 24,
     elevation: 10,
+    alignItems: "center",
+  },
+  logoImage: {
+    width: 120,
+    height: 120,
+    marginBottom: 8,
+  },
+  logoLine: {
+    width: 60,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "#2563EB",
+    marginBottom: 20,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.5,
     marginBottom: 8,
@@ -253,17 +301,45 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     paddingHorizontal: 16,
     borderWidth: 1,
+    width: "100%",
   },
-  inputIcon: { fontSize: 18, marginRight: 12 },
-  input: { flex: 1, paddingVertical: 16, fontSize: 16, fontWeight: "500" },
-  button: {
+  input: {
+    flex: 1,
     paddingVertical: 16,
-    borderRadius: 40,
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  eyeIcon: {
+    paddingHorizontal: 8,
+  },
+  button: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    borderRadius: 50,
     marginTop: 12,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 12,
     elevation: 5,
+    width: "100%",
+    gap: 10,
   },
-  buttonText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
+  buttonText: {
+    fontWeight: "700",
+    fontSize: 17,
+    letterSpacing: 0.5,
+    color: "#FFF",
+  },
+  loginLink: {
+    marginTop: 16,
+    paddingVertical: 8,
+  },
+  loginText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  loginHighlight: {
+    fontWeight: "700",
+  },
 });
