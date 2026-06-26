@@ -11,35 +11,49 @@ import {
   Alert,
   TextInput,
   Modal,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "../context/ThemeContext"; // ✅ import theme
+import { useTheme } from "../context/ThemeContext";
 import {
   getMyBookings,
   getWalletBalance,
   requestWithdrawal,
   markBookingCompleted,
   confirmBookingCompletion,
+  acceptBooking,
+  rejectBooking,
+  cancelBookingRequest,
 } from "../services/api";
 
 const STATUS_LABELS = {
-  pending: "Pending",
-  confirmed: "Confirmed",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  pending_acceptance: "Pending Request",
+  accepted: "Accepted",
+  rejected: "Rejected",
   awaiting_payment: "Awaiting Payment",
   paid_in_escrow: "Escrow Funded",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  disputed: "Disputed",
+  released: "Released",
 };
 
-// ------------------ Booking Card ------------------
-const BookingCard = ({ booking, role, onPress, onStatusChange, colors }) => {
+const BookingCard = ({
+  booking,
+  role,
+  onPress,
+  onStatusChange,
+  colors,
+  onAccept,
+  onReject,
+  onCancel,
+}) => {
   const isClient = role === "client";
   const otherParty = isClient ? booking.provider : booking.client;
   const otherPartyName = otherParty?.name || "User";
   const [actionLoading, setActionLoading] = useState(false);
-
   const statusColor = colors.status[booking.status] || "#64748B";
 
   const handleMarkCompleted = async () => {
@@ -68,6 +82,77 @@ const BookingCard = ({ booking, role, onPress, onStatusChange, colors }) => {
     }
   };
 
+  const handleAccept = () => {
+    const confirmMessage = "Do you want to accept this booking request?";
+    const onConfirm = () => {
+      setActionLoading(true);
+      onAccept(booking._id);
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(confirmMessage)) {
+        onConfirm();
+      }
+    } else {
+      Alert.alert(
+        "Accept Request",
+        confirmMessage,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Accept", onPress: onConfirm },
+        ]
+      );
+    }
+  };
+
+  const handleReject = () => {
+    const confirmMessage = "Do you want to decline this booking request?";
+    const onConfirm = () => {
+      setActionLoading(true);
+      onReject(booking._id);
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(confirmMessage)) {
+        onConfirm();
+      }
+    } else {
+      Alert.alert(
+        "Decline Request",
+        confirmMessage,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Decline", style: "destructive", onPress: onConfirm },
+        ]
+      );
+    }
+  };
+
+  const handleCancel = () => {
+    const confirmMessage = "Are you sure you want to cancel this request?";
+    const onConfirm = () => {
+      setActionLoading(true);
+      onCancel(booking._id);
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(confirmMessage)) {
+        onConfirm();
+      }
+    } else {
+      Alert.alert(
+        "Cancel Request",
+        confirmMessage,
+        [
+          { text: "No", style: "cancel" },
+          { text: "Yes", style: "destructive", onPress: onConfirm },
+        ]
+      );
+    }
+  };
+
+  const isExpired = booking.isExpired === true;
+
   return (
     <TouchableOpacity
       style={[
@@ -80,6 +165,7 @@ const BookingCard = ({ booking, role, onPress, onStatusChange, colors }) => {
       ]}
       onPress={onPress}
       activeOpacity={0.7}
+      disabled={booking.status === "pending_acceptance"}
     >
       <View style={styles.cardHeader}>
         <View style={styles.userInfo}>
@@ -104,7 +190,7 @@ const BookingCard = ({ booking, role, onPress, onStatusChange, colors }) => {
           ]}
         >
           <Text style={[styles.statusText, { color: statusColor }]}>
-            {STATUS_LABELS[booking.status] || booking.status}
+            {isExpired ? "Expired" : (STATUS_LABELS[booking.status] || booking.status)}
           </Text>
         </View>
       </View>
@@ -118,6 +204,41 @@ const BookingCard = ({ booking, role, onPress, onStatusChange, colors }) => {
       <Text style={[styles.date, { color: colors.textTertiary }]}>
         {new Date(booking.createdAt).toLocaleDateString()}
       </Text>
+
+      {!isClient && booking.status === "pending_acceptance" && !isExpired && (
+        <View style={styles.requestActions}>
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: colors.success }]}
+            onPress={handleAccept}
+            disabled={actionLoading}
+          >
+            <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
+              {actionLoading ? "..." : "Accept"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.rejectButton, { backgroundColor: colors.danger }]}
+            onPress={handleReject}
+            disabled={actionLoading}
+          >
+            <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
+              {actionLoading ? "..." : "Decline"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isClient && booking.status === "pending_acceptance" && !isExpired && (
+        <TouchableOpacity
+          style={[styles.cancelButton, { backgroundColor: colors.danger }]}
+          onPress={handleCancel}
+          disabled={actionLoading}
+        >
+          <Text style={[styles.cancelButtonText, { color: colors.textInverse }]}>
+            {actionLoading ? "Cancelling..." : "Cancel Request"}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {!isClient && booking.status === "paid_in_escrow" && (
         <TouchableOpacity
@@ -149,7 +270,7 @@ const BookingCard = ({ booking, role, onPress, onStatusChange, colors }) => {
 // ------------------ Main Dashboard ------------------
 export default function Dashboard({ navigation }) {
   const { user } = useContext(AuthContext);
-  const { colors, toggleTheme, theme } = useTheme(); // ✅ use theme
+  const { colors, toggleTheme, theme } = useTheme();
   const [activeTab, setActiveTab] = useState("client");
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -158,12 +279,16 @@ export default function Dashboard({ navigation }) {
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // ... all existing fetch functions (unchanged) ...
   const fetchBookings = async () => {
     try {
       const response = await getMyBookings();
-      setBookings(response.data || []);
+      const sorted = (response.data || []).sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+      );
+      setBookings(sorted);
+      setRefreshKey((prev) => prev + 1);
     } catch (error) {
       console.log("Fetch bookings error:", error);
       Alert.alert("Error", "Could not load bookings");
@@ -193,6 +318,56 @@ export default function Dashboard({ navigation }) {
     setRefreshing(true);
     fetchBookings();
     fetchWalletBalance();
+  };
+
+  const handleAccept = async (bookingId) => {
+    setBookings((prev) =>
+      prev.map((b) =>
+        b._id === bookingId ? { ...b, status: "accepted" } : b
+      )
+    );
+    setRefreshKey((prev) => prev + 1);
+
+    try {
+      await acceptBooking(bookingId);
+      Alert.alert("Accepted", "Booking request accepted.");
+      await fetchBookings();
+    } catch (error) {
+      await fetchBookings();
+      Alert.alert("Error", "Could not accept booking.");
+    }
+  };
+
+  const handleReject = async (bookingId) => {
+    setBookings((prev) =>
+      prev.map((b) =>
+        b._id === bookingId ? { ...b, status: "rejected" } : b
+      )
+    );
+    setRefreshKey((prev) => prev + 1);
+
+    try {
+      await rejectBooking(bookingId);
+      Alert.alert("Declined", "Booking request declined.");
+      await fetchBookings();
+    } catch (error) {
+      await fetchBookings();
+      Alert.alert("Error", "Could not decline booking.");
+    }
+  };
+
+  const handleCancel = async (bookingId) => {
+    setBookings((prev) => prev.filter((b) => b._id !== bookingId));
+    setRefreshKey((prev) => prev + 1);
+
+    try {
+      await cancelBookingRequest(bookingId);
+      Alert.alert("Cancelled", "Request cancelled successfully.");
+      await fetchBookings();
+    } catch (error) {
+      await fetchBookings();
+      Alert.alert("Error", "Could not cancel request.");
+    }
   };
 
   const filteredBookings = bookings.filter((booking) => {
@@ -273,7 +448,7 @@ export default function Dashboard({ navigation }) {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header with theme toggle */}
+        {/* Header */}
         <View style={styles.header}>
           {canGoBack && (
             <TouchableOpacity
@@ -392,20 +567,27 @@ export default function Dashboard({ navigation }) {
           renderSkeleton()
         ) : (
           <FlatList
+            key={refreshKey}
             data={filteredBookings}
             keyExtractor={(item) => item._id}
             renderItem={({ item }) => (
               <BookingCard
                 booking={item}
                 role={activeTab}
-                onPress={() =>
-                  navigation.navigate("PaymentDashboard", { bookingId: item._id })
-                }
+                onPress={() => {
+                  navigation.navigate("BookingScreen", {
+                    bookingId: item._id,
+                    mode: "existing",
+                  });
+                }}
                 onStatusChange={() => {
                   fetchBookings();
                   fetchWalletBalance();
                 }}
                 colors={colors}
+                onAccept={handleAccept}
+                onReject={handleReject}
+                onCancel={handleCancel}
               />
             )}
             contentContainerStyle={styles.listContent}
@@ -455,10 +637,10 @@ export default function Dashboard({ navigation }) {
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.gray }]}
+                style={[styles.modalButton, styles.cancelButtonModal, { backgroundColor: colors.gray }]}
                 onPress={() => setWithdrawModalVisible(false)}
               >
-                <Text style={[styles.cancelButtonText, { color: colors.textPrimary }]}>
+                <Text style={[styles.cancelButtonTextModal, { color: colors.textPrimary }]}>
                   Cancel
                 </Text>
               </TouchableOpacity>
@@ -479,7 +661,7 @@ export default function Dashboard({ navigation }) {
   );
 }
 
-// ------------------ Styles (keep static values, colors will be overridden) ------------------
+// ------------------ Styles (unchanged) ------------------
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
@@ -521,18 +703,52 @@ const styles = StyleSheet.create({
   },
   walletTitle: { fontSize: 16, marginBottom: 8 },
   walletBalance: { fontSize: 36, fontWeight: "800", marginBottom: 16 },
-  walletActions: { flexDirection: "row", gap: 12, width: "100%", justifyContent: "center" },
-  withdrawButton: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 40, flex: 1, alignItems: "center" },
+  walletActions: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+    justifyContent: "center",
+  },
+  withdrawButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 40,
+    flex: 1,
+    alignItems: "center",
+  },
   withdrawText: { fontWeight: "600", fontSize: 14 },
-  bankButton: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 40, flex: 1, alignItems: "center" },
+  bankButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 40,
+    flex: 1,
+    alignItems: "center",
+  },
   bankButtonText: { fontWeight: "600", fontSize: 14 },
   sectionTitle: { fontSize: 20, fontWeight: "700", marginBottom: 16 },
-  tabContainer: { flexDirection: "row", borderRadius: 40, padding: 4, marginBottom: 20 },
+  tabContainer: {
+    flexDirection: "row",
+    borderRadius: 40,
+    padding: 4,
+    marginBottom: 20,
+  },
   tab: { flex: 1, paddingVertical: 10, borderRadius: 36, alignItems: "center" },
   tabText: { fontSize: 14, fontWeight: "600" },
   listContent: { paddingBottom: 40, gap: 16 },
-  card: { borderRadius: 24, padding: 18, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 3, marginBottom: 4 },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  card: {
+    borderRadius: 24,
+    padding: 18,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 3,
+    marginBottom: 4,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   userInfo: { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
   avatarText: { fontSize: 18, fontWeight: "bold" },
@@ -543,8 +759,40 @@ const styles = StyleSheet.create({
   serviceTitle: { fontSize: 16, fontWeight: "500", marginBottom: 6 },
   price: { fontSize: 18, fontWeight: "700", marginBottom: 4 },
   date: { fontSize: 13 },
-  actionButton: { paddingVertical: 10, borderRadius: 40, alignItems: "center", marginTop: 12 },
+  actionButton: {
+    paddingVertical: 10,
+    borderRadius: 40,
+    alignItems: "center",
+    marginTop: 12,
+  },
   actionButtonText: { fontWeight: "600", fontSize: 14 },
+  requestActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 12,
+  },
+  acceptButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 40,
+    alignItems: "center",
+  },
+  rejectButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 40,
+    alignItems: "center",
+  },
+  cancelButton: {
+    paddingVertical: 10,
+    borderRadius: 40,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  cancelButtonText: {
+    fontWeight: "600",
+    fontSize: 14,
+  },
   emptyContainer: { alignItems: "center", paddingVertical: 60 },
   emptyIcon: { fontSize: 48, marginBottom: 16, opacity: 0.6 },
   emptyTitle: { fontSize: 18, fontWeight: "600", marginBottom: 6 },
@@ -553,15 +801,32 @@ const styles = StyleSheet.create({
   skeletonCard: { borderRadius: 24, padding: 18, marginBottom: 4 },
   skeletonAvatar: { width: 44, height: 44, borderRadius: 22, marginBottom: 12 },
   skeletonLine: { height: 14, borderRadius: 8, marginVertical: 6, width: "80%" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  modalContainer: { borderRadius: 28, padding: 24, width: "85%", alignItems: "center" },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    borderRadius: 28,
+    padding: 24,
+    width: "85%",
+    alignItems: "center",
+  },
   modalTitle: { fontSize: 20, fontWeight: "700", marginBottom: 8 },
   modalSubtitle: { fontSize: 14, marginBottom: 20 },
-  modalInput: { width: "100%", borderRadius: 16, padding: 14, fontSize: 16, marginBottom: 24, borderWidth: 1 },
+  modalInput: {
+    width: "100%",
+    borderRadius: 16,
+    padding: 14,
+    fontSize: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+  },
   modalButtons: { flexDirection: "row", gap: 12, width: "100%" },
   modalButton: { flex: 1, paddingVertical: 12, borderRadius: 40, alignItems: "center" },
-  cancelButton: { /* bg set dynamically */ },
-  confirmButton: { /* bg set dynamically */ },
-  cancelButtonText: { fontWeight: "600" },
+  cancelButtonModal: { backgroundColor: "#F1F5F9" },
+  confirmButton: { backgroundColor: "#2563EB" },
+  cancelButtonTextModal: { fontWeight: "600" },
   confirmButtonText: { fontWeight: "600" },
 });

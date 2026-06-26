@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Animated,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Video } from "expo-av";
@@ -17,13 +18,26 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
-import { getPosts, api } from "../services/api";
+import { getPosts, api, deletePost, savePost, likePost, unlikePost } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
+import { isUserActive } from "../utils/helpers";
 
 // ==============================
-// PostItem Component (with compact book button)
+// PostItem Component (with like & save)
 // ==============================
-const PostItem = ({ item, userId, colors }) => {
+const PostItem = ({
+  item,
+  userId,
+  isOwnPost,
+  onEdit,
+  onDelete,
+  colors,
+  isLiked,
+  likesCount,
+  onLikePress,
+  isSaved,
+  onSavePress,
+}) => {
   const navigation = useNavigation();
   const bookScale = useRef(new Animated.Value(1)).current;
 
@@ -34,9 +48,42 @@ const PostItem = ({ item, userId, colors }) => {
     Animated.spring(bookScale, { toValue: 1, useNativeDriver: true }).start();
   };
 
+  const handleDelete = () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+        onDelete(item._id);
+      }
+    } else {
+      Alert.alert(
+        "Delete Post",
+        "Are you sure you want to delete this post? This action cannot be undone.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => onDelete(item._id) },
+        ]
+      );
+    }
+  };
+
   return (
     <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
-      <Text style={[styles.description, { color: colors.textSecondary }]}>{item.description}</Text>
+      {/* Post header with edit/delete buttons (if own post) */}
+      <View style={styles.postHeader}>
+        <Text style={[styles.description, { color: colors.textSecondary }]}>
+          {item.description}
+        </Text>
+        {isOwnPost && (
+          <View style={styles.postActions}>
+            <TouchableOpacity onPress={() => onEdit(item)} style={styles.actionIcon}>
+              <Ionicons name="pencil-outline" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleDelete} style={styles.actionIcon}>
+              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
       {item.media && item.mediaType === "image" && (
         <Image source={{ uri: item.media }} style={styles.mediaImage} />
       )}
@@ -55,14 +102,45 @@ const PostItem = ({ item, userId, colors }) => {
           </View>
         ))}
       </View>
+
+      {/* Action Row: Like & Save */}
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: colors.gray }]}
+          onPress={() => onLikePress(item._id)}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={isLiked ? "heart" : "heart-outline"}
+            size={20}
+            color={isLiked ? colors.danger : colors.textTertiary}
+          />
+          <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
+            {likesCount > 0 ? likesCount : ""}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: colors.gray }]}
+          onPress={() => onSavePress(item._id)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
+            {isSaved ? "❤️ Saved" : "🤍 Save"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <Animated.View style={{ transform: [{ scale: bookScale }] }}>
         <TouchableOpacity
           style={[styles.bookButton, { backgroundColor: colors.primary }]}
           onPress={() =>
             navigation.navigate("BookingScreen", {
               providerId: userId,
+              providerName: item.user?.name || "Provider",
               serviceTitle: item.description,
               price: item.price,
+              description: item.description,
             })
           }
           onPressIn={handlePressIn}
@@ -77,7 +155,7 @@ const PostItem = ({ item, userId, colors }) => {
 };
 
 // ==============================
-// Main UserProfileScreen (unchanged)
+// Main UserProfileScreen
 // ==============================
 export default function UserProfileScreen() {
   const navigation = useNavigation();
@@ -94,14 +172,19 @@ export default function UserProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
+  // Like & Save state
+  const [likedPosts, setLikedPosts] = useState([]);
+  const [savedPosts, setSavedPosts] = useState([]);
+
   const isOwnProfile = user?._id === resolvedUserId;
+  const userActive = isUserActive(userInfo?.lastActive);
 
   const loadUserData = async (id) => {
     setLoading(true);
     try {
       const res = await api.get(`/users/${id}`);
       setUserInfo(res.data);
-      const postsRes = await getPosts(1);
+      const postsRes = await getPosts(1, 20);
       if (postsRes?.success) {
         const posts = postsRes.posts || [];
         const filtered = posts.filter((post) => post?.user?._id === id);
@@ -134,6 +217,64 @@ export default function UserProfileScreen() {
     }, [resolvedUserId])
   );
 
+  // --- Edit & Delete handlers ---
+  const handleEditPost = (post) => {
+    navigation.navigate("CreatePostScreen", { editPost: post });
+  };
+
+  const handleDeletePost = async (postId) => {
+    try {
+      await deletePost(postId);
+      setUserPosts((prev) => prev.filter((p) => p._id !== postId));
+      Alert.alert("Deleted", "Post deleted successfully.");
+    } catch (error) {
+      Alert.alert("Error", "Could not delete post.");
+    }
+  };
+
+  // --- Like handler (optimistic) ---
+  const toggleLike = async (postId) => {
+    const isLiked = likedPosts.includes(postId);
+    // Optimistic update
+    setLikedPosts((prev) =>
+      isLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
+    );
+    setUserPosts((prev) =>
+      prev.map((post) =>
+        post._id === postId
+          ? {
+              ...post,
+              likesCount: isLiked ? (post.likesCount || 1) - 1 : (post.likesCount || 0) + 1,
+            }
+          : post
+      )
+    );
+    try {
+      if (isLiked) {
+        await unlikePost(postId);
+      } else {
+        await likePost(postId);
+      }
+    } catch (error) {
+      // Revert on error – re-fetch posts
+      await loadUserData(resolvedUserId);
+    }
+  };
+
+  // --- Save handler ---
+  const toggleSave = async (postId) => {
+    try {
+      await savePost(postId); // your savePost function expects postId only
+      if (savedPosts.includes(postId)) {
+        setSavedPosts(savedPosts.filter((id) => id !== postId));
+      } else {
+        setSavedPosts([...savedPosts, postId]);
+      }
+    } catch (error) {
+      Alert.alert("Error", "Could not save post.");
+    }
+  };
+
   if (loading || authLoading || !resolvedUserId) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -144,7 +285,7 @@ export default function UserProfileScreen() {
     );
   }
 
-  // Header component that will be rendered above the list
+  // Profile Header (with status dot)
   const ProfileHeader = () => (
     <View style={[styles.header, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
       {userInfo?.profileImage ? (
@@ -154,8 +295,18 @@ export default function UserProfileScreen() {
           <Text style={[styles.avatarText, { color: colors.textInverse }]}>{userInfo?.name?.charAt(0) || "U"}</Text>
         </View>
       )}
-      <Text style={[styles.name, { color: colors.textPrimary }]}>{userInfo?.name || "User"}</Text>
-      <Text style={[styles.skill, { color: colors.textTertiary }]}>{userInfo?.bio || "No description provided"}</Text>
+      <View style={styles.nameRow}>
+        <Text style={[styles.name, { color: colors.textPrimary }]}>
+          {userInfo?.name || "User"}
+        </Text>
+        <View style={[
+          styles.statusDot,
+          { backgroundColor: userActive ? '#22C55E' : '#94A3B8' }
+        ]} />
+      </View>
+      <Text style={[styles.skill, { color: colors.textTertiary }]}>
+        {userInfo?.bio || "No description provided"}
+      </Text>
       <View style={[styles.ratingContainer, { backgroundColor: colors.inputBackground }]}>
         <Text style={[styles.ratingText, { color: colors.warning }]}>⭐ {userInfo?.rating || 0}</Text>
         <Text style={[styles.jobsText, { color: colors.textTertiary }]}>• {userInfo?.jobsCompleted || 0} jobs completed</Text>
@@ -184,7 +335,6 @@ export default function UserProfileScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={["top"]}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Back button - absolutely positioned */}
         <TouchableOpacity
           style={[styles.backButton, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}
           onPress={() => navigation.goBack()}
@@ -193,12 +343,25 @@ export default function UserProfileScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
 
-        {/* The FlatList takes all available space */}
         <FlatList
           key={resetKey}
           data={userPosts}
           keyExtractor={(item) => item._id}
-          renderItem={({ item }) => <PostItem item={item} userId={resolvedUserId} colors={colors} />}
+          renderItem={({ item }) => (
+            <PostItem
+              item={item}
+              userId={resolvedUserId}
+              isOwnPost={isOwnProfile && item.user?._id === user?._id}
+              onEdit={handleEditPost}
+              onDelete={handleDeletePost}
+              colors={colors}
+              isLiked={likedPosts.includes(item._id)}
+              likesCount={item.likesCount || 0}
+              onLikePress={toggleLike}
+              isSaved={savedPosts.includes(item._id)}
+              onSavePress={toggleSave}
+            />
+          )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
@@ -234,7 +397,7 @@ export default function UserProfileScreen() {
 }
 
 // ==============================
-// Updated Styles – compact book button
+// Styles (with actionRow and actionButton)
 // ==============================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
@@ -289,6 +452,17 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   avatarText: { fontSize: 32, fontWeight: "bold" },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginLeft: 4,
+  },
   name: { fontSize: 24, fontWeight: "800", letterSpacing: -0.3, marginBottom: 4 },
   skill: { fontSize: 14, marginTop: 4, textAlign: "center", paddingHorizontal: 20 },
   ratingContainer: {
@@ -335,7 +509,15 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  description: { fontSize: 15, lineHeight: 22, marginBottom: 12 },
+  postHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  description: { fontSize: 15, lineHeight: 22, flex: 1 },
+  postActions: { flexDirection: "row", gap: 12, marginLeft: 10 },
+  actionIcon: { padding: 4 },
   mediaImage: {
     width: "100%",
     height: 200,
@@ -360,7 +542,22 @@ const styles = StyleSheet.create({
   },
   tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   tagText: { fontSize: 12, fontWeight: "500" },
-  // ✅ compact book button
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 40,
+    gap: 4,
+  },
+  actionButtonText: { fontWeight: "600", fontSize: 14 },
   bookButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,

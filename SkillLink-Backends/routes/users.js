@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
 const Post = require('../models/Post');
+const protect = require("../middleware/authMiddleware");
 
 
 // ========================================
@@ -73,6 +74,15 @@ router.put("/:id", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
+  }
+});
+router.post("/heartbeat", protect, async (req, res) => {
+  try {
+    req.user.lastActive = new Date();
+    await req.user.save();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

@@ -19,6 +19,7 @@ import { Image } from "react-native";
 import { Video } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
+import { isUserActive } from "../utils/helpers";
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -33,7 +34,7 @@ export default function HomeScreen() {
 
   const [search, setSearch] = useState("");
   const [savedPosts, setSavedPosts] = useState([]);
-  const [likedPosts, setLikedPosts] = useState([]); // ✅ store liked post IDs
+  const [likedPosts, setLikedPosts] = useState([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -55,13 +56,11 @@ export default function HomeScreen() {
   ).current;
   const fabScale = useRef(new Animated.Value(1)).current;
 
-  // ✅ Navigation handler
   const goToUserProfile = (userId) => {
     if (!userId) return;
     navigation.navigate("UsersProfile", { userId });
   };
 
-  // ✅ Deduplication helper
   const mergeUniquePosts = (prev, incoming) => {
     const map = new Map();
     [...prev, ...incoming].forEach((post) => {
@@ -102,7 +101,6 @@ export default function HomeScreen() {
 
   const loadMorePosts = () => {
     if (loading || !hasMore) return;
-
     const nextPage = page + 1;
     setPage(nextPage);
     console.log("Loading page:", nextPage);
@@ -111,12 +109,10 @@ export default function HomeScreen() {
 
   const handleSearch = async (text) => {
     setSearch(text);
-
     if (!text) {
       setPosts(allPosts);
       return;
     }
-
     try {
       const results = await searchPosts(text);
       setPosts(results);
@@ -128,7 +124,6 @@ export default function HomeScreen() {
   const toggleSave = async (id) => {
     try {
       await savePost(id, userToken);
-
       if (savedPosts.includes(id)) {
         setSavedPosts(savedPosts.filter((postId) => postId !== id));
       } else {
@@ -139,14 +134,11 @@ export default function HomeScreen() {
     }
   };
 
-  // ✅ Toggle like
   const toggleLike = async (postId) => {
     const isLiked = likedPosts.includes(postId);
-    // Optimistically update UI
     setLikedPosts((prev) =>
       isLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
     );
-    // Update like count locally
     setPosts((prevPosts) =>
       prevPosts.map((post) =>
         post._id === postId
@@ -157,7 +149,6 @@ export default function HomeScreen() {
           : post
       )
     );
-    // Call API (optional, handle errors)
     try {
       if (isLiked) {
         await unlikePost(postId);
@@ -165,7 +156,6 @@ export default function HomeScreen() {
         await likePost(postId);
       }
     } catch (error) {
-      // Revert on error if needed
       console.log("Like API error:", error);
     }
   };
@@ -177,7 +167,6 @@ export default function HomeScreen() {
 
   const handleCategoryPress = (category, index) => {
     setSelectedCategory(category);
-
     Animated.sequence([
       Animated.timing(scaleAnim[index], {
         toValue: 1.2,
@@ -211,7 +200,6 @@ export default function HomeScreen() {
     }
   };
 
-  // ✅ Reset state when user changes (CRITICAL FIX)
   useEffect(() => {
     setAllPosts([]);
     setPosts([]);
@@ -228,7 +216,6 @@ export default function HomeScreen() {
     refreshPosts();
   }, [refreshFlag]);
 
-  // Card entry animation (fade + slide)
   const getCardAnimation = (index) => {
     const translateY = new Animated.Value(50);
     const opacity = new Animated.Value(0);
@@ -253,6 +240,8 @@ export default function HomeScreen() {
     const animStyle = getCardAnimation(index);
     const isLiked = likedPosts.includes(item._id);
     const likeCount = item.likesCount || 0;
+    const userActive = isUserActive(item.user?.lastActive);
+    
 
     return (
       <Animated.View style={[styles.cardWrapper, animStyle]}>
@@ -274,11 +263,25 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerInfo}>
-              <Text style={[styles.name, { color: colors.textPrimary }]}>{item.user?.name || "User"}</Text>
-              <Text style={[styles.skill, { color: colors.textTertiary }]}>{item.user?.skill || "Skilled Worker"}</Text>
+              <View style={styles.nameRow}>
+                <Text style={[styles.name, { color: colors.textPrimary }]}>
+                  {item.user?.name || "User"}
+                </Text>
+                <View style={[
+                  styles.statusDot,
+                  { backgroundColor: userActive ? '#22C55E' : '#94A3B8' }
+                ]} />
+              </View>
+              <Text style={[styles.skill, { color: colors.textTertiary }]}>
+                {item.user?.skill || "Skilled Worker"}
+              </Text>
               <View style={styles.ratingContainer}>
-                <Text style={[styles.ratingText, { color: colors.warning }]}>⭐ {item.user?.rating || 0}</Text>
-                <Text style={[styles.jobsText, { color: colors.textTertiary }]}>• {item.user?.jobsCompleted || 0} jobs</Text>
+                <Text style={[styles.ratingText, { color: colors.warning }]}>
+                  ⭐ {item.user?.rating || 0}
+                </Text>
+                <Text style={[styles.jobsText, { color: colors.textTertiary }]}>
+                  • {item.user?.jobsCompleted || 0} jobs
+                </Text>
               </View>
             </View>
           </View>
@@ -308,7 +311,6 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.actionRow}>
-            {/* ✅ Like Button */}
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.gray }]}
               onPress={() => toggleLike(item._id)}
@@ -324,7 +326,6 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* ✅ Save Button */}
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.gray }]}
               onPress={() => toggleSave(item._id)}
@@ -336,14 +337,15 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Book Button */}
           <TouchableOpacity
-            style={[styles.bookButton, { backgroundColor: colors.primary}]}
+            style={[styles.bookButton, { backgroundColor: colors.primary }]}
             onPress={() =>
               navigation.navigate("BookingScreen", {
                 providerId: item.user?._id,
+                providerName: item.user?.name || "Provider",
                 serviceTitle: item.description,
                 price: item.price,
+                description: item.description,
               })
             }
           >
@@ -385,7 +387,7 @@ export default function HomeScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.topRow}>
-          <Text style={[styles.title, { color: colors.textPrimary }]}>SkillLink</Text>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Street</Text>
           <View style={styles.topButtons}>
             <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.card }]} onPress={refreshPosts} activeOpacity={0.7}>
               <Text style={styles.iconButtonText}>🔄</Text>
@@ -560,6 +562,17 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginLeft: 4,
+  },
   avatarContainer: {
     width: 56,
     height: 56,
@@ -603,24 +616,22 @@ const styles = StyleSheet.create({
   },
   actionButtonText: { fontWeight: "600", fontSize: 14 },
   bookButton: {
-  backgroundColor: "#2563EB", // will be overridden by theme
-  paddingVertical: 8,
-  paddingHorizontal: 16,
-  borderRadius: 30,
-  alignItems: "center",
-  alignSelf: "flex-start", // 👈 makes the button only as wide as its content
-  marginTop: 6,
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.1,
-  shadowRadius: 4,
-  elevation: 1,
-},
-bookButtonText: {
-  color: "#FFFFFF",
-  fontWeight: "600",
-  fontSize: 13,
-  letterSpacing: 0.2,
-},
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 30,
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  bookButtonText: {
+    fontWeight: "600",
+    fontSize: 13,
+    letterSpacing: 0.2,
+  },
   floatingButton: {
     position: "absolute",
     bottom: 30,

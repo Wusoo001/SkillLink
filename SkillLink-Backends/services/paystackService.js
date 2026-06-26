@@ -1,5 +1,8 @@
 const axios = require("axios");
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+console.log("🔑 PAYSTACK_SECRET_KEY exists:", !!PAYSTACK_SECRET_KEY);
+console.log("🔑 PAYSTACK_SECRET_KEY length:", PAYSTACK_SECRET_KEY?.length);
+console.log("🔑 PAYSTACK_SECRET_KEY first 8 chars:", PAYSTACK_SECRET_KEY?.substring(0, 8));
 
 if (!PAYSTACK_SECRET_KEY) {
   console.warn("⚠️ PAYSTACK_SECRET_KEY is missing");
@@ -11,6 +14,8 @@ const PAYSTACK_BASE_URL = "https://api.paystack.co";
  * Initialize payment (unchanged)
  */
 const initializePayment = async ({ email, amount, reference }) => {
+  console.log("💳 initializePayment called with:", { email, amount, reference });
+  console.log("🔑 Using PAYSTACK_SECRET_KEY (first 8 chars):", PAYSTACK_SECRET_KEY?.substring(0, 8));
   try {
     const response = await axios.post(
       `${PAYSTACK_BASE_URL}/transaction/initialize`,
@@ -28,6 +33,10 @@ const initializePayment = async ({ email, amount, reference }) => {
     );
     return response.data.data;
   } catch (error) {
+    console.error("❌ Paystack init error details:");
+    console.error("  - Response data:", error.response?.data);
+    console.error("  - Response status:", error.response?.status);
+    console.error("  - Response headers:", error.response?.headers);
     throw new Error(
       error.response?.data?.message || "Payment initialization failed"
     );

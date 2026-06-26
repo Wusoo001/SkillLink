@@ -1,248 +1,265 @@
-import { useRef, useEffect } from "react";
+import { useContext, useState, useRef } from "react";
 import {
+  Alert,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   SafeAreaView,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { AuthContext } from "../../context/AuthContext";
+import { loginUser } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
 
 export default function Landing({ navigation }) {
-  // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const primaryScale = useRef(new Animated.Value(1)).current;
-  const secondaryScale = useRef(new Animated.Value(1)).current;
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const { login } = useContext(AuthContext);
+  const { colors } = useTheme();
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
+  const buttonScale = useRef(new Animated.Value(1)).current;
 
-  const animatePrimaryIn = () => {
-    Animated.spring(primaryScale, {
-      toValue: 0.96,
-      useNativeDriver: true,
-    }).start();
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "All fields required");
+      return;
+    }
+
+    try {
+      const response = await loginUser({ email, password });
+      if (response.token && response.user) {
+        login(response.token, response.user);
+      } else {
+        Alert.alert("Error", response.message || "Invalid credentials");
+      }
+    } catch (error) {
+      console.log(error);
+      Alert.alert("Error", "Server not reachable");
+    }
   };
 
-  const animatePrimaryOut = () => {
-    Animated.spring(primaryScale, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
+  const animateButtonIn = () => {
+    Animated.spring(buttonScale, { toValue: 0.96, useNativeDriver: true }).start();
   };
-
-  const animateSecondaryIn = () => {
-    Animated.spring(secondaryScale, {
-      toValue: 0.96,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const animateSecondaryOut = () => {
-    Animated.spring(secondaryScale, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
+  const animateButtonOut = () => {
+    Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true }).start();
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        {/* Background gradient layers */}
-        <View style={styles.gradientTop} />
-        <View style={styles.gradientBottom} />
-        
-        {/* Decorative floating circles */}
-        <View style={styles.circle1} />
-        <View style={styles.circle2} />
-        <View style={styles.circle3} />
-
-        <Animated.View
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
+      >
+        <View style={[styles.gradientOverlay, { backgroundColor: colors.background }]} />
+        <View
           style={[
-            styles.content,
+            styles.card,
             {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
+              backgroundColor: colors.card,
+              shadowColor: colors.shadowColor,
+              shadowOpacity: colors.shadowOpacity,
             },
           ]}
         >
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>SkillLink</Text>
-            <View style={styles.logoUnderline} />
+          {/* Image Logo */}
+          <Image
+            source={require('../../assets/images/street_logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+          <View style={styles.logoLine} />
+
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Welcome Back</Text>
+          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>Sign in to continue</Text>
+
+          <View
+            style={[
+              styles.inputWrapper,
+              {
+                backgroundColor: colors.inputBackground,
+                borderColor: colors.inputBorder,
+              },
+            ]}
+          >
+            <TextInput
+              placeholder="Email address"
+              placeholderTextColor={colors.textTertiary}
+              style={[styles.input, { color: colors.textPrimary }]}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
           </View>
 
-          <Text style={styles.subtitle}>
-            Connect with top professionals{'\n'}
-            and grow your business
-          </Text>
-
-          <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
+          <View
+            style={[
+              styles.inputWrapper,
+              {
+                backgroundColor: colors.inputBackground,
+                borderColor: colors.inputBorder,
+              },
+            ]}
+          >
+            <TextInput
+              placeholder="Password"
+              secureTextEntry={!showPassword}
+              placeholderTextColor={colors.textTertiary}
+              style={[styles.input, { color: colors.textPrimary }]}
+              value={password}
+              onChangeText={setPassword}
+            />
             <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => navigation.navigate("Register")}
-              onPressIn={animatePrimaryIn}
-              onPressOut={animatePrimaryOut}
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeIcon}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={22}
+                color={colors.textTertiary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOpacity: 0.25,
+                },
+              ]}
+              onPress={handleLogin}
+              onPressIn={animateButtonIn}
+              onPressOut={animateButtonOut}
               activeOpacity={0.9}
             >
-              <Text style={styles.primaryText}>Create Account</Text>
+              <Text style={[styles.buttonText, { color: colors.textInverse }]}>Login</Text>
+              <Ionicons name="arrow-forward" size={20} color={colors.textInverse} />
             </TouchableOpacity>
           </Animated.View>
 
-          <Animated.View style={{ transform: [{ scale: secondaryScale }] }}>
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => navigation.navigate("Login")}
-              onPressIn={animateSecondaryIn}
-              onPressOut={animateSecondaryOut}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.secondaryText}>Login</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
-      </View>
+          <TouchableOpacity
+            style={styles.registerLink}
+            onPress={() => navigation.navigate("Register")}
+          >
+            <Text style={[styles.registerText, { color: colors.textTertiary }]}>
+              Don't have an account?{" "}
+              <Text style={[styles.registerHighlight, { color: colors.primary }]}>
+                Create Account
+              </Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
+  safeArea: { flex: 1 },
   container: {
     flex: 1,
     justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  gradientOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  card: {
+    borderRadius: 32,
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 24,
+    elevation: 10,
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
   },
-  gradientTop: {
-    position: "absolute",
-    top: -100,
-    left: -100,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "#3B82F6",
-    opacity: 0.1,
+  logoImage: {
+    width: 120,
+    height: 120,
+    marginBottom: 8,
   },
-  gradientBottom: {
-    position: "absolute",
-    bottom: -80,
-    right: -80,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: "#8B5CF6",
-    opacity: 0.1,
-  },
-  circle1: {
-    position: "absolute",
-    top: "20%",
-    right: -50,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "#F59E0B",
-    opacity: 0.05,
-  },
-  circle2: {
-    position: "absolute",
-    bottom: "25%",
-    left: -40,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: "#10B981",
-    opacity: 0.06,
-  },
-  circle3: {
-    position: "absolute",
-    top: "60%",
-    right: "10%",
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "#EF4444",
-    opacity: 0.04,
-  },
-  content: {
-    width: "100%",
-    alignItems: "center",
-    paddingHorizontal: 30,
-  },
-  logoContainer: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  logo: {
-    fontSize: 48,
-    fontWeight: "800",
-    letterSpacing: -1,
-    color: "#0F172A",
-    textShadowColor: "rgba(0,0,0,0.05)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  logoUnderline: {
+  logoLine: {
     width: 60,
-    height: 4,
+    height: 3,
     borderRadius: 2,
     backgroundColor: "#2563EB",
-    marginTop: 8,
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    marginBottom: 8,
+    textAlign: "center",
   },
   subtitle: {
-    fontSize: 18,
-    color: "#475569",
+    fontSize: 16,
     textAlign: "center",
-    lineHeight: 26,
-    marginBottom: 48,
+    marginBottom: 32,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 20,
+    marginBottom: 18,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    width: "100%",
+  },
+  input: {
+    flex: 1,
+    paddingVertical: 16,
+    fontSize: 16,
     fontWeight: "500",
   },
-  primaryButton: {
-    backgroundColor: "#2563EB",
-    width: "100%",
-    paddingVertical: 16,
-    borderRadius: 48,
-    alignItems: "center",
-    marginBottom: 16,
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
+  eyeIcon: {
+    paddingHorizontal: 8,
   },
-  primaryText: {
-    color: "#FFFFFF",
+  button: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    borderRadius: 50,
+    marginTop: 12,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 5,
+    width: "100%",
+    gap: 10,
+  },
+  buttonText: {
     fontWeight: "700",
     fontSize: 17,
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    color: "#FFF",
   },
-  secondaryButton: {
-    width: "100%",
-    paddingVertical: 16,
-    borderRadius: 48,
-    borderWidth: 1.5,
-    borderColor: "#2563EB",
-    alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
+  registerLink: {
+    marginTop: 20,
+    paddingVertical: 8,
   },
-  secondaryText: {
-    color: "#2563EB",
-    fontWeight: "600",
-    fontSize: 17,
+  registerText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  registerHighlight: {
+    fontWeight: "700",
   },
 });

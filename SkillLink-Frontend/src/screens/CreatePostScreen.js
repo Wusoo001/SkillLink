@@ -1,4 +1,4 @@
-import { useContext, useState, useRef } from "react";
+import { useContext, useState, useRef, useEffect } from "react";
 import {
   View,
   TextInput,
@@ -19,17 +19,21 @@ import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthContext } from "../../context/AuthContext";
-import { createPost } from "../services/api";
+import { createPost, updatePost } from "../services/api"; // ✅ import updatePost
 import { PostContext } from "../../context/PostContext";
 import { useTheme } from "../context/ThemeContext";
 
 const CLOUD_NAME = "dz2te6uth";
 const UPLOAD_PRESET = "SkillLink";
 
-export default function CreatePostScreen({ navigation }) {
+export default function CreatePostScreen({ navigation, route }) {
   const { userToken } = useContext(AuthContext);
   const { addNewPost } = useContext(PostContext);
   const { colors } = useTheme();
+
+  // ✅ Detect if we are editing
+  const { editPost } = route.params || {};
+  const isEdit = !!editPost;
 
   const [skill, setSkill] = useState("");
   const [description, setDescription] = useState("");
@@ -39,9 +43,25 @@ export default function CreatePostScreen({ navigation }) {
   const [mediaBase64, setMediaBase64] = useState(null);
   const [mediaType, setMediaType] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [existingMediaUrl, setExistingMediaUrl] = useState(null); // ✅ store old media URL
 
   const postScale = useRef(new Animated.Value(1)).current;
   const pickScale = useRef(new Animated.Value(1)).current;
+
+  // ✅ Pre‑fill fields when editing
+  useEffect(() => {
+    if (editPost) {
+      setSkill(editPost.skill || "");
+      setDescription(editPost.description || "");
+      setPrice(editPost.price ? String(editPost.price) : "");
+      setTags(editPost.tags?.join(", ") || "");
+      setLocation(editPost.location || "");
+      setExistingMediaUrl(editPost.media || null);
+      setMediaType(editPost.mediaType || "image");
+      // Show existing image as preview? We'll display it separately.
+      // We'll use mediaBase64 only for new picks.
+    }
+  }, [editPost]);
 
   const pickMedia = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -64,12 +84,15 @@ export default function CreatePostScreen({ navigation }) {
       const dataUrl = `data:${mimeType};base64,${base64}`;
       setMediaBase64(dataUrl);
       setMediaType(type);
+      // Clear existing media URL (we are replacing it)
+      setExistingMediaUrl(null);
     }
   };
 
   const removeMedia = () => {
     setMediaBase64(null);
     setMediaType(null);
+    setExistingMediaUrl(null); // also remove existing
   };
 
   const uploadMedia = async (base64Data, type) => {
@@ -103,8 +126,12 @@ export default function CreatePostScreen({ navigation }) {
     let mediaUrl = null;
 
     try {
+      // If we have a new media (base64), upload it; otherwise keep existing.
       if (mediaBase64) {
         mediaUrl = await uploadMedia(mediaBase64, mediaType);
+      } else if (existingMediaUrl) {
+        // Keep the old media URL
+        mediaUrl = existingMediaUrl;
       }
 
       const postData = {
@@ -114,26 +141,38 @@ export default function CreatePostScreen({ navigation }) {
         tags: tags.split(",").filter(t => t.trim()),
         location,
         media: mediaUrl,
-        mediaType,
+        mediaType: mediaType || "image",
       };
 
-      const tempPost = {
-        _id: Math.random().toString(),
-        ...postData,
-        user: { _id: "me", name: "You" },
-      };
-      addNewPost(tempPost);
-
-      const response = await createPost(postData, userToken);
-      if (response.success) {
-        Alert.alert("Success", "Post created!");
-        navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Home");
+      if (isEdit) {
+        // ✅ Update existing post
+        const response = await updatePost(editPost._id, postData);
+        if (response.success !== false) {
+          Alert.alert("Success", "Post updated!");
+          navigation.goBack();
+        } else {
+          Alert.alert("Error", response.message || "Failed to update post");
+        }
       } else {
-        Alert.alert("Error", response.message || "Failed to create post");
+        // ✅ Create new post
+        const tempPost = {
+          _id: Math.random().toString(),
+          ...postData,
+          user: { _id: "me", name: "You" },
+        };
+        addNewPost(tempPost);
+
+        const response = await createPost(postData, userToken);
+        if (response.success) {
+          Alert.alert("Success", "Post created!");
+          navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Home");
+        } else {
+          Alert.alert("Error", response.message || "Failed to create post");
+        }
       }
     } catch (error) {
-      console.log("Create post error:", error);
-      Alert.alert("Error", error.message || "Failed to create post");
+      console.log("Post error:", error);
+      Alert.alert("Error", error.message || "Failed to save post");
     } finally {
       setUploading(false);
     }
@@ -159,7 +198,9 @@ export default function CreatePostScreen({ navigation }) {
               >
                 <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
-              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Create New Service</Text>
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+                {isEdit ? "Edit Service" : "Create New Service"}
+              </Text>
               <View style={styles.placeholder} />
             </View>
 
@@ -222,10 +263,14 @@ export default function CreatePostScreen({ navigation }) {
                 />
               </View>
 
-              {mediaBase64 && (
+              {/* Media Preview */}
+              {(mediaBase64 || existingMediaUrl) && (
                 <View style={styles.mediaPreviewContainer}>
                   {mediaType === "image" ? (
-                    <Image source={{ uri: mediaBase64 }} style={styles.mediaPreview} />
+                    <Image
+                      source={{ uri: mediaBase64 || existingMediaUrl }}
+                      style={styles.mediaPreview}
+                    />
                   ) : (
                     <View style={[styles.videoPreview, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
                       <Ionicons name="videocam" size={40} color={colors.primary} />
@@ -251,7 +296,9 @@ export default function CreatePostScreen({ navigation }) {
                   activeOpacity={0.9}
                 >
                   <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
-                  <Text style={[styles.pickButtonText, { color: colors.primary }]}>Pick Image or Video</Text>
+                  <Text style={[styles.pickButtonText, { color: colors.primary }]}>
+                    {isEdit ? "Change Image/Video" : "Pick Image or Video"}
+                  </Text>
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -274,7 +321,9 @@ export default function CreatePostScreen({ navigation }) {
                 ) : (
                   <>
                     <Ionicons name="send" size={20} color={colors.textInverse} />
-                    <Text style={[styles.postButtonText, { color: colors.textInverse }]}>Post Service</Text>
+                    <Text style={[styles.postButtonText, { color: colors.textInverse }]}>
+                      {isEdit ? "Update Service" : "Post Service"}
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
