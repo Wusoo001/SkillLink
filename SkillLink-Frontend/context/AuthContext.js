@@ -53,14 +53,16 @@ export const AuthProvider = ({ children }) => {
 
   // Logout function
   const logout = async () => {
-    try {
-      await AsyncStorage.removeItem(["userToken", "userData"]);
-      setUserToken(null);
-      setUser(null);
-    } catch (error) {
-      console.log("Logout error:", error);
-    }
-  };
+  try {
+    // ✅ Correct usage – remove each key individually
+    await AsyncStorage.removeItem("userToken");
+    await AsyncStorage.removeItem("userData");
+    setUserToken(null);
+    setUser(null);
+  } catch (error) {
+    console.log("Logout error:", error);
+  }
+};
 
   return (
     <AuthContext.Provider value={{ login, logout, userToken, user, loading }}>
