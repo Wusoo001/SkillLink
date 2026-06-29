@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 export default function BookingScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
   const { colors } = useTheme();
-  const { providerId, serviceTitle, price, description, providerName, bookingId: existingBookingId, mode } = route.params || {};
+  const { providerId, serviceTitle, price, description, providerName, bookingId: existingBookingId, mode, role } = route.params || {};
 
   const [bookingId, setBookingId] = useState(existingBookingId || null);
   const [booking, setBooking] = useState(null);
@@ -63,7 +63,6 @@ export default function BookingScreen({ navigation, route }) {
         setBookingId(data._id);
         setStatus(data.status);
         setMessage(data.message || "");
-        // If status is pending, start polling
         if (data.status === "pending_acceptance") {
           startPolling(data._id);
         }
@@ -354,7 +353,7 @@ export default function BookingScreen({ navigation, route }) {
     );
   }
 
-  // Accepted → invoice + pay
+  // Accepted → invoice + pay (only for client)
   if (status === "accepted") {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -366,10 +365,12 @@ export default function BookingScreen({ navigation, route }) {
                 <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Request Accepted</Text>
               </View>
               <Text style={[styles.acceptedMessage, { color: colors.textSecondary }]}>
-                {providerName || "Provider"} has accepted your request. You can now proceed to payment.
+                {providerName || "Provider"} has accepted your request.
+                {role === "client" ? " You can now proceed to payment." : " Waiting for client to complete payment."}
               </Text>
             </View>
 
+            {/* Invoice Card */}
             <View style={[styles.card, styles.invoiceCard, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
               <Text style={[styles.invoiceTitle, { color: colors.textPrimary }]}>Invoice</Text>
               <View style={styles.invoiceRow}>
@@ -387,21 +388,40 @@ export default function BookingScreen({ navigation, route }) {
               </View>
             </View>
 
-            <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
-              <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
-                onPress={handleConfirmBooking}
-                onPressIn={() => animatePressIn(primaryScale)}
-                onPressOut={() => animatePressOut(primaryScale)}
-                activeOpacity={0.9}
-              >
-                <Text style={[styles.primaryText, { color: colors.textInverse }]}>Confirm & Pay</Text>
-              </TouchableOpacity>
-            </Animated.View>
-
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
-              <Text style={[styles.cancelText, { color: colors.textTertiary }]}>Cancel</Text>
-            </TouchableOpacity>
+            {role === "client" ? (
+              // Client: show payment button
+              <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
+                <TouchableOpacity
+                  style={[
+                    styles.primaryBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      shadowColor: colors.primary,
+                      shadowOpacity: 0.2,
+                    },
+                  ]}
+                  onPress={handleConfirmBooking}
+                  onPressIn={() => animatePressIn(primaryScale)}
+                  onPressOut={() => animatePressOut(primaryScale)}
+                  activeOpacity={0.9}
+                >
+                  <Text style={[styles.primaryText, { color: colors.textInverse }]}>Confirm & Pay</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            ) : (
+              // Provider: waiting message + back button
+              <View style={styles.waitingContainer}>
+                <Text style={[styles.waitingText, { color: colors.textTertiary }]}>
+                  Booking accepted. Waiting for client to complete payment.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.goBackButton, { backgroundColor: colors.primary }]}
+                  onPress={() => navigation.goBack()}
+                >
+                  <Text style={[styles.goBackButtonText, { color: colors.textInverse }]}>Go Back</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -421,8 +441,8 @@ export default function BookingScreen({ navigation, route }) {
   );
 }
 
+// Styles (add waitingContainer, waitingText)
 const styles = StyleSheet.create({
-  // ... (same as before)
   safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 20, paddingVertical: 24 },
   scrollContent: { flexGrow: 1 },
@@ -475,6 +495,6 @@ const styles = StyleSheet.create({
   totalAmount: { fontSize: 20, fontWeight: "800" },
   primaryBtn: { paddingVertical: 16, borderRadius: 48, alignItems: "center", marginBottom: 16, shadowOffset: { width: 0, height: 6 }, shadowRadius: 12, elevation: 5 },
   primaryText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
-  cancelBtn: { alignItems: "center", paddingVertical: 12 },
-  cancelText: { fontWeight: "600", fontSize: 15 },
+  waitingContainer: { alignItems: "center", marginTop: 10 },
+  waitingText: { fontSize: 16, textAlign: "center", marginBottom: 16 },
 });
