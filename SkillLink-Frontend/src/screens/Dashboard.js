@@ -40,6 +40,7 @@ const STATUS_LABELS = {
   released: "Released",
 };
 
+// ------------------ Booking Card ------------------
 const BookingCard = ({
   booking,
   role,
@@ -575,10 +576,19 @@ export default function Dashboard({ navigation }) {
                 booking={item}
                 role={activeTab}
                 onPress={() => {
-                  navigation.navigate("BookingScreen", {
-                    bookingId: item._id,
-                    mode: "existing",
-                  });
+                  // ✅ Only clients can navigate to BookingScreen (to pay)
+                  if (activeTab === "client") {
+                    navigation.navigate("BookingScreen", {
+                      bookingId: item._id,
+                      mode: "existing",
+                    });
+                  } else {
+                    // ✅ For providers: show a simple alert with booking info
+                    Alert.alert(
+                      "Booking Details",
+                      `Service: ${item.serviceTitle}\nStatus: ${item.status}\nPrice: ₦${item.price}`
+                    );
+                  }
                 }}
                 onStatusChange={() => {
                   fetchBookings();
@@ -660,7 +670,6 @@ export default function Dashboard({ navigation }) {
     </SafeAreaView>
   );
 }
-
 // ------------------ Styles (unchanged) ------------------
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
