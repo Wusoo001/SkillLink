@@ -19,6 +19,10 @@ const bookingSchema = new mongoose.Schema(
     description: {
       type: String,
     },
+    reviewed: {
+      type: Boolean,
+      default: false,
+    },
     scheduledDate: {
       type: Date,
       required: true,

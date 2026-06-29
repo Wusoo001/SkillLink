@@ -214,7 +214,7 @@ export default function PaymentScreen({ route, navigation }) {
                 activeOpacity={0.9}
               >
                 <Ionicons name="refresh-outline" size={20} color={colors.textPrimary} />
-                <Text style={[styles.secondaryText, { color: colors.textPrimary }]}>Check Payment Status</Text>
+                <Text style={[styles.secondaryText, { color: colors.textPrimary }]}>Confirm Payment</Text>
               </TouchableOpacity>
             </Animated.View>
           )}
@@ -234,9 +234,7 @@ export default function PaymentScreen({ route, navigation }) {
           )}
 
           {/* Cancel Button */}
-          <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
-            <Text style={[styles.cancelText, { color: colors.textTertiary }]}>Cancel</Text>
-          </TouchableOpacity>
+          
         </View>
       </ScrollView>
     </SafeAreaView>

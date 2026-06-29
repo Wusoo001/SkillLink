@@ -339,8 +339,106 @@ export const requestWithdrawal = async (amount) => {
   }
 };
 
-//  add this function to get 
+// ================================
+// REVIEWS
+// ================================
+export const submitReview = async (bookingId, rating, comment) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
 
+    const response = await api.post(
+      `/bookings/${bookingId}/review`,
+      { rating, comment },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    console.log("Submit review error:", error);
+    throw error;
+  }
+};
+
+export const getUserReviews = async (userId, page = 1, limit = 10) => {
+  try {
+    const response = await api.get(`/users/${userId}/reviews?page=${page}&limit=${limit}`);
+    return response.data;
+  } catch (error) {
+    console.log("Get user reviews error:", error);
+    return { success: false, data: [] };
+  }
+};
+
+// ================================
+// NOTIFICATIONS
+// ================================
+
+export const getNotifications = async (page = 1, limit = 20, unreadOnly = false) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const url = `/notifications?page=${page}&limit=${limit}${unreadOnly ? '&unreadOnly=true' : ''}`;
+    console.log("🔔 [API] Fetching notifications:", url);
+    
+    const response = await api.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    
+    console.log("🔔 [API] Notifications response:", response.data);
+    return response.data;
+  } catch (error) {
+    console.log("❌ Get notifications error:", error.response?.data || error.message);
+    return { success: false, data: [] };
+  }
+};
+
+export const getUnreadNotificationCount = async () => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.get("/notifications/unread-count", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    
+    console.log("🔔 [API] Unread count:", response.data);
+    return response.data;
+  } catch (error) {
+    console.log("❌ Unread count error:", error.response?.data || error.message);
+    return { success: false, count: 0 };
+  }
+};
+
+export const markNotificationRead = async (notificationId) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.put(`/notifications/${notificationId}/read`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  } catch (error) {
+    console.log("❌ Mark read error:", error.response?.data || error.message);
+    return { success: false };
+  }
+};
+
+export const markAllNotificationsRead = async () => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.put("/notifications/read-all", {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  } catch (error) {
+    console.log("❌ Mark all read error:", error.response?.data || error.message);
+    return { success: false };
+  }
+};
 
 // ================================
 // EXPORT API INSTANCE (if needed)

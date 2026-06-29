@@ -10,12 +10,11 @@ import {
   Animated,
   SafeAreaView,
   ActivityIndicator,
-  Image as RNImage,
+  Image,
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
 import { getPosts, searchPosts, savePost, likePost, unlikePost } from "../services/api";
 import { PostContext } from "../../context/PostContext";
-import { Image } from "react-native";
 import { Video } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -28,10 +27,8 @@ export default function HomeScreen() {
   const { colors, toggleTheme, theme } = useTheme();
 
   const [hasMore, setHasMore] = useState(true);
-
   const [allPosts, setAllPosts] = useState([]);
   const [posts, setPosts] = useState([]);
-
   const [search, setSearch] = useState("");
   const [savedPosts, setSavedPosts] = useState([]);
   const [likedPosts, setLikedPosts] = useState([]);
@@ -59,6 +56,11 @@ export default function HomeScreen() {
   const goToUserProfile = (userId) => {
     if (!userId) return;
     navigation.navigate("UsersProfile", { userId });
+  };
+
+  const goToAllReviews = (userId, providerName) => {
+    if (!userId) return;
+    navigation.navigate("ReviewsScreen", { userId, providerName });
   };
 
   const mergeUniquePosts = (prev, incoming) => {
@@ -103,7 +105,6 @@ export default function HomeScreen() {
     if (loading || !hasMore) return;
     const nextPage = page + 1;
     setPage(nextPage);
-    console.log("Loading page:", nextPage);
     loadPosts(nextPage);
   };
 
@@ -241,11 +242,11 @@ export default function HomeScreen() {
     const isLiked = likedPosts.includes(item._id);
     const likeCount = item.likesCount || 0;
     const userActive = isUserActive(item.user?.lastActive);
-    
 
     return (
       <Animated.View style={[styles.cardWrapper, animStyle]}>
         <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+          {/* User Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => goToUserProfile(item.user?._id)} activeOpacity={0.7}>
               <View style={[styles.avatarContainer, { backgroundColor: colors.primary, borderColor: colors.card }]}>
@@ -286,12 +287,12 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Description */}
           <Text style={[styles.description, { color: colors.textSecondary }]}>{item.description}</Text>
+
+          {/* Media */}
           {item.media && item.mediaType === "image" && (
-            <Image
-              source={{ uri: item.media }}
-              style={styles.media}
-            />
+            <Image source={{ uri: item.media }} style={styles.media} />
           )}
           {item.media && item.mediaType === "video" && (
             <Video
@@ -302,6 +303,7 @@ export default function HomeScreen() {
             />
           )}
 
+          {/* Tags */}
           <View style={styles.tagContainer}>
             {item.tags?.map((tag, idx) => (
               <View key={idx} style={[styles.tag, { backgroundColor: colors.primaryLight }]}>
@@ -310,7 +312,9 @@ export default function HomeScreen() {
             ))}
           </View>
 
+          {/* ===== ACTION ROW with Review Icon ===== */}
           <View style={styles.actionRow}>
+            {/* Like Button */}
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.gray }]}
               onPress={() => toggleLike(item._id)}
@@ -326,6 +330,23 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
 
+            {/* Review Icon with Count – Navigates to ReviewsScreen */}
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.gray }]}
+              onPress={() => goToAllReviews(item.user?._id, item.user?.name)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="chatbubble-outline"
+                size={20}
+                color={colors.textTertiary}
+              />
+              <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
+                {item.reviewCount || 0}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Save Button */}
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.gray }]}
               onPress={() => toggleSave(item._id)}
@@ -337,6 +358,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Book Button */}
           <TouchableOpacity
             style={[styles.bookButton, { backgroundColor: colors.primary }]}
             onPress={() =>
@@ -386,6 +408,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {/* Top Bar */}
         <View style={styles.topRow}>
           <Text style={[styles.title, { color: colors.textPrimary }]}>Street</Text>
           <View style={styles.topButtons}>
@@ -401,6 +424,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Search Bar */}
         <View style={styles.searchWrapper}>
           <Text style={[styles.searchIcon, { color: colors.textTertiary }]}>🔍</Text>
           <TextInput
@@ -412,6 +436,7 @@ export default function HomeScreen() {
           />
         </View>
 
+        {/* Categories */}
         <View style={styles.categorySection}>
           <FlatList
             ref={categoryListRef}
@@ -450,6 +475,7 @@ export default function HomeScreen() {
           />
         </View>
 
+        {/* Posts List */}
         {loading && posts.length === 0 ? (
           renderSkeleton()
         ) : (
@@ -478,6 +504,7 @@ export default function HomeScreen() {
           />
         )}
 
+        {/* FAB */}
         <Animated.View style={{ transform: [{ scale: fabScale }] }}>
           <TouchableOpacity
             style={[styles.floatingButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
@@ -599,6 +626,7 @@ const styles = StyleSheet.create({
   tagContainer: { flexDirection: "row", flexWrap: "wrap", marginTop: 6, marginBottom: 12, gap: 8 },
   tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   tagText: { fontSize: 12, fontWeight: "500" },
+  // ===== ACTION ROW =====
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -615,6 +643,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   actionButtonText: { fontWeight: "600", fontSize: 14 },
+  // ===== BOOK BUTTON =====
   bookButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,

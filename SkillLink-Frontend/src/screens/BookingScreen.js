@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
-import { api, getBookingById, cancelBookingRequest } from "../services/api";
+import { api, getBookingById, cancelBookingRequest, acceptBooking, rejectBooking } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -29,6 +29,7 @@ export default function BookingScreen({ navigation, route }) {
   const [invoice, setInvoice] = useState({ serviceFee: 0, platformFee: 0, total: 0 });
   const [cancelLoading, setCancelLoading] = useState(false);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [userRole, setUserRole] = useState(null); // "client" or "provider"
 
   const primaryScale = useRef(new Animated.Value(1)).current;
   const secondaryScale = useRef(new Animated.Value(1)).current;
@@ -36,6 +37,14 @@ export default function BookingScreen({ navigation, route }) {
   const intervalRef = useRef(null);
   const pollingAttempts = useRef(0);
   const MAX_POLLING_ATTEMPTS = 60;
+
+  // Determine role based on booking data and current user
+  const determineRole = (bookingData) => {
+    if (!bookingData || !user) return null;
+    if (bookingData.client?._id === user._id) return "client";
+    if (bookingData.provider?._id === user._id) return "provider";
+    return null;
+  };
 
   useEffect(() => {
     if (existingBookingId) {
@@ -63,7 +72,10 @@ export default function BookingScreen({ navigation, route }) {
         setBookingId(data._id);
         setStatus(data.status);
         setMessage(data.message || "");
-        if (data.status === "pending_acceptance") {
+        // Determine role
+        const role = determineRole(data);
+        setUserRole(role);
+        if (data.status === "pending_acceptance" && role === "client") {
           startPolling(data._id);
         }
       } else {
@@ -96,6 +108,7 @@ export default function BookingScreen({ navigation, route }) {
         setBookingId(newBooking._id);
         setBooking(newBooking);
         setStatus("pending_acceptance");
+        setUserRole("client");
         pollingAttempts.current = 0;
         startPolling(newBooking._id);
       } else {
@@ -192,6 +205,40 @@ export default function BookingScreen({ navigation, route }) {
     }
   }, [booking, status]);
 
+  // ---- Provider Accept/Reject actions ----
+  const handleAccept = async () => {
+    try {
+      await acceptBooking(bookingId);
+      setStatus("accepted");
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setPolling(false);
+      Alert.alert("Accepted", "You have accepted this booking.");
+      // Refresh to update UI
+      await loadExistingBooking(bookingId);
+    } catch (error) {
+      Alert.alert("Error", "Could not accept booking.");
+    }
+  };
+
+  const handleReject = async () => {
+    try {
+      await rejectBooking(bookingId);
+      setStatus("rejected");
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setPolling(false);
+      Alert.alert("Declined", "You have declined this booking.");
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert("Error", "Could not decline booking.");
+    }
+  };
+
   const handleCancelRequest = async () => {
     if (!bookingId) return;
     Alert.alert(
@@ -213,10 +260,7 @@ export default function BookingScreen({ navigation, route }) {
               }
               setPolling(false);
               Alert.alert("Cancelled", "Request cancelled successfully");
-              navigation.reset({
-                index: 0,
-                routes: [{ name: "MainTabs", state: { routes: [{ name: "Home" }] } }],
-              });
+              navigation.goBack();
             } catch (error) {
               console.log("Cancel error:", error);
               Alert.alert("Error", "Could not cancel request. Please try again.");
@@ -257,17 +301,57 @@ export default function BookingScreen({ navigation, route }) {
     );
   }
 
-  // Pending acceptance UI
+  // ---- Pending acceptance UI ----
   if (status === "pending_acceptance") {
+    // If the current user is the provider, show accept/reject buttons
+    if (userRole === "provider") {
+      return (
+        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+          <View style={styles.container}>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+                <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Booking Request</Text>
+              <View style={styles.placeholder} />
+            </View>
+
+            <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+              <Ionicons name="time-outline" size={48} color={colors.warning} style={styles.iconCenter} />
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>New Booking Request</Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                {booking?.client?.name || "A client"} wants to book your service: {booking?.serviceTitle}
+              </Text>
+              <Text style={[styles.priceDisplay, { color: colors.primary }]}>
+                ₦{booking?.price?.toLocaleString()}
+              </Text>
+
+              <View style={styles.requestActions}>
+                <TouchableOpacity
+                  style={[styles.acceptButton, { backgroundColor: colors.success }]}
+                  onPress={handleAccept}
+                >
+                  <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>Accept</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.rejectButton, { backgroundColor: colors.danger }]}
+                  onPress={handleReject}
+                >
+                  <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>Decline</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
+
+    // Otherwise (client) show waiting UI with cancel option
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Booking Request</Text>
@@ -278,7 +362,7 @@ export default function BookingScreen({ navigation, route }) {
             <Ionicons name="time-outline" size={48} color={colors.warning} style={styles.iconCenter} />
             <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>Waiting for Provider</Text>
             <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
-              Your request has been sent to {providerName || "the provider"}.
+              Your request has been sent to {booking?.provider?.name || "the provider"}.
               They will accept or decline shortly.
             </Text>
 
@@ -307,7 +391,7 @@ export default function BookingScreen({ navigation, route }) {
     );
   }
 
-  // Rejected UI
+  // ---- Rejected UI ----
   if (status === "rejected") {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -316,12 +400,9 @@ export default function BookingScreen({ navigation, route }) {
             <Ionicons name="close-circle-outline" size={48} color={colors.danger} style={styles.iconCenter} />
             <Text style={[styles.statusTitle, { color: colors.danger }]}>Request Declined</Text>
             <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
-              The provider has declined your request.
+              {userRole === "provider" ? "You declined this request." : "The provider declined your request."}
             </Text>
-            <TouchableOpacity
-              style={[styles.goBackButton, { backgroundColor: colors.primary }]}
-              onPress={() => navigation.goBack()}
-            >
+            <TouchableOpacity style={[styles.goBackButton, { backgroundColor: colors.primary }]} onPress={() => navigation.goBack()}>
               <Text style={[styles.goBackButtonText, { color: colors.textInverse }]}>Go Back</Text>
             </TouchableOpacity>
           </View>
@@ -330,7 +411,7 @@ export default function BookingScreen({ navigation, route }) {
     );
   }
 
-  // Cancelled UI
+  // ---- Cancelled UI ----
   if (status === "cancelled") {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -339,12 +420,9 @@ export default function BookingScreen({ navigation, route }) {
             <Ionicons name="ban-outline" size={48} color={colors.textTertiary} style={styles.iconCenter} />
             <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>Request Cancelled</Text>
             <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
-              You cancelled this request.
+              This request has been cancelled.
             </Text>
-            <TouchableOpacity
-              style={[styles.goBackButton, { backgroundColor: colors.primary }]}
-              onPress={() => navigation.goBack()}
-            >
+            <TouchableOpacity style={[styles.goBackButton, { backgroundColor: colors.primary }]} onPress={() => navigation.goBack()}>
               <Text style={[styles.goBackButtonText, { color: colors.textInverse }]}>Go Back</Text>
             </TouchableOpacity>
           </View>
@@ -353,8 +431,34 @@ export default function BookingScreen({ navigation, route }) {
     );
   }
 
-  // Accepted → invoice + pay (only for client)
+  // ---- Accepted UI ----
   if (status === "accepted") {
+    // If provider, show waiting message + back
+    if (userRole === "provider") {
+      return (
+        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+          <View style={styles.container}>
+            <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+              <View style={styles.cardHeader}>
+                <Ionicons name="checkmark-circle-outline" size={24} color={colors.success} />
+                <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Booking Accepted</Text>
+              </View>
+              <Text style={[styles.acceptedMessage, { color: colors.textSecondary }]}>
+                You have accepted this booking. Waiting for the client to complete payment.
+              </Text>
+              <TouchableOpacity
+                style={[styles.goBackButton, { backgroundColor: colors.primary }]}
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={[styles.goBackButtonText, { color: colors.textInverse }]}>Go Back</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
+
+    // Client: show invoice + pay
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -365,12 +469,11 @@ export default function BookingScreen({ navigation, route }) {
                 <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Request Accepted</Text>
               </View>
               <Text style={[styles.acceptedMessage, { color: colors.textSecondary }]}>
-                {providerName || "Provider"} has accepted your request.
-                {role === "client" ? " You can now proceed to payment." : " Waiting for client to complete payment."}
+                {booking?.provider?.name || "Provider"} has accepted your request.
+                You can now proceed to payment.
               </Text>
             </View>
 
-            {/* Invoice Card */}
             <View style={[styles.card, styles.invoiceCard, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
               <Text style={[styles.invoiceTitle, { color: colors.textPrimary }]}>Invoice</Text>
               <View style={styles.invoiceRow}>
@@ -388,42 +491,54 @@ export default function BookingScreen({ navigation, route }) {
               </View>
             </View>
 
-            {role === "client" ? (
-              // Client: show payment button
-              <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
-                <TouchableOpacity
-                  style={[
-                    styles.primaryBtn,
-                    {
-                      backgroundColor: colors.primary,
-                      shadowColor: colors.primary,
-                      shadowOpacity: 0.2,
-                    },
-                  ]}
-                  onPress={handleConfirmBooking}
-                  onPressIn={() => animatePressIn(primaryScale)}
-                  onPressOut={() => animatePressOut(primaryScale)}
-                  activeOpacity={0.9}
-                >
-                  <Text style={[styles.primaryText, { color: colors.textInverse }]}>Confirm & Pay</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            ) : (
-              // Provider: waiting message + back button
-              <View style={styles.waitingContainer}>
-                <Text style={[styles.waitingText, { color: colors.textTertiary }]}>
-                  Booking accepted. Waiting for client to complete payment.
-                </Text>
-                <TouchableOpacity
-                  style={[styles.goBackButton, { backgroundColor: colors.primary }]}
-                  onPress={() => navigation.goBack()}
-                >
-                  <Text style={[styles.goBackButtonText, { color: colors.textInverse }]}>Go Back</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
+              <TouchableOpacity
+                style={[
+                  styles.primaryBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOpacity: 0.2,
+                  },
+                ]}
+                onPress={handleConfirmBooking}
+                onPressIn={() => animatePressIn(primaryScale)}
+                onPressOut={() => animatePressOut(primaryScale)}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.primaryText, { color: colors.textInverse }]}>Confirm & Pay</Text>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ---- Release / Completed (optional) ----
+  if (status === "released" && userRole === "client" && !booking?.reviewed) {
+    // Show review option
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={styles.container}>
+          <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+            <Ionicons name="star-outline" size={48} color={colors.warning} style={styles.iconCenter} />
+            <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>Job Completed!</Text>
+            <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+              Funds have been released to the provider. You can now leave a review.
+            </Text>
+            <TouchableOpacity
+              style={[styles.reviewButton, { backgroundColor: colors.success }]}
+              onPress={() => {
+                // Navigate to Dashboard with review modal? But we can just go back and let user review from dashboard.
+                navigation.goBack();
+                // Optionally, we could navigate to Dashboard and open review modal, but easier to just go back.
+              }}
+            >
+              <Text style={[styles.reviewButtonText, { color: colors.textInverse }]}>Leave a Review</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -441,7 +556,6 @@ export default function BookingScreen({ navigation, route }) {
   );
 }
 
-// Styles (add waitingContainer, waitingText)
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 20, paddingVertical: 24 },
@@ -475,12 +589,31 @@ const styles = StyleSheet.create({
   iconCenter: { alignSelf: "center", marginBottom: 16 },
   statusTitle: { fontSize: 22, fontWeight: "700", textAlign: "center", marginBottom: 8 },
   statusSubtitle: { fontSize: 16, textAlign: "center", marginBottom: 24, lineHeight: 22 },
+  priceDisplay: { fontSize: 24, fontWeight: "800", textAlign: "center", marginBottom: 20 },
   refreshButton: { paddingVertical: 12, borderRadius: 40, alignItems: "center", marginBottom: 12 },
   refreshButtonText: { fontWeight: "600", fontSize: 16 },
   cancelButton: { paddingVertical: 12, borderRadius: 40, alignItems: "center" },
   cancelButtonText: { fontWeight: "600", fontSize: 16 },
-  goBackButton: { paddingVertical: 12, borderRadius: 40, alignItems: "center" },
+  goBackButton: { paddingVertical: 12, borderRadius: 40, alignItems: "center", marginTop: 12 },
   goBackButtonText: { fontWeight: "600", fontSize: 16 },
+  requestActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 12,
+  },
+  acceptButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 40,
+    alignItems: "center",
+  },
+  rejectButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 40,
+    alignItems: "center",
+  },
+  actionButtonText: { fontWeight: "700", fontSize: 16 },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   cardTitle: { fontSize: 18, fontWeight: "700" },
   acceptedMessage: { fontSize: 15, lineHeight: 22 },
@@ -495,6 +628,6 @@ const styles = StyleSheet.create({
   totalAmount: { fontSize: 20, fontWeight: "800" },
   primaryBtn: { paddingVertical: 16, borderRadius: 48, alignItems: "center", marginBottom: 16, shadowOffset: { width: 0, height: 6 }, shadowRadius: 12, elevation: 5 },
   primaryText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
-  waitingContainer: { alignItems: "center", marginTop: 10 },
-  waitingText: { fontSize: 16, textAlign: "center", marginBottom: 16 },
+  reviewButton: { paddingVertical: 14, borderRadius: 40, alignItems: "center" },
+  reviewButtonText: { fontWeight: "700", fontSize: 16 },
 });

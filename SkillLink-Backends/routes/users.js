@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require("../models/User");
 const Post = require('../models/Post');
 const protect = require("../middleware/authMiddleware");
+const reviewController = require("../controllers/reviewController");
 
 
 // ========================================
@@ -85,5 +86,7 @@ router.post("/heartbeat", protect, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+router.get("/:userId/reviews", reviewController.getUserReviews);
 
 module.exports = router;
