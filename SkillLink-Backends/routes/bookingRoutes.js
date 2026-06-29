@@ -28,5 +28,6 @@ router.put("/:id/complete", protect, bookingController.markBookingCompleted);
 router.put("/:id/confirm", protect, bookingController.clientConfirmCompletion);
 router.put("/:id/release", protect, bookingController.releasePayment);
 router.post("/withdraw", protect, bookingController.withdrawFunds);
+router.post("/:id/review", protect, bookingController.reviewBooking);
 
 module.exports = router;

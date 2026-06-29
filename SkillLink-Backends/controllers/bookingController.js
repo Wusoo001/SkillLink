@@ -1,8 +1,11 @@
+const axios = require("axios");
 const Booking = require("../models/Booking");
+const User = require("../models/User");          // ← ADDED
 const escrowService = require("../services/escrowService");
 const paystackService = require("../services/paystackService");
 const { v4: uuidv4 } = require("uuid");
 const walletService = require("../services/walletService");
+const notificationController = require("./notificationController"); // ← ADDED
 
 // ======================================================
 //  INTERNAL HELPER – MUST BE DEFINED BEFORE USE
@@ -20,6 +23,7 @@ const releaseFundsToProvider = async (bookingId) => {
     booking.payment?.reference || "no_reference"
   );
   booking.status = "released";
+  booking.reviewed = false;
   if (booking.payment) {
     booking.payment.escrowStatus = "released";
   }
@@ -40,16 +44,41 @@ const createBooking = async (req, res) => {
       req.body.status = "pending_acceptance";
     }
     const booking = await Booking.create(req.body);
+
+    // ===== CREATE NOTIFICATION FOR PROVIDER =====
+    try {
+      const provider = await User.findById(req.body.provider);
+      if (provider) {
+        await notificationController.createNotification(
+          req.body.provider,
+          "booking_request",
+          "New Booking Request",
+          `${req.user?.name || "A client"} wants to book your service: ${req.body.serviceTitle}`,
+          {
+            bookingId: booking._id,
+            clientId: req.user._id,
+            providerId: req.body.provider,
+          }
+        );
+        console.log("✅ Notification created for provider:", req.body.provider);
+      } else {
+        console.log("❌ Provider not found for notification");
+      }
+    } catch (notifError) {
+      console.error("❌ Notification creation error:", notifError.message);
+      // Don't fail the booking if notification fails
+    }
+
     res.status(201).json({
       success: true,
       data: booking,
     });
   } catch (error) {
-    console.error("❌ Error in createBooking:", error); // full error stack
+    console.error("❌ Error in createBooking:", error);
     res.status(500).json({
       success: false,
       message: error.message,
-      stack: error.stack, // include stack for debugging
+      stack: error.stack,
     });
   }
 };
@@ -119,6 +148,27 @@ const acceptBooking = async (req, res) => {
     booking.status = "accepted";
     booking.acceptedAt = new Date();
     await booking.save();
+
+    // ===== NOTIFICATION FOR CLIENT =====
+    try {
+      const client = await User.findById(booking.client);
+      if (client) {
+        await notificationController.createNotification(
+          booking.client,
+          "booking_accepted",
+          "Booking Accepted",
+          `${req.user.name} has accepted your booking for: ${booking.serviceTitle}`,
+          {
+            bookingId: booking._id,
+            clientId: booking.client,
+            providerId: req.user._id,
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("❌ Notification error (accept):", notifError.message);
+    }
+
     res.json({
       success: true,
       message: "Booking accepted",
@@ -150,6 +200,27 @@ const rejectBooking = async (req, res) => {
     }
     booking.status = "rejected";
     await booking.save();
+
+    // ===== NOTIFICATION FOR CLIENT =====
+    try {
+      const client = await User.findById(booking.client);
+      if (client) {
+        await notificationController.createNotification(
+          booking.client,
+          "booking_rejected",
+          "Booking Declined",
+          `${req.user.name} has declined your booking for: ${booking.serviceTitle}`,
+          {
+            bookingId: booking._id,
+            clientId: booking.client,
+            providerId: req.user._id,
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("❌ Notification error (reject):", notifError.message);
+    }
+
     res.json({
       success: true,
       message: "Booking rejected",
@@ -172,7 +243,7 @@ const cancelBookingRequest = async (req, res) => {
     const { id } = req.params;
     const booking = await Booking.findById(id);
     if (!booking) {
-      console.log("Booking not found")
+      console.log("Booking not found");
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
     if (booking.status !== "pending_acceptance") {
@@ -184,6 +255,27 @@ const cancelBookingRequest = async (req, res) => {
     }
     booking.status = "cancelled";
     await booking.save();
+
+    // ===== NOTIFICATION FOR PROVIDER =====
+    try {
+      const provider = await User.findById(booking.provider);
+      if (provider) {
+        await notificationController.createNotification(
+          booking.provider,
+          "booking_cancelled",
+          "Booking Cancelled",
+          `${req.user.name} has cancelled their booking for: ${booking.serviceTitle}`,
+          {
+            bookingId: booking._id,
+            clientId: req.user._id,
+            providerId: booking.provider,
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("❌ Notification error (cancel):", notifError.message);
+    }
+
     console.log("✅ Status updated to cancelled, saved");
     res.json({
       success: true,
@@ -199,7 +291,7 @@ const cancelBookingRequest = async (req, res) => {
 };
 
 // ======================================================
-//  PAYMENT & ESCROW (use the helper defined above)
+//  PAYMENT & ESCROW
 // ======================================================
 
 /**
@@ -221,7 +313,6 @@ const initializePayment = async (req, res) => {
     console.log("💰 Booking price:", booking.price);
     console.log("👤 User email:", req.user?.email);
 
-    // Ensure price is a number
     const amount = Number(booking.price);
     if (isNaN(amount) || amount <= 0) {
       return res.status(400).json({
@@ -233,7 +324,7 @@ const initializePayment = async (req, res) => {
     const reference = `skilllink_${uuidv4()}`;
     const payment = await paystackService.initializePayment({
       email: req.user?.email || "test@example.com",
-      amount: amount, // pass as Naira; paystackService multiplies by 100
+      amount: amount,
       reference,
     });
 
@@ -255,6 +346,7 @@ const initializePayment = async (req, res) => {
     });
   }
 };
+
 /**
  * HOLD PAYMENT IN ESCROW (DISABLED)
  */
@@ -437,6 +529,27 @@ const verifyPaymentStatus = async (req, res) => {
     booking.payment.paidAt = new Date();
     booking.status = "paid_in_escrow";
     await booking.save();
+
+    // ===== NOTIFICATION FOR PROVIDER =====
+    try {
+      const provider = await User.findById(booking.provider);
+      if (provider) {
+        await notificationController.createNotification(
+          booking.provider,
+          "payment_received",
+          "Payment Received",
+          `Payment of ₦${booking.price} has been received for your service: ${booking.serviceTitle}`,
+          {
+            bookingId: booking._id,
+            clientId: booking.client,
+            providerId: booking.provider,
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("❌ Notification error (payment):", notifError.message);
+    }
+
     return res.json({
       success: true,
       message: "Payment verified and escrow funded",
@@ -446,6 +559,93 @@ const verifyPaymentStatus = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+// ======================================================
+//  REVIEW BOOKING
+// ======================================================
+const reviewBooking = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rating, comment } = req.body;
+    const clientId = req.user._id;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Rating must be between 1 and 5",
+      });
+    }
+
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    if (booking.status !== "released") {
+      return res.status(400).json({
+        success: false,
+        message: "You can only review completed jobs after funds are released",
+      });
+    }
+
+    if (booking.client.toString() !== clientId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the client can review this booking",
+      });
+    }
+
+    if (booking.reviewed === true) {
+      return res.status(400).json({
+        success: false,
+        message: "This booking has already been reviewed",
+      });
+    }
+
+    const Review = require("../models/Review");
+    const existing = await Review.findOne({ booking: id });
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "A review already exists for this booking",
+      });
+    }
+
+    const review = await Review.create({
+      booking: id,
+      client: booking.client,
+      provider: booking.provider,
+      rating: Number(rating),
+      comment: comment || "",
+    });
+
+    booking.reviewed = true;
+    await booking.save();
+
+    const allReviews = await Review.find({ provider: booking.provider });
+    const totalRatings = allReviews.reduce((sum, r) => sum + r.rating, 0);
+    const avgRating = totalRatings / allReviews.length;
+
+    await User.findByIdAndUpdate(booking.provider, {
+      rating: Math.round(avgRating * 10) / 10,
+    });
+
+    res.json({
+      success: true,
+      message: "Review posted successfully",
+      data: review,
+    });
+  } catch (error) {
+    console.error("Review error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to post review",
     });
   }
 };
@@ -467,4 +667,5 @@ module.exports = {
   markBookingCompleted,
   withdrawFunds,
   clientConfirmCompletion,
+  reviewBooking, // ← ADD THIS
 };

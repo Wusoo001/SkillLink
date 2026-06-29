@@ -21,6 +21,7 @@ import BankSetupScreen from "./src/screens/BankSetupScreen";
 import { ThemeProvider } from "./src/context/ThemeContext";
 import { sendHeartbeat } from "./src/services/api";
 import SplashLogo from "./src/components/SplashLogo";
+import ReviewsScreen from "./src/screens/ReviewsScreen";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -66,6 +67,8 @@ function AppStack() {
       <Stack.Screen name="PaymentReturnHandler" component={PaymentReturnHandler} />
       <Stack.Screen name="PaymentDashboard" component={Dashboard} />
       <Stack.Screen name="BankSetup" component={BankSetupScreen} />
+      <Stack.Screen name="ReviewsScreen" component={ReviewsScreen} />
+
     </Stack.Navigator>
   );
 }

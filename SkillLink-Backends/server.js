@@ -8,6 +8,7 @@ const bookingRoutes = require("./routes/bookingRoutes");
 console.log("🔍 bookingRoutes loaded:", bookingRoutes);
 const walletRoutes = require("./routes/walletRoutes");
 const bankRoutes = require("./routes/bankRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 
 const app = express();
@@ -29,6 +30,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/bank", bankRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // 🔧 DEBUG ROUTE – remove after testing
 app.get("/test", (req, res) => {

@@ -11,6 +11,7 @@ import {
   RefreshControl,
   Animated,
   Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Video } from "expo-av";
@@ -23,11 +24,11 @@ import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
 
 // ==============================
-// PostItem Component (with like & save)
+// PostItem Component (with review icon)
 // ==============================
 const PostItem = ({
   item,
-  userId,
+  userId, // provider ID (used for booking and reviews)
   isOwnPost,
   onEdit,
   onDelete,
@@ -65,9 +66,16 @@ const PostItem = ({
     }
   };
 
+  // Navigate to ReviewsScreen with provider ID and name
+  const goToAllReviews = () => {
+    navigation.navigate("ReviewsScreen", {
+      userId: userId,
+      providerName: item.user?.name || "Provider",
+    });
+  };
+
   return (
     <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
-      {/* Post header with edit/delete buttons (if own post) */}
       <View style={styles.postHeader}>
         <Text style={[styles.description, { color: colors.textSecondary }]}>
           {item.description}
@@ -103,8 +111,9 @@ const PostItem = ({
         ))}
       </View>
 
-      {/* Action Row: Like & Save */}
+      {/* ===== ACTION ROW with Review Icon ===== */}
       <View style={styles.actionRow}>
+        {/* Like Button */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.gray }]}
           onPress={() => onLikePress(item._id)}
@@ -120,6 +129,23 @@ const PostItem = ({
           </Text>
         </TouchableOpacity>
 
+        {/* NEW: Reviews Icon with Count */}
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: colors.gray }]}
+          onPress={goToAllReviews}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name="chatbubble-outline"
+            size={20}
+            color={colors.textTertiary}
+          />
+          <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
+            {item.reviewCount || 0}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Save Button */}
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.gray }]}
           onPress={() => onSavePress(item._id)}
@@ -131,6 +157,7 @@ const PostItem = ({
         </TouchableOpacity>
       </View>
 
+      {/* Book Button */}
       <Animated.View style={{ transform: [{ scale: bookScale }] }}>
         <TouchableOpacity
           style={[styles.bookButton, { backgroundColor: colors.primary }]}
@@ -179,6 +206,7 @@ export default function UserProfileScreen() {
   const isOwnProfile = user?._id === resolvedUserId;
   const userActive = isUserActive(userInfo?.lastActive);
 
+  // Load user data
   const loadUserData = async (id) => {
     setLoading(true);
     try {
@@ -217,7 +245,7 @@ export default function UserProfileScreen() {
     }, [resolvedUserId])
   );
 
-  // --- Edit & Delete handlers ---
+  // Edit & Delete handlers
   const handleEditPost = (post) => {
     navigation.navigate("CreatePostScreen", { editPost: post });
   };
@@ -232,10 +260,9 @@ export default function UserProfileScreen() {
     }
   };
 
-  // --- Like handler (optimistic) ---
+  // Like handler
   const toggleLike = async (postId) => {
     const isLiked = likedPosts.includes(postId);
-    // Optimistic update
     setLikedPosts((prev) =>
       isLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
     );
@@ -256,15 +283,14 @@ export default function UserProfileScreen() {
         await likePost(postId);
       }
     } catch (error) {
-      // Revert on error – re-fetch posts
       await loadUserData(resolvedUserId);
     }
   };
 
-  // --- Save handler ---
+  // Save handler
   const toggleSave = async (postId) => {
     try {
-      await savePost(postId); // your savePost function expects postId only
+      await savePost(postId);
       if (savedPosts.includes(postId)) {
         setSavedPosts(savedPosts.filter((id) => id !== postId));
       } else {
@@ -285,7 +311,7 @@ export default function UserProfileScreen() {
     );
   }
 
-  // Profile Header (with status dot)
+  // Profile Header (unchanged)
   const ProfileHeader = () => (
     <View style={[styles.header, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
       {userInfo?.profileImage ? (
@@ -323,6 +349,7 @@ export default function UserProfileScreen() {
     </View>
   );
 
+  // Section Header for services
   const SectionHeader = () => (
     <View style={styles.sectionHeader}>
       <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Services</Text>
@@ -396,9 +423,6 @@ export default function UserProfileScreen() {
   );
 }
 
-// ==============================
-// Styles (with actionRow and actionButton)
-// ==============================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1 },
@@ -496,6 +520,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: "700", letterSpacing: -0.3 },
   sectionBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   sectionBadgeText: { fontSize: 13, fontWeight: "600" },
+  // ===== POST STYLES =====
   listContent: {
     paddingBottom: 40,
     paddingHorizontal: 20,
@@ -542,6 +567,7 @@ const styles = StyleSheet.create({
   },
   tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   tagText: { fontSize: 12, fontWeight: "500" },
+  // ===== ACTION ROW =====
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -558,6 +584,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   actionButtonText: { fontWeight: "600", fontSize: 14 },
+  // ===== BOOK BUTTON =====
   bookButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,
