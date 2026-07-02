@@ -14,24 +14,19 @@ CREATE POST
 */
 router.post("/", async (req, res) => {
   try {
-    console.log("📦 POST /posts body:", req.body); 
-    // 1. Get token
+    console.log("📦 POST /posts body:", req.body);
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ message: "No token provided" });
     }
     const token = authHeader.split(" ")[1];
-
-    // 2. Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.id || decoded.userId;
     if (!userId) throw new Error("Invalid token payload");
 
-    // 3. Get user
     const user = await User.findById(userId);
     if (!user) return res.status(401).json({ message: "User not found" });
 
-    // 4. Create post (ignore extra fields like 'price')
     const { skill, description, tags, location, media, price, mediaType } = req.body;
     const post = new Post({
       user: user._id,
@@ -56,63 +51,54 @@ router.post("/", async (req, res) => {
   }
 });
 
-/*
-========================================
-GET FEED POSTS (Pagination)
-========================================
-*/
-/*
-========================================
-GET FEED POSTS (Pagination) + Reviews
-========================================
-*/
+// GET / – newest first, per‑post reviews
 router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const totalPosts = await Post.countDocuments();
 
-    // 1. Fetch posts with user data
     const posts = await Post.find()
       .populate("user", "name profileImage email lastActive rating jobsCompleted")
-      .sort({ rating: -1, jobsCompleted: -1 })
+      .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
-    // 2. Get all unique provider IDs from the posts
-    const providerIds = [...new Set(posts.map(p => p.user?._id).filter(Boolean))];
-
-    // 3. Fetch latest 3 reviews for each provider
+    const postIds = posts.map(p => p._id);
     let reviewsMap = {};
-    if (providerIds.length > 0) {
-      // Use aggregation to get the latest 3 reviews per provider
-      const reviewGroups = await Review.aggregate([
-        { $match: { provider: { $in: providerIds } } },
+    let countMap = {};
+
+    if (postIds.length > 0) {
+      // Single aggregation to get total count AND latest 3 reviews per post
+      const reviewData = await Review.aggregate([
+        { $match: { post: { $in: postIds } } },
         { $sort: { createdAt: -1 } },
         {
           $group: {
-            _id: "$provider",
+            _id: "$post",
+            totalCount: { $sum: 1 },
             reviews: { $push: "$$ROOT" },
           },
         },
         {
           $project: {
-            _id: 1,
-            reviews: { $slice: ["$reviews", 3] }, // Only keep the latest 3
+            totalCount: 1,
+            reviews: { $slice: ["$reviews", 3] }, // only keep the 3 most recent
           },
         },
       ]);
 
-      // 4. Populate client details for each review
-      const allReviews = reviewGroups.flatMap(g => g.reviews);
+      // Populate client details for all reviews
+      const allReviews = reviewData.flatMap(g => g.reviews);
       if (allReviews.length > 0) {
         await Review.populate(allReviews, { path: "client", select: "name profileImage" });
       }
 
-      // 5. Build a map: providerId -> array of reviews
-      reviewsMap = {};
-      reviewGroups.forEach(group => {
-        reviewsMap[group._id.toString()] = group.reviews.map(r => ({
+      // Build the maps
+      reviewData.forEach(group => {
+        const postId = group._id.toString();
+        countMap[postId] = group.totalCount;
+        reviewsMap[postId] = group.reviews.map(r => ({
           _id: r._id,
           rating: r.rating,
           comment: r.comment,
@@ -122,25 +108,13 @@ router.get("/", async (req, res) => {
       });
     }
 
-    // 6. Attach reviews to each pos
-    const reviewCounts = await Review.aggregate([
-      { $match: { provider: { $in: providerIds } } },
-      { $group: { _id: "$provider", count: { $sum: 1 } } },
-    ]);
-
-    const countMap = {};
-      reviewCounts.forEach((item) => {
-      countMap[item._id.toString()] = item.count;
-    });
-
     const postsWithReviews = posts.map(post => ({
       ...post._doc,
       media: post.media || null,
       mediaType: post.mediaType || "image",
-      reviews: reviewsMap[post.user?._id?.toString()] || [],
-      reviewCount: countMap[post.user?._id?.toString()] || 0, // ← ADD THIS
+      reviews: reviewsMap[post._id.toString()] || [],
+      reviewCount: countMap[post._id.toString()] || 0,
     }));
-
 
     res.json({
       success: true,

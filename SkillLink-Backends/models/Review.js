@@ -17,6 +17,11 @@ const reviewSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    post: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
+      required: true,
+    },
     rating: {
       type: Number,
       min: 1,

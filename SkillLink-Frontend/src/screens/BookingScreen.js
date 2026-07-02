@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 export default function BookingScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
   const { colors } = useTheme();
-  const { providerId, serviceTitle, price, description, providerName, bookingId: existingBookingId, mode, role } = route.params || {};
+  const { providerId, serviceTitle, price, description, providerName, bookingId: existingBookingId, mode, role, postId, } = route.params || {};
 
   const [bookingId, setBookingId] = useState(existingBookingId || null);
   const [booking, setBooking] = useState(null);
@@ -97,6 +97,7 @@ export default function BookingScreen({ navigation, route }) {
       const res = await api.post("/bookings", {
         client: user?._id,
         provider: providerId,
+        post: postId,
         serviceTitle,
         scheduledDate: new Date(),
         price: Number(price),

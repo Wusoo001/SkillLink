@@ -80,12 +80,7 @@ export default function HomeScreen() {
 
       if (response.success) {
         setHasMore(response.hasMore);
-        const rankedPosts = response.posts.sort(
-          (a, b) =>
-            (b.user?.rating || 0) * (b.user?.jobsCompleted || 0) -
-            (a.user?.rating || 0) * (a.user?.jobsCompleted || 0)
-        );
-
+        const rankedPosts = response.posts
         if (pageNumber === 1) {
           setAllPosts(rankedPosts);
           setPosts(rankedPosts);
@@ -368,6 +363,7 @@ export default function HomeScreen() {
                 serviceTitle: item.description,
                 price: item.price,
                 description: item.description,
+                postId: item._id,
               })
             }
           >

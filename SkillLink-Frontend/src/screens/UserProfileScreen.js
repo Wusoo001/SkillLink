@@ -168,6 +168,7 @@ const PostItem = ({
               serviceTitle: item.description,
               price: item.price,
               description: item.description,
+              postId: item._id,
             })
           }
           onPressIn={handlePressIn}
