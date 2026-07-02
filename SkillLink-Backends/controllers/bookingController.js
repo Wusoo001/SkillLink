@@ -617,10 +617,18 @@ const reviewBooking = async (req, res) => {
       });
     }
 
+    if (!booking.post) {
+      return res.status(400).json({
+        success: false,
+        message: "This booking is not associated with a specific post, cannot review",
+      });
+    }
+
     const review = await Review.create({
       booking: id,
       client: booking.client,
       provider: booking.provider,
+      post: booking.post,
       rating: Number(rating),
       comment: comment || "",
     });
@@ -631,7 +639,6 @@ const reviewBooking = async (req, res) => {
     const allReviews = await Review.find({ provider: booking.provider });
     const totalRatings = allReviews.reduce((sum, r) => sum + r.rating, 0);
     const avgRating = totalRatings / allReviews.length;
-
     await User.findByIdAndUpdate(booking.provider, {
       rating: Math.round(avgRating * 10) / 10,
     });
@@ -649,7 +656,6 @@ const reviewBooking = async (req, res) => {
     });
   }
 };
-
 // ======================================================
 //  EXPORTS
 // ======================================================

@@ -15,11 +15,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy"; // ✅ legacy import
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthContext } from "../../context/AuthContext";
-import { createPost, updatePost } from "../services/api"; // ✅ import updatePost
+import { createPost, updatePost } from "../services/api";
 import { PostContext } from "../../context/PostContext";
 import { useTheme } from "../context/ThemeContext";
 
@@ -28,10 +28,9 @@ const UPLOAD_PRESET = "SkillLink";
 
 export default function CreatePostScreen({ navigation, route }) {
   const { userToken } = useContext(AuthContext);
-  const { addNewPost } = useContext(PostContext);
+  const { triggerRefresh } = useContext(PostContext);
   const { colors } = useTheme();
 
-  // ✅ Detect if we are editing
   const { editPost } = route.params || {};
   const isEdit = !!editPost;
 
@@ -40,15 +39,14 @@ export default function CreatePostScreen({ navigation, route }) {
   const [price, setPrice] = useState("");
   const [tags, setTags] = useState("");
   const [location, setLocation] = useState("");
-  const [mediaBase64, setMediaBase64] = useState(null);
+  const [mediaUri, setMediaUri] = useState(null);
   const [mediaType, setMediaType] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [existingMediaUrl, setExistingMediaUrl] = useState(null); // ✅ store old media URL
+  const [existingMediaUrl, setExistingMediaUrl] = useState(null);
 
   const postScale = useRef(new Animated.Value(1)).current;
   const pickScale = useRef(new Animated.Value(1)).current;
 
-  // ✅ Pre‑fill fields when editing
   useEffect(() => {
     if (editPost) {
       setSkill(editPost.skill || "");
@@ -58,8 +56,6 @@ export default function CreatePostScreen({ navigation, route }) {
       setLocation(editPost.location || "");
       setExistingMediaUrl(editPost.media || null);
       setMediaType(editPost.mediaType || "image");
-      // Show existing image as preview? We'll display it separately.
-      // We'll use mediaBase64 only for new picks.
     }
   }, [editPost]);
 
@@ -68,49 +64,63 @@ export default function CreatePostScreen({ navigation, route }) {
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsEditing: true,
       quality: 0.7,
-      base64: true,
+      base64: false,
     });
     if (!result.canceled) {
       const asset = result.assets[0];
-      const type = asset.type;
-      let base64 = asset.base64;
-      if (type === "video" && !base64) {
-        const fileBase64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        base64 = fileBase64;
+      let type = asset.type;
+      if (!type) {
+        if (asset.mimeType?.startsWith("video/")) type = "video";
+        else if (asset.mimeType?.startsWith("image/")) type = "image";
+        else if (asset.uri.match(/\.(mp4|mov|avi|mkv)$/i)) type = "video";
+        else type = "image";
       }
-      const mimeType = type === "image" ? "image/jpeg" : "video/mp4";
-      const dataUrl = `data:${mimeType};base64,${base64}`;
-      setMediaBase64(dataUrl);
+      setMediaUri(asset.uri);
       setMediaType(type);
-      // Clear existing media URL (we are replacing it)
       setExistingMediaUrl(null);
     }
   };
 
   const removeMedia = () => {
-    setMediaBase64(null);
+    setMediaUri(null);
     setMediaType(null);
-    setExistingMediaUrl(null); // also remove existing
+    setExistingMediaUrl(null);
   };
 
-  const uploadMedia = async (base64Data, type) => {
-    const formData = new FormData();
-    formData.append("file", base64Data);
-    formData.append("upload_preset", UPLOAD_PRESET);
-    formData.append("cloud_name", CLOUD_NAME);
+  // ===== UPLOAD USING LEGACY API – RELIABLE ON MOBILE =====
+  const uploadMedia = async (uri, type) => {
     const endpoint = type === "video"
       ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`
       : `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
-    const res = await fetch(endpoint, {
-      method: "POST",
-      body: formData,
-      headers: { "Accept": "application/json" },
-    });
-    const data = await res.json();
-    if (!data.secure_url) throw new Error(data.error?.message || "Upload failed");
-    return data.secure_url;
+
+    try {
+      const uploadResult = await FileSystem.uploadAsync(endpoint, uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        parameters: {
+          upload_preset: UPLOAD_PRESET,
+        },
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      console.log("📤 Upload status:", uploadResult.status);
+
+      if (uploadResult.status !== 200) {
+        throw new Error(`Upload failed with status ${uploadResult.status}`);
+      }
+
+      const data = JSON.parse(uploadResult.body);
+      if (!data.secure_url) {
+        throw new Error(data.error?.message || "Upload failed");
+      }
+      return data.secure_url;
+    } catch (error) {
+      console.error("Upload error:", error);
+      throw error;
+    }
   };
 
   const handlePost = async () => {
@@ -126,11 +136,10 @@ export default function CreatePostScreen({ navigation, route }) {
     let mediaUrl = null;
 
     try {
-      // If we have a new media (base64), upload it; otherwise keep existing.
-      if (mediaBase64) {
-        mediaUrl = await uploadMedia(mediaBase64, mediaType);
+      if (mediaUri) {
+        mediaUrl = await uploadMedia(mediaUri, mediaType);
+        console.log("✅ Uploaded media URL:", mediaUrl);
       } else if (existingMediaUrl) {
-        // Keep the old media URL
         mediaUrl = existingMediaUrl;
       }
 
@@ -145,7 +154,6 @@ export default function CreatePostScreen({ navigation, route }) {
       };
 
       if (isEdit) {
-        // ✅ Update existing post
         const response = await updatePost(editPost._id, postData);
         if (response.success !== false) {
           Alert.alert("Success", "Post updated!");
@@ -154,18 +162,11 @@ export default function CreatePostScreen({ navigation, route }) {
           Alert.alert("Error", response.message || "Failed to update post");
         }
       } else {
-        // ✅ Create new post
-        const tempPost = {
-          _id: Math.random().toString(),
-          ...postData,
-          user: { _id: "me", name: "You" },
-        };
-        addNewPost(tempPost);
-
         const response = await createPost(postData, userToken);
         if (response.success) {
+          triggerRefresh(); 
           Alert.alert("Success", "Post created!");
-          navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Home");
+          navigation.goBack()
         } else {
           Alert.alert("Error", response.message || "Failed to create post");
         }
@@ -263,14 +264,10 @@ export default function CreatePostScreen({ navigation, route }) {
                 />
               </View>
 
-              {/* Media Preview */}
-              {(mediaBase64 || existingMediaUrl) && (
+              {(mediaUri || existingMediaUrl) && (
                 <View style={styles.mediaPreviewContainer}>
                   {mediaType === "image" ? (
-                    <Image
-                      source={{ uri: mediaBase64 || existingMediaUrl }}
-                      style={styles.mediaPreview}
-                    />
+                    <Image source={{ uri: mediaUri || existingMediaUrl }} style={styles.mediaPreview} />
                   ) : (
                     <View style={[styles.videoPreview, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
                       <Ionicons name="videocam" size={40} color={colors.primary} />
@@ -307,8 +304,11 @@ export default function CreatePostScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[
                   styles.postButton,
-                  { backgroundColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.2 },
-                  uploading && { backgroundColor: colors.gray, shadowOpacity: 0 },
+                  {
+                    backgroundColor: uploading ? colors.gray : colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOpacity: uploading ? 0 : 0.2,
+                  },
                 ]}
                 onPress={handlePost}
                 onPressIn={() => animatePressIn(postScale)}
@@ -317,7 +317,12 @@ export default function CreatePostScreen({ navigation, route }) {
                 activeOpacity={0.9}
               >
                 {uploading ? (
-                  <ActivityIndicator color={colors.textInverse} size="small" />
+                  <>
+                    <ActivityIndicator color={colors.textInverse} size="small" />
+                    <Text style={[styles.postButtonText, { color: colors.textInverse }]}>
+                      {isEdit ? "Updating..." : "Posting..."}
+                    </Text>
+                  </>
                 ) : (
                   <>
                     <Ionicons name="send" size={20} color={colors.textInverse} />
@@ -418,6 +423,5 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 5,
   },
-  postButtonDisabled: { shadowOpacity: 0 },
   postButtonText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
 });
