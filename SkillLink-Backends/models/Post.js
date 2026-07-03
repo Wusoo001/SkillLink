@@ -36,6 +36,26 @@ const postSchema = new mongoose.Schema(
     default: 0,
   },
 
+  location: {
+    type: String,
+    default: "",
+  },
+  
+  // NEW: Inherit location from user or allow custom
+  locationCity: {
+    type: String,
+    default: "",
+  },
+  locationState: {
+    type: String,
+    default: "",
+  },
+  locationCountry: {
+    type: String,
+    default: "Nigeria",
+  },
+  
+
   tags: [String],
 
   location: String,

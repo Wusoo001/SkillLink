@@ -87,11 +87,12 @@ export const getPosts = async (page = 1, limit = 20) => {
   }
 };
 
-export const searchPosts = async (skill) => {
+export const searchPosts = async (query) => {
   try {
-    const res = await api.get(`/posts/search?skill=${skill}`);
+    const res = await api.get(`/posts/search?q=${encodeURIComponent(query)}`);
     return res.data;
   } catch (error) {
+    console.log("Search error:", error);
     return [];
   }
 };

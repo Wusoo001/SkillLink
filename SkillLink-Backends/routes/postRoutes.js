@@ -134,16 +134,65 @@ SEARCH POSTS BY SKILL
 */
 router.get("/search", async (req, res) => {
   try {
-    const { skill } = req.query;
-    const posts = await Post.find({
-      skill: { $regex: skill, $options: "i" }
-    });
+    const { 
+      q, 
+      city, 
+      state, 
+      country, 
+      minPrice, 
+      maxPrice, 
+      sortBy = "relevance" 
+    } = req.query;
+
+    let filter = {};
+
+    // Text search across multiple fields
+    if (q && q.trim().length > 0) {
+      const searchRegex = { $regex: q, $options: "i" };
+      filter.$or = [
+        { skill: searchRegex },
+        { description: searchRegex },
+        { tags: { $in: [new RegExp(q, "i")] } },
+        { location: searchRegex },
+        { locationCity: searchRegex },
+        { locationState: searchRegex },
+      ];
+    }
+
+    // Location filters
+    if (city) {
+      filter.locationCity = { $regex: city, $options: "i" };
+    }
+    if (state) {
+      filter.locationState = { $regex: state, $options: "i" };
+    }
+    if (country) {
+      filter.locationCountry = { $regex: country, $options: "i" };
+    }
+
+    // Price range
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = parseFloat(minPrice);
+      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+    }
+
+    // Build sort
+    let sortOptions = { createdAt: -1 };
+    if (sortBy === "price_asc") sortOptions = { price: 1 };
+    else if (sortBy === "price_desc") sortOptions = { price: -1 };
+    else if (sortBy === "rating") sortOptions = { "user.rating": -1 };
+
+    const posts = await Post.find(filter)
+      .populate("user", "name profileImage email lastActive rating jobsCompleted location")
+      .sort(sortOptions);
+
     res.json(posts);
   } catch (error) {
+    console.error("Search error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
-
 /*
 ========================================
 SAVE / UNSAVE POST
