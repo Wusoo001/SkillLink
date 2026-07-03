@@ -20,7 +20,6 @@ import { AuthContext } from "../../context/AuthContext";
 import { api } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 
-// Cloudinary Config
 const CLOUD_NAME = "dz2te6uth";
 const UPLOAD_PRESET = "SkillLink";
 
@@ -33,6 +32,8 @@ export default function EditProfileScreen({ navigation, route }) {
   const [about, setAbout] = useState("");
   const [profileImage, setProfileImage] = useState(null);
   const [skills, setSkills] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
   const [loading, setLoading] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -49,6 +50,8 @@ export default function EditProfileScreen({ navigation, route }) {
       setAbout(data.bio || "");
       setProfileImage(data.profileImage || null);
       setSkills(data.skills?.join(", ") || "");
+      setCity(data.locationDetails?.city || data.location?.split(",")[0]?.trim() || "");
+      setState(data.locationDetails?.state || data.location?.split(",")[1]?.trim() || "");
     } catch (error) {
       console.log("Profile load error", error);
     }
@@ -115,6 +118,12 @@ export default function EditProfileScreen({ navigation, route }) {
         bio: about,
         profileImage: imageUrl,
         skills: skills.split(",").map((s) => s.trim()),
+        location: `${city}, ${state}`,
+        locationDetails: {
+          city,
+          state,
+          country: "Nigeria",
+        },
       };
       const res = await api.put(`/users/${initialUser._id}`, payload);
       if (updateUser) {
@@ -223,6 +232,29 @@ export default function EditProfileScreen({ navigation, route }) {
                 placeholderTextColor={colors.textTertiary}
               />
             </View>
+
+            {/* ✅ LOCATION FIELDS */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>City</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.inputBorder, color: colors.textPrimary }]}
+                value={city}
+                onChangeText={setCity}
+                placeholder="e.g., Lagos, Abuja"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>State</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, borderColor: colors.inputBorder, color: colors.textPrimary }]}
+                value={state}
+                onChangeText={setState}
+                placeholder="e.g., Lagos State, FCT"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
           </View>
 
           {/* Save Button */}
@@ -252,6 +284,7 @@ export default function EditProfileScreen({ navigation, route }) {
   );
 }
 
+// Styles remain the same as before, add location styling as needed
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboardView: { flex: 1 },
@@ -366,7 +399,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 5,
   },
-  saveBtnDisabled: { shadowOpacity: 0 },
   saveText: {
     fontWeight: "700",
     fontSize: 16,

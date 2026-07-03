@@ -68,6 +68,13 @@ router.put("/:id", async (req, res) => {
         ? skills
         : skills.split(",").map((s) => s.trim());
     }
+    if (location !== undefined) user.location = location;
+    if (locationDetails) {
+      user.locationDetails = {
+        ...user.locationDetails,
+        ...locationDetails,
+      };
+    }
 
     const updatedUser = await user.save();
 

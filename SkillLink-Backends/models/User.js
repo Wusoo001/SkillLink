@@ -25,6 +25,22 @@ const userSchema = new mongoose.Schema(
     type: String,
     default: "",
     },
+     location: {
+    type: String,
+    default: "",
+    },
+  
+    // NEW: Structured location
+    locationDetails: {
+    city: { type: String, default: "" },
+    state: { type: String, default: "" },
+    country: { type: String, default: "Nigeria" },
+    // Optional: coordinates for distance-based search
+    coordinates: {
+      type: { type: String, enum: ['Point'], default: 'Point' },
+      coordinates: { type: [Number], default: [0, 0] }, // [longitude, latitude]
+    },
+    },
 
     rating: {
       type: Number,
@@ -57,5 +73,5 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+userSchema.index({ "locationDetails.coordinates": '2dsphere' });
 module.exports = mongoose.model("User", userSchema);

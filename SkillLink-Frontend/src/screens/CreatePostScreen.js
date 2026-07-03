@@ -12,53 +12,187 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system/legacy"; // ✅ legacy import
+import * as FileSystem from "expo-file-system/legacy";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthContext } from "../../context/AuthContext";
 import { createPost, updatePost } from "../services/api";
 import { PostContext } from "../../context/PostContext";
 import { useTheme } from "../context/ThemeContext";
+import { nigeriaStates } from "../data/nigeriaStates";
 
 const CLOUD_NAME = "dz2te6uth";
 const UPLOAD_PRESET = "SkillLink";
 
+// ===== Custom Dropdown Component =====
+const CustomPicker = ({
+  label,
+  selectedValue,
+  onValueChange,
+  items,
+  placeholder,
+  disabled = false,
+  colors,
+}) => {
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const handleSelect = (value) => {
+    onValueChange(value);
+    setModalVisible(false);
+  };
+
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
+      <TouchableOpacity
+        style={[
+          styles.pickerWrapper,
+          {
+            backgroundColor: colors.inputBackground,
+            borderColor: colors.inputBorder,
+            opacity: disabled ? 0.6 : 1,
+          },
+        ]}
+        onPress={() => !disabled && setModalVisible(true)}
+        activeOpacity={0.7}
+      >
+        <Text
+          style={[
+            styles.pickerText,
+            { color: selectedValue ? colors.textPrimary : colors.textTertiary },
+          ]}
+        >
+          {selectedValue || placeholder}
+        </Text>
+        <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+      </TouchableOpacity>
+
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Select {label}
+            </Text>
+            <FlatList
+              data={items}
+              keyExtractor={(item) => (typeof item === "string" ? item : item.name)}
+              renderItem={({ item }) => {
+                const displayValue = typeof item === "string" ? item : item.name;
+                return (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => handleSelect(displayValue)}
+                  >
+                    <Text style={[styles.modalItemText, { color: colors.textPrimary }]}>
+                      {displayValue}
+                    </Text>
+                    {selectedValue === displayValue && (
+                      <Ionicons name="checkmark" size={20} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+              showsVerticalScrollIndicator={false}
+            />
+            <TouchableOpacity
+              style={[styles.modalClose, { borderTopColor: colors.inputBorder }]}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: colors.danger }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+};
+
+// ===== Main Screen =====
 export default function CreatePostScreen({ navigation, route }) {
+  const { user } = useContext(AuthContext);
   const { userToken } = useContext(AuthContext);
-  const { triggerRefresh } = useContext(PostContext);
+  const { addNewPost, triggerRefresh } = useContext(PostContext);
   const { colors } = useTheme();
 
   const { editPost } = route.params || {};
   const isEdit = !!editPost;
 
+  // Post fields
   const [skill, setSkill] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [tags, setTags] = useState("");
-  const [location, setLocation] = useState("");
+
+  // Location: Country is fixed
+  const [selectedState, setSelectedState] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
+  const [availableCities, setAvailableCities] = useState([]);
+
+  // Media
   const [mediaUri, setMediaUri] = useState(null);
   const [mediaType, setMediaType] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [existingMediaUrl, setExistingMediaUrl] = useState(null);
 
+  // Animations
   const postScale = useRef(new Animated.Value(1)).current;
   const pickScale = useRef(new Animated.Value(1)).current;
 
+  // Pre‑fill from user profile or edit post
   useEffect(() => {
     if (editPost) {
       setSkill(editPost.skill || "");
       setDescription(editPost.description || "");
       setPrice(editPost.price ? String(editPost.price) : "");
       setTags(editPost.tags?.join(", ") || "");
-      setLocation(editPost.location || "");
+      const stateName = editPost.locationState || "";
+      const cityName = editPost.locationCity || "";
+      setSelectedState(stateName);
+      setSelectedCity(cityName);
+      const foundState = nigeriaStates.find(s => s.name === stateName);
+      if (foundState) {
+        setAvailableCities(foundState.cities);
+      } else {
+        setAvailableCities([]);
+      }
       setExistingMediaUrl(editPost.media || null);
       setMediaType(editPost.mediaType || "image");
+    } else {
+      const userState = user?.locationDetails?.state || "";
+      const userCity = user?.locationDetails?.city || "";
+      setSelectedState(userState);
+      setSelectedCity(userCity);
+      const foundState = nigeriaStates.find(s => s.name === userState);
+      if (foundState) {
+        setAvailableCities(foundState.cities);
+      } else {
+        setAvailableCities([]);
+      }
     }
-  }, [editPost]);
+  }, [editPost, user]);
 
+  const handleStateChange = (stateName) => {
+    setSelectedState(stateName);
+    setSelectedCity("");
+    const foundState = nigeriaStates.find(s => s.name === stateName);
+    if (foundState) {
+      setAvailableCities(foundState.cities);
+    } else {
+      setAvailableCities([]);
+    }
+  };
+
+  // Pick media
   const pickMedia = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
@@ -87,7 +221,7 @@ export default function CreatePostScreen({ navigation, route }) {
     setExistingMediaUrl(null);
   };
 
-  // ===== UPLOAD USING LEGACY API – RELIABLE ON MOBILE =====
+  // Upload media
   const uploadMedia = async (uri, type) => {
     const endpoint = type === "video"
       ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`
@@ -98,15 +232,9 @@ export default function CreatePostScreen({ navigation, route }) {
         httpMethod: 'POST',
         uploadType: FileSystem.FileSystemUploadType.MULTIPART,
         fieldName: 'file',
-        parameters: {
-          upload_preset: UPLOAD_PRESET,
-        },
-        headers: {
-          'Accept': 'application/json',
-        },
+        parameters: { upload_preset: UPLOAD_PRESET },
+        headers: { 'Accept': 'application/json' },
       });
-
-      console.log("📤 Upload status:", uploadResult.status);
 
       if (uploadResult.status !== 200) {
         throw new Error(`Upload failed with status ${uploadResult.status}`);
@@ -132,13 +260,15 @@ export default function CreatePostScreen({ navigation, route }) {
       return Alert.alert("Error", "Please enter a valid service fee (greater than 0)");
     }
 
+    const locationParts = [selectedCity, selectedState].filter(Boolean);
+    const locationString = locationParts.join(", ");
+
     setUploading(true);
     let mediaUrl = null;
 
     try {
       if (mediaUri) {
         mediaUrl = await uploadMedia(mediaUri, mediaType);
-        console.log("✅ Uploaded media URL:", mediaUrl);
       } else if (existingMediaUrl) {
         mediaUrl = existingMediaUrl;
       }
@@ -148,7 +278,10 @@ export default function CreatePostScreen({ navigation, route }) {
         description,
         price: priceNum,
         tags: tags.split(",").filter(t => t.trim()),
-        location,
+        location: locationString,
+        locationCity: selectedCity,
+        locationState: selectedState,
+        locationCountry: "Nigeria",
         media: mediaUrl,
         mediaType: mediaType || "image",
       };
@@ -157,16 +290,26 @@ export default function CreatePostScreen({ navigation, route }) {
         const response = await updatePost(editPost._id, postData);
         if (response.success !== false) {
           Alert.alert("Success", "Post updated!");
+          triggerRefresh();
           navigation.goBack();
         } else {
           Alert.alert("Error", response.message || "Failed to update post");
         }
       } else {
+        const tempPost = {
+          _id: Math.random().toString(),
+          ...postData,
+          user: { _id: user?._id || "me", name: user?.name || "You" },
+          reviewCount: 0,
+          reviews: [],
+        };
+        addNewPost(tempPost);
+
         const response = await createPost(postData, userToken);
         if (response.success) {
-          triggerRefresh(); 
           Alert.alert("Success", "Post created!");
-          navigation.goBack()
+          triggerRefresh();
+          navigation.goBack();
         } else {
           Alert.alert("Error", response.message || "Failed to create post");
         }
@@ -206,6 +349,7 @@ export default function CreatePostScreen({ navigation, route }) {
             </View>
 
             <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+              {/* Skill */}
               <View style={styles.fieldGroup}>
                 <Text style={[styles.label, { color: colors.textSecondary }]}>Skill *</Text>
                 <TextInput
@@ -217,6 +361,7 @@ export default function CreatePostScreen({ navigation, route }) {
                 />
               </View>
 
+              {/* Description */}
               <View style={styles.fieldGroup}>
                 <Text style={[styles.label, { color: colors.textSecondary }]}>Description *</Text>
                 <TextInput
@@ -230,6 +375,7 @@ export default function CreatePostScreen({ navigation, route }) {
                 />
               </View>
 
+              {/* Price */}
               <View style={styles.fieldGroup}>
                 <Text style={[styles.label, { color: colors.textSecondary }]}>Service Fee (₦) *</Text>
                 <TextInput
@@ -242,6 +388,7 @@ export default function CreatePostScreen({ navigation, route }) {
                 />
               </View>
 
+              {/* Tags */}
               <View style={styles.fieldGroup}>
                 <Text style={[styles.label, { color: colors.textSecondary }]}>Tags (comma separated)</Text>
                 <TextInput
@@ -253,17 +400,46 @@ export default function CreatePostScreen({ navigation, route }) {
                 />
               </View>
 
+              {/* ===== LOCATION DROPDOWNS (Custom) ===== */}
+              {/* Country – fixed */}
               <View style={styles.fieldGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Location</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.textPrimary }]}
-                  value={location}
-                  onChangeText={setLocation}
-                  placeholder="City or area"
-                  placeholderTextColor={colors.textTertiary}
-                />
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Country</Text>
+                <View
+                  style={[
+                    styles.pickerWrapper,
+                    {
+                      backgroundColor: colors.inputBackground,
+                      borderColor: colors.inputBorder,
+                      opacity: 0.6,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.pickerText, { color: colors.textPrimary }]}>Nigeria</Text>
+                </View>
               </View>
 
+              {/* State */}
+              <CustomPicker
+                label="State"
+                selectedValue={selectedState}
+                onValueChange={handleStateChange}
+                items={nigeriaStates}
+                placeholder="Select a state..."
+                colors={colors}
+              />
+
+              {/* City */}
+              <CustomPicker
+                label="City / LGA"
+                selectedValue={selectedCity}
+                onValueChange={setSelectedCity}
+                items={availableCities}
+                placeholder="Select a city..."
+                colors={colors}
+                disabled={availableCities.length === 0}
+              />
+
+              {/* Media */}
               {(mediaUri || existingMediaUrl) && (
                 <View style={styles.mediaPreviewContainer}>
                   {mediaType === "image" ? (
@@ -380,6 +556,69 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   textArea: { height: 100, textAlignVertical: "top" },
+
+  // Custom picker styles
+  pickerWrapper: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pickerText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    width: "85%",
+    maxHeight: "70%",
+    borderRadius: 28,
+    padding: 20,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  modalItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
+  },
+  modalItemText: {
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  modalClose: {
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    marginTop: 8,
+    alignItems: "center",
+  },
+  modalCloseText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  // Media
   mediaPreviewContainer: { position: "relative", marginBottom: 18 },
   mediaPreview: { width: "100%", height: 180, borderRadius: 16, resizeMode: "cover" },
   videoPreview: {
