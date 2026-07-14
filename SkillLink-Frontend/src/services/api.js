@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { triggerLogout } from "./logout";
 
-const API_BASE = "http://192.168.1.22:5000/api";
+const API_BASE = "http://192.168.1.23:5000/api";
 
 // ================================
 // AXIOS INSTANCE
@@ -32,12 +33,16 @@ api.interceptors.request.use(
 // RESPONSE INTERCEPTOR (Debugging)
 // ================================
 api.interceptors.response.use(
-  (response) => {
-    console.log("API Response:", response.data);
-    return response;
-  },
-  (error) => {
-    console.log("API Error:", error.response?.data || error.message);
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      const data = error.response?.data;
+      if (data?.code === "TOKEN_EXPIRED") {
+        await AsyncStorage.removeItem("userToken");
+        await AsyncStorage.removeItem("userData");
+        triggerLogout(); // 👈 triggers logout in App
+      }
+    }
     return Promise.reject(error);
   }
 );
@@ -438,6 +443,17 @@ export const markAllNotificationsRead = async () => {
   } catch (error) {
     console.log("❌ Mark all read error:", error.response?.data || error.message);
     return { success: false };
+  }
+};
+
+// Resend verification email
+export const resendVerificationEmail = async (email) => {
+  try {
+    const response = await api.post('/auth/resend-verification', { email });
+    return response.data;
+  } catch (error) {
+    console.log('Resend error:', error);
+    return { success: false, message: 'Network error' };
   }
 };
 

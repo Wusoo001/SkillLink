@@ -22,6 +22,9 @@ import { ThemeProvider } from "./src/context/ThemeContext";
 import { sendHeartbeat } from "./src/services/api";
 import SplashLogo from "./src/components/SplashLogo";
 import ReviewsScreen from "./src/screens/ReviewsScreen";
+import { setLogoutCallback } from "./src/services/logout";
+import VerificationPendingScreen from "./src/screens/VerificationPendingScreen";
+
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -49,6 +52,7 @@ function AuthStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Landing" component={Landing} />
       <Stack.Screen name="Register" component={Register} />
+      <Stack.Screen name="VerificationPending" component={VerificationPendingScreen} />
      
     </Stack.Navigator>
   );
@@ -123,6 +127,13 @@ function RootNavigator() {
   const [isReady, setIsReady] = useState(false);
   const [initialState, setInitialState] = useState();
   const [showSplash, setShowSplash] = useState(true);
+  const { logout } = useContext(AuthContext);
+
+useEffect(() => {
+  setLogoutCallback(logout);
+  return () => setLogoutCallback(null);
+}, [logout]);
+
 
   // Restore navigation state on mount
   useEffect(() => {
@@ -142,6 +153,8 @@ function RootNavigator() {
     };
     restoreNavigationState();
   }, []);
+
+
 
  // Inside RootNavigator, replace the loading return with:
   if (loading || !isReady) {
