@@ -48,12 +48,13 @@ export default function Register({ navigation }) {
         password,
       });
 
-      if (response.success) {
-        Alert.alert("Success", "Account created");
-        navigation.replace("Landing");
+     if (response.success) {
+      Alert.alert('Success', 'Account created! Please verify your email.');
+      navigation.replace('VerificationPending', { email });
       } else {
         Alert.alert("Error", response.message);
       }
+            // Inside handleSignup, after successful registration:     
     } catch (error) {
       Alert.alert("Error", "Server error");
     }

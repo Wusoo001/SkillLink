@@ -54,6 +54,16 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verificationToken: {
+      type: String,
+    },
+    verificationTokenExpires: {
+      type: Date,
+    },
     bankDetails: {
       bankName: { type: String },
       bankCode: { type: String }, 

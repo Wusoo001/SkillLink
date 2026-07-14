@@ -39,6 +39,14 @@ export default function Landing({ navigation }) {
       } else {
         Alert.alert("Error", response.message || "Invalid credentials");
       }
+      if (response.success === false) {
+        if (response.message && response.message.toLowerCase().includes('verify')) {
+        Alert.alert('Verification Required', response.message);
+        navigation.navigate('VerificationPending', { email: email });
+        return;
+      }
+      Alert.alert('Error', response.message || 'Invalid credentials');
+      }
     } catch (error) {
       console.log(error);
       Alert.alert("Error", "Server not reachable");
