@@ -48,7 +48,7 @@ UPDATE USER PROFILE
 
 router.put("/:id", async (req, res) => {
   try {
-    const { name, bio, profileImage, skills, location, phone } = req.body;
+    const { name, bio, profileImage, skills, locationDetails,location, phone } = req.body;
 
     const user = await User.findById(req.params.id);
 
@@ -68,11 +68,11 @@ router.put("/:id", async (req, res) => {
         ? skills
         : skills.split(",").map((s) => s.trim());
     }
-    if (location !== undefined) user.location = location;
     if (locationDetails) {
       user.locationDetails = {
-        ...user.locationDetails,
-        ...locationDetails,
+        city: locationDetails.city || user.locationDetails?.city || "",
+        state: locationDetails.state || user.locationDetails?.state || "",
+        country: locationDetails.country || user.locationDetails?.country || "Nigeria",
       };
     }
 
