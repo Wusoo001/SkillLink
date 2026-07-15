@@ -109,9 +109,16 @@ router.post("/login", async (req, res) => {
 
   try {
     const user = await User.findOne({ email });
-    if (!user)
-      return res.json({ success: false, message: "Invalid credentials" });
 
+    // 1. Check if user exists
+    if (!user) {
+      return res.json({
+        success: false,
+        message: "Invalid email or password.",
+      });
+    }
+
+    // 2. Check if email is verified
     if (!user.isVerified) {
       return res.json({
         success: false,
@@ -119,10 +126,16 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // 3. Check password
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch)
-      return res.json({ success: false, message: "Invalid credentials" });
+    if (!isMatch) {
+      return res.json({
+        success: false,
+        message: "Invalid password. Please try again.",
+      });
+    }
 
+    // 4. All good – generate token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     const userResponse = {
