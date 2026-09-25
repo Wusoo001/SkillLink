@@ -6,19 +6,21 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Animated,
   Image,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { registerUser } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 
 export default function Register({ navigation }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -41,63 +43,77 @@ export default function Register({ navigation }) {
     }
 
     try {
-      const response = await registerUser({
-        name,
-        email,
-        phone,
-        password,
-      });
+      const response = await registerUser({ name, email, phone, password });
 
-     if (response.success) {
-      Alert.alert('Success', 'Account created! Please verify your email.');
-      navigation.replace('VerificationPending', { email });
+      if (response.success) {
+        Alert.alert("Success", "Account created! Please verify your email.");
+        navigation.replace("VerificationPending", { email });
       } else {
         Alert.alert("Error", response.message);
       }
-            // Inside handleSignup, after successful registration:     
     } catch (error) {
       Alert.alert("Error", "Server error");
     }
   };
 
   const animateButtonIn = () => {
-    Animated.spring(buttonScale, { toValue: 0.96, useNativeDriver: true }).start();
+    Animated.spring(buttonScale, { toValue: 0.97, useNativeDriver: true }).start();
   };
   const animateButtonOut = () => {
     Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true }).start();
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.container}
+        style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 24,
+            },
+          ]}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
+          {/* ===== BRAND HEADER ===== */}
+          <View style={styles.brand}>
+            <Image
+              source={require("../../assets/images/street_logo.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+            <Text style={[styles.brandName, { color: colors.textPrimary }]}>
+              Street
+            </Text>
+            <Text style={[styles.brandTagline, { color: colors.textTertiary }]}>
+              Find trusted professionals near you
+            </Text>
+          </View>
+
+          {/* ===== REGISTER CARD ===== */}
           <View
             style={[
               styles.card,
               {
                 backgroundColor: colors.card,
+                borderColor: colors.inputBorder,
                 shadowColor: colors.shadowColor,
-                shadowOpacity: colors.shadowOpacity,
               },
             ]}
           >
-            {/* Image Logo */}
-            <Image
-              source={require('../../assets/images/street_logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-            <View style={styles.logoLine} />
+            <Text style={[styles.title, { color: colors.textPrimary }]}>
+              Create Account
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
+              Join Street today
+            </Text>
 
-            <Text style={[styles.title, { color: colors.textPrimary }]}>Create Account</Text>
-            <Text style={[styles.subtitle, { color: colors.textTertiary }]}>Join Street today</Text>
-
+            {/* Full name */}
             <View
               style={[
                 styles.inputWrapper,
@@ -107,15 +123,23 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={colors.textTertiary}
+                style={styles.inputIcon}
+              />
               <TextInput
                 placeholder="Full Name"
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, { color: colors.textPrimary }]}
                 value={name}
                 onChangeText={setName}
+                autoCorrect={false}
               />
             </View>
 
+            {/* Email */}
             <View
               style={[
                 styles.inputWrapper,
@@ -125,6 +149,12 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
+              <Ionicons
+                name="mail-outline"
+                size={18}
+                color={colors.textTertiary}
+                style={styles.inputIcon}
+              />
               <TextInput
                 placeholder="Email Address"
                 placeholderTextColor={colors.textTertiary}
@@ -133,9 +163,11 @@ export default function Register({ navigation }) {
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                autoCorrect={false}
               />
             </View>
 
+            {/* Phone */}
             <View
               style={[
                 styles.inputWrapper,
@@ -145,6 +177,12 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
+              <Ionicons
+                name="phone-portrait-outline"
+                size={18}
+                color={colors.textTertiary}
+                style={styles.inputIcon}
+              />
               <TextInput
                 placeholder="Phone Number"
                 placeholderTextColor={colors.textTertiary}
@@ -155,6 +193,7 @@ export default function Register({ navigation }) {
               />
             </View>
 
+            {/* Password */}
             <View
               style={[
                 styles.inputWrapper,
@@ -164,6 +203,12 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
+              <Ionicons
+                name="lock-closed-outline"
+                size={18}
+                color={colors.textTertiary}
+                style={styles.inputIcon}
+              />
               <TextInput
                 placeholder="Password"
                 secureTextEntry={!showPassword}
@@ -179,12 +224,13 @@ export default function Register({ navigation }) {
               >
                 <Ionicons
                   name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={22}
+                  size={20}
                   color={colors.textTertiary}
                 />
               </TouchableOpacity>
             </View>
 
+            {/* Confirm password */}
             <View
               style={[
                 styles.inputWrapper,
@@ -194,6 +240,12 @@ export default function Register({ navigation }) {
                 },
               ]}
             >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={18}
+                color={colors.textTertiary}
+                style={styles.inputIcon}
+              />
               <TextInput
                 placeholder="Confirm Password"
                 secureTextEntry={!showConfirmPassword}
@@ -209,20 +261,22 @@ export default function Register({ navigation }) {
               >
                 <Ionicons
                   name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
-                  size={22}
+                  size={20}
                   color={colors.textTertiary}
                 />
               </TouchableOpacity>
             </View>
 
-            <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+            {/* Submit button */}
+            <Animated.View
+              style={{ transform: [{ scale: buttonScale }], width: "100%" }}
+            >
               <TouchableOpacity
                 style={[
                   styles.button,
                   {
                     backgroundColor: colors.primary,
                     shadowColor: colors.primary,
-                    shadowOpacity: 0.25,
                   },
                 ]}
                 onPress={handleSignup}
@@ -230,14 +284,18 @@ export default function Register({ navigation }) {
                 onPressOut={animateButtonOut}
                 activeOpacity={0.9}
               >
-                <Text style={[styles.buttonText, { color: colors.textInverse }]}>Verify & Continue</Text>
-                <Ionicons name="arrow-forward" size={20} color={colors.textInverse} />
+                <Text style={[styles.buttonText, { color: colors.textInverse }]}>
+                  Verify & Continue
+                </Text>
+                <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
               </TouchableOpacity>
             </Animated.View>
 
+            {/* Login link */}
             <TouchableOpacity
               style={styles.loginLink}
               onPress={() => navigation.replace("Landing")}
+              activeOpacity={0.7}
             >
               <Text style={[styles.loginText, { color: colors.textTertiary }]}>
                 Already have an account?{" "}
@@ -249,98 +307,127 @@ export default function Register({ navigation }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
+// ========================================
+// STYLES
+// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flex: 1 },
+  keyboardView: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: 20,
-    paddingVertical: 20,
   },
-  card: {
-    borderRadius: 32,
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 24,
-    elevation: 10,
+
+  // ===== BRAND =====
+  brand: {
     alignItems: "center",
+    marginBottom: 22,
   },
   logoImage: {
-    width: 120,
-    height: 120,
-    marginBottom: 8,
+    width: 82,
+    height: 82,
+    marginBottom: 6,
   },
-  logoLine: {
-    width: 60,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: "#2563EB",
-    marginBottom: 20,
+  brandName: {
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: -0.6,
+    marginBottom: 2,
+  },
+  brandTagline: {
+    fontSize: 12,
+    fontWeight: "500",
+    letterSpacing: 0.1,
+  },
+
+  // ===== CARD =====
+  card: {
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 22,
+    paddingVertical: 26,
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 3,
   },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "800",
-    letterSpacing: -0.5,
-    marginBottom: 8,
+    letterSpacing: -0.4,
+    marginBottom: 4,
     textAlign: "center",
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 13.5,
+    fontWeight: "500",
     textAlign: "center",
-    marginBottom: 32,
+    marginBottom: 22,
   },
+
+  // ===== INPUTS =====
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 20,
-    marginBottom: 18,
-    paddingHorizontal: 16,
+    borderRadius: 14,
+    marginBottom: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
     width: "100%",
+    height: 48,
+  },
+  inputIcon: {
+    marginRight: 10,
   },
   input: {
     flex: 1,
-    paddingVertical: 16,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "500",
+    paddingVertical: 0,
   },
   eyeIcon: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
   },
+
+  // ===== BUTTON =====
   button: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 50,
-    marginTop: 12,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-    elevation: 5,
+    height: 54,
+    borderRadius: 14,
+    marginTop: 8,
     width: "100%",
-    gap: 10,
+    gap: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 4,
   },
   buttonText: {
     fontWeight: "700",
-    fontSize: 17,
-    letterSpacing: 0.5,
-    color: "#FFF",
+    fontSize: 15.5,
+    letterSpacing: 0.1,
   },
+
+  // ===== FOOTER LINK =====
   loginLink: {
-    marginTop: 16,
-    paddingVertical: 8,
+    marginTop: 18,
+    paddingVertical: 6,
   },
   loginText: {
-    fontSize: 15,
+    fontSize: 13.5,
     fontWeight: "500",
+    textAlign: "center",
   },
   loginHighlight: {
-    fontWeight: "700",
+    fontWeight: "800",
   },
 });

@@ -15,7 +15,7 @@ import {
   Modal,
   FlatList,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { Ionicons } from "@expo/vector-icons";
@@ -53,23 +53,24 @@ const CustomPicker = ({
         style={[
           styles.pickerWrapper,
           {
-            backgroundColor: colors.inputBackground,
+            backgroundColor: colors.card,
             borderColor: colors.inputBorder,
-            opacity: disabled ? 0.6 : 1,
+            opacity: disabled ? 0.55 : 1,
           },
         ]}
         onPress={() => !disabled && setModalVisible(true)}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
       >
         <Text
           style={[
             styles.pickerText,
             { color: selectedValue ? colors.textPrimary : colors.textTertiary },
           ]}
+          numberOfLines={1}
         >
           {selectedValue || placeholder}
         </Text>
-        <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+        <Ionicons name="chevron-down" size={18} color={colors.textTertiary} />
       </TouchableOpacity>
 
       <Modal
@@ -80,23 +81,38 @@ const CustomPicker = ({
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-              Select {label}
-            </Text>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.inputBorder }]}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                Select {label}
+              </Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
             <FlatList
               data={items}
               keyExtractor={(item) => (typeof item === "string" ? item : item.name)}
               renderItem={({ item }) => {
                 const displayValue = typeof item === "string" ? item : item.name;
+                const isSelected = selectedValue === displayValue;
                 return (
                   <TouchableOpacity
-                    style={styles.modalItem}
+                    style={[styles.modalItem, { borderBottomColor: colors.inputBorder }]}
                     onPress={() => handleSelect(displayValue)}
+                    activeOpacity={0.7}
                   >
-                    <Text style={[styles.modalItemText, { color: colors.textPrimary }]}>
+                    <Text
+                      style={[
+                        styles.modalItemText,
+                        {
+                          color: isSelected ? colors.primary : colors.textPrimary,
+                          fontWeight: isSelected ? "700" : "500",
+                        },
+                      ]}
+                    >
                       {displayValue}
                     </Text>
-                    {selectedValue === displayValue && (
+                    {isSelected && (
                       <Ionicons name="checkmark" size={20} color={colors.primary} />
                     )}
                   </TouchableOpacity>
@@ -104,12 +120,6 @@ const CustomPicker = ({
               }}
               showsVerticalScrollIndicator={false}
             />
-            <TouchableOpacity
-              style={[styles.modalClose, { borderTopColor: colors.inputBorder }]}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={[styles.modalCloseText, { color: colors.danger }]}>Cancel</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -123,6 +133,7 @@ export default function CreatePostScreen({ navigation, route }) {
   const { userToken } = useContext(AuthContext);
   const { addNewPost, triggerRefresh } = useContext(PostContext);
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const { editPost } = route.params || {};
   const isEdit = !!editPost;
@@ -133,7 +144,7 @@ export default function CreatePostScreen({ navigation, route }) {
   const [price, setPrice] = useState("");
   const [tags, setTags] = useState("");
 
-  // Location: Country is fixed
+  // Location
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [availableCities, setAvailableCities] = useState([]);
@@ -148,7 +159,7 @@ export default function CreatePostScreen({ navigation, route }) {
   const postScale = useRef(new Animated.Value(1)).current;
   const pickScale = useRef(new Animated.Value(1)).current;
 
-  // Pre‑fill from user profile or edit post
+  // Pre-fill
   useEffect(() => {
     if (editPost) {
       setSkill(editPost.skill || "");
@@ -159,12 +170,8 @@ export default function CreatePostScreen({ navigation, route }) {
       const cityName = editPost.locationCity || "";
       setSelectedState(stateName);
       setSelectedCity(cityName);
-      const foundState = nigeriaStates.find(s => s.name === stateName);
-      if (foundState) {
-        setAvailableCities(foundState.cities);
-      } else {
-        setAvailableCities([]);
-      }
+      const foundState = nigeriaStates.find((s) => s.name === stateName);
+      setAvailableCities(foundState ? foundState.cities : []);
       setExistingMediaUrl(editPost.media || null);
       setMediaType(editPost.mediaType || "image");
     } else {
@@ -172,27 +179,18 @@ export default function CreatePostScreen({ navigation, route }) {
       const userCity = user?.locationDetails?.city || "";
       setSelectedState(userState);
       setSelectedCity(userCity);
-      const foundState = nigeriaStates.find(s => s.name === userState);
-      if (foundState) {
-        setAvailableCities(foundState.cities);
-      } else {
-        setAvailableCities([]);
-      }
+      const foundState = nigeriaStates.find((s) => s.name === userState);
+      setAvailableCities(foundState ? foundState.cities : []);
     }
   }, [editPost, user]);
 
   const handleStateChange = (stateName) => {
     setSelectedState(stateName);
     setSelectedCity("");
-    const foundState = nigeriaStates.find(s => s.name === stateName);
-    if (foundState) {
-      setAvailableCities(foundState.cities);
-    } else {
-      setAvailableCities([]);
-    }
+    const foundState = nigeriaStates.find((s) => s.name === stateName);
+    setAvailableCities(foundState ? foundState.cities : []);
   };
 
-  // Pick media
   const pickMedia = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
@@ -221,25 +219,23 @@ export default function CreatePostScreen({ navigation, route }) {
     setExistingMediaUrl(null);
   };
 
-  // Upload media
   const uploadMedia = async (uri, type) => {
-    const endpoint = type === "video"
-      ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`
-      : `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+    const endpoint =
+      type === "video"
+        ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`
+        : `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
     try {
       const uploadResult = await FileSystem.uploadAsync(endpoint, uri, {
-        httpMethod: 'POST',
+        httpMethod: "POST",
         uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
+        fieldName: "file",
         parameters: { upload_preset: UPLOAD_PRESET },
-        headers: { 'Accept': 'application/json' },
+        headers: { Accept: "application/json" },
       });
-
       if (uploadResult.status !== 200) {
         throw new Error(`Upload failed with status ${uploadResult.status}`);
       }
-
       const data = JSON.parse(uploadResult.body);
       if (!data.secure_url) {
         throw new Error(data.error?.message || "Upload failed");
@@ -277,7 +273,7 @@ export default function CreatePostScreen({ navigation, route }) {
         skill,
         description,
         price: priceNum,
-        tags: tags.split(",").filter(t => t.trim()),
+        tags: tags.split(",").filter((t) => t.trim()),
         location: locationString,
         locationCity: selectedCity,
         locationState: selectedState,
@@ -330,160 +326,269 @@ export default function CreatePostScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardView}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardView}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: insets.top + 8,
+              paddingBottom: insets.bottom + 32,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.container}>
+            {/* ===== HEADER ===== */}
             <View style={styles.header}>
               <TouchableOpacity
                 onPress={() => navigation.goBack()}
-                style={[styles.backButton, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}
+                style={[
+                  styles.backButton,
+                  { backgroundColor: colors.card, borderColor: colors.inputBorder },
+                ]}
                 activeOpacity={0.7}
               >
-                <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+                <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
               </TouchableOpacity>
-              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-                {isEdit ? "Edit Service" : "Create New Service"}
+              <Text
+                style={[styles.headerTitle, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
+                {isEdit ? "Edit Service" : "New Service"}
               </Text>
               <View style={styles.placeholder} />
             </View>
 
-            <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
-              {/* Skill */}
-              <View style={styles.fieldGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Skill *</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.textPrimary }]}
-                  value={skill}
-                  onChangeText={setSkill}
-                  placeholder="e.g., Plumbing, Electrical, Carpentry"
-                  placeholderTextColor={colors.textTertiary}
-                />
-              </View>
-
-              {/* Description */}
-              <View style={styles.fieldGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Description *</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.textPrimary }]}
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder="Describe your service..."
-                  placeholderTextColor={colors.textTertiary}
-                  multiline
-                  numberOfLines={4}
-                />
-              </View>
-
-              {/* Price */}
-              <View style={styles.fieldGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Service Fee (₦) *</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.textPrimary }]}
-                  value={price}
-                  onChangeText={setPrice}
-                  placeholder="e.g., 5000"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="numeric"
-                />
-              </View>
-
-              {/* Tags */}
-              <View style={styles.fieldGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Tags (comma separated)</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.textPrimary }]}
-                  value={tags}
-                  onChangeText={setTags}
-                  placeholder="e.g., fast, affordable, expert"
-                  placeholderTextColor={colors.textTertiary}
-                />
-              </View>
-
-              {/* ===== LOCATION DROPDOWNS (Custom) ===== */}
-              {/* Country – fixed */}
-              <View style={styles.fieldGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Country</Text>
-                <View
-                  style={[
-                    styles.pickerWrapper,
-                    {
-                      backgroundColor: colors.inputBackground,
-                      borderColor: colors.inputBorder,
-                      opacity: 0.6,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.pickerText, { color: colors.textPrimary }]}>Nigeria</Text>
-                </View>
-              </View>
-
-              {/* State */}
-              <CustomPicker
-                label="State"
-                selectedValue={selectedState}
-                onValueChange={handleStateChange}
-                items={nigeriaStates}
-                placeholder="Select a state..."
-                colors={colors}
-              />
-
-              {/* City */}
-              <CustomPicker
-                label="City / LGA"
-                selectedValue={selectedCity}
-                onValueChange={setSelectedCity}
-                items={availableCities}
-                placeholder="Select a city..."
-                colors={colors}
-                disabled={availableCities.length === 0}
-              />
-
-              {/* Media */}
-              {(mediaUri || existingMediaUrl) && (
-                <View style={styles.mediaPreviewContainer}>
-                  {mediaType === "image" ? (
-                    <Image source={{ uri: mediaUri || existingMediaUrl }} style={styles.mediaPreview} />
-                  ) : (
-                    <View style={[styles.videoPreview, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}>
-                      <Ionicons name="videocam" size={40} color={colors.primary} />
-                      <Text style={[styles.videoText, { color: colors.textTertiary }]}>Video selected</Text>
-                    </View>
-                  )}
-                  <TouchableOpacity
-                    style={[styles.removeMediaButton, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}
-                    onPress={removeMedia}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="close-circle" size={24} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              <Animated.View style={{ transform: [{ scale: pickScale }] }}>
-                <TouchableOpacity
-                  style={[styles.pickButton, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
-                  onPress={pickMedia}
-                  onPressIn={() => animatePressIn(pickScale)}
-                  onPressOut={() => animatePressOut(pickScale)}
-                  activeOpacity={0.9}
-                >
-                  <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
-                  <Text style={[styles.pickButtonText, { color: colors.primary }]}>
-                    {isEdit ? "Change Image/Video" : "Pick Image or Video"}
-                  </Text>
-                </TouchableOpacity>
-              </Animated.View>
+            {/* ===== SERVICE DETAILS ===== */}
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Service Details
+              </Text>
             </View>
 
-            <Animated.View style={{ transform: [{ scale: postScale }] }}>
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Skill *
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.inputBorder,
+                    color: colors.textPrimary,
+                  },
+                ]}
+                value={skill}
+                onChangeText={setSkill}
+                placeholder="e.g., Plumbing, Electrical"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Description *
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.textArea,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.inputBorder,
+                    color: colors.textPrimary,
+                  },
+                ]}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Describe your service..."
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Service Fee (₦) *
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.inputBorder,
+                    color: colors.textPrimary,
+                  },
+                ]}
+                value={price}
+                onChangeText={setPrice}
+                placeholder="e.g., 5000"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Tags (comma separated)
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.inputBorder,
+                    color: colors.textPrimary,
+                  },
+                ]}
+                value={tags}
+                onChangeText={setTags}
+                placeholder="e.g., fast, affordable, expert"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+
+            {/* ===== LOCATION ===== */}
+            <View style={[styles.sectionHeader, styles.sectionHeaderSpaced]}>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Location
+              </Text>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>
+                Country
+              </Text>
+              <View
+                style={[
+                  styles.pickerWrapper,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: colors.inputBorder,
+                    opacity: 0.7,
+                  },
+                ]}
+              >
+                <Text style={[styles.pickerText, { color: colors.textPrimary }]}>
+                  Nigeria
+                </Text>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={14}
+                  color={colors.textTertiary}
+                />
+              </View>
+            </View>
+
+            <CustomPicker
+              label="State"
+              selectedValue={selectedState}
+              onValueChange={handleStateChange}
+              items={nigeriaStates}
+              placeholder="Select a state..."
+              colors={colors}
+            />
+
+            <CustomPicker
+              label="City / LGA"
+              selectedValue={selectedCity}
+              onValueChange={setSelectedCity}
+              items={availableCities}
+              placeholder={
+                availableCities.length === 0
+                  ? "Select a state first"
+                  : "Select a city..."
+              }
+              colors={colors}
+              disabled={availableCities.length === 0}
+            />
+
+            {/* ===== MEDIA ===== */}
+            <View style={[styles.sectionHeader, styles.sectionHeaderSpaced]}>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Media
+              </Text>
+            </View>
+
+            {(mediaUri || existingMediaUrl) && (
+              <View style={styles.mediaPreviewContainer}>
+                {mediaType === "image" ? (
+                  <Image
+                    source={{ uri: mediaUri || existingMediaUrl }}
+                    style={styles.mediaPreview}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.videoPreview,
+                      {
+                        backgroundColor: colors.inputBackground,
+                        borderColor: colors.inputBorder,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="videocam" size={36} color={colors.primary} />
+                    <Text style={[styles.videoText, { color: colors.textTertiary }]}>
+                      Video selected
+                    </Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[
+                    styles.removeMediaButton,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.inputBorder,
+                    },
+                  ]}
+                  onPress={removeMedia}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="close" size={16} color={colors.danger} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <Animated.View style={{ transform: [{ scale: pickScale }] }}>
+              <TouchableOpacity
+                style={[
+                  styles.pickButton,
+                  {
+                    backgroundColor: colors.primaryLight,
+                    borderColor: colors.primary + "40",
+                  },
+                ]}
+                onPress={pickMedia}
+                onPressIn={() => animatePressIn(pickScale)}
+                onPressOut={() => animatePressOut(pickScale)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
+                <Text style={[styles.pickButtonText, { color: colors.primary }]}>
+                  {isEdit ? "Change Media" : "Pick Image or Video"}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* ===== SUBMIT CTA ===== */}
+            <Animated.View
+              style={[styles.postWrap, { transform: [{ scale: postScale }] }]}
+            >
               <TouchableOpacity
                 style={[
                   styles.postButton,
                   {
                     backgroundColor: uploading ? colors.gray : colors.primary,
                     shadowColor: colors.primary,
-                    shadowOpacity: uploading ? 0 : 0.2,
+                    opacity: uploading ? 0.7 : 1,
                   },
                 ]}
                 onPress={handlePost}
@@ -501,7 +606,11 @@ export default function CreatePostScreen({ navigation, route }) {
                   </>
                 ) : (
                   <>
-                    <Ionicons name="send" size={20} color={colors.textInverse} />
+                    <Ionicons
+                      name={isEdit ? "checkmark-circle" : "send"}
+                      size={19}
+                      color={colors.textInverse}
+                    />
                     <Text style={[styles.postButtonText, { color: colors.textInverse }]}>
                       {isEdit ? "Update Service" : "Post Service"}
                     </Text>
@@ -512,20 +621,26 @@ export default function CreatePostScreen({ navigation, route }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
+// ========================================
+// STYLES
+// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboardView: { flex: 1 },
   scrollContent: { flexGrow: 1 },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
+  container: { paddingHorizontal: 20 },
+
+  // ===== HEADER =====
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 24,
+    marginBottom: 20,
+    gap: 12,
   },
   backButton: {
     width: 40,
@@ -533,35 +648,59 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  headerTitle: { fontSize: 20, fontWeight: "700", letterSpacing: -0.3 },
-  placeholder: { width: 40 },
-  card: {
-    borderRadius: 28,
-    padding: 20,
-    marginBottom: 24,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  fieldGroup: { marginBottom: 18 },
-  label: { fontSize: 14, fontWeight: "600", marginBottom: 6 },
-  input: {
-    borderRadius: 16,
-    padding: 14,
-    fontSize: 15,
     borderWidth: 1,
   },
-  textArea: { height: 100, textAlignVertical: "top" },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.4,
+    flex: 1,
+  },
+  placeholder: { width: 40 },
 
-  // Custom picker styles
-  pickerWrapper: {
-    borderRadius: 16,
+  // ===== SECTION HEADERS =====
+  sectionHeader: {
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  sectionHeaderSpaced: {
+    marginTop: 20,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+    textTransform: "uppercase",
+  },
+
+  // ===== FIELDS =====
+  fieldGroup: { marginBottom: 14 },
+  label: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    marginBottom: 6,
+    letterSpacing: 0.1,
+  },
+  input: {
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    fontSize: 15,
+    fontWeight: "500",
+    borderWidth: 1,
+    minHeight: 48,
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: "top",
+    paddingTop: 12,
+  },
+
+  // ===== PICKER =====
+  pickerWrapper: {
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    minHeight: 48,
     borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -570,9 +709,11 @@ const styles = StyleSheet.create({
   pickerText: {
     fontSize: 15,
     fontWeight: "500",
+    flex: 1,
+    marginRight: 8,
   },
 
-  // Modal styles
+  // ===== MODAL =====
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -582,85 +723,107 @@ const styles = StyleSheet.create({
   modalContent: {
     width: "85%",
     maxHeight: "70%",
-    borderRadius: 28,
-    padding: 20,
+    borderRadius: 20,
+    padding: 18,
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 24,
     elevation: 10,
   },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingBottom: 12,
+    marginBottom: 6,
+    borderBottomWidth: 1,
+  },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 16,
-    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
   modalItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 14,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.05)",
   },
   modalItemText: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  modalClose: {
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    marginTop: 8,
-    alignItems: "center",
-  },
-  modalCloseText: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 15,
+    letterSpacing: -0.1,
   },
 
-  // Media
-  mediaPreviewContainer: { position: "relative", marginBottom: 18 },
-  mediaPreview: { width: "100%", height: 180, borderRadius: 16, resizeMode: "cover" },
+  // ===== MEDIA =====
+  mediaPreviewContainer: {
+    position: "relative",
+    marginBottom: 12,
+  },
+  mediaPreview: {
+    width: "100%",
+    aspectRatio: 1.5,
+    borderRadius: 14,
+    backgroundColor: "#E2E8F0",
+  },
   videoPreview: {
     width: "100%",
-    height: 180,
-    borderRadius: 16,
+    aspectRatio: 1.5,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
     borderStyle: "dashed",
   },
-  videoText: { marginTop: 8, fontSize: 14 },
+  videoText: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "500",
+  },
   removeMediaButton: {
     position: "absolute",
     top: 8,
     right: 8,
-    borderRadius: 20,
-    padding: 4,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 3,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
   },
   pickButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    borderRadius: 40,
+    borderRadius: 14,
     gap: 8,
     borderWidth: 1,
+    minHeight: 48,
   },
-  pickButtonText: { fontSize: 15, fontWeight: "600" },
+  pickButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+  },
+
+  // ===== SUBMIT CTA =====
+  postWrap: { marginTop: 26 },
   postButton: {
+    height: 54,
+    borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 48,
-    gap: 10,
+    gap: 8,
     shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
     shadowRadius: 12,
-    elevation: 5,
+    elevation: 4,
   },
-  postButtonText: { fontWeight: "700", fontSize: 17, letterSpacing: 0.3 },
+  postButtonText: {
+    fontWeight: "700",
+    fontSize: 15.5,
+    letterSpacing: 0.1,
+  },
 });

@@ -17,6 +17,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getMyBookings,
   getWalletBalance,
@@ -46,43 +47,29 @@ const STATUS_LABELS = {
   in_progress: "In Progress",
 };
 
-// ------------------ Notification Item Component ------------------
+// ================== Notification Item ==================
 const NotificationItem = ({ notification, onPress, colors }) => {
   const getIcon = (type) => {
     switch (type) {
-      case "booking_request":
-        return "calendar-outline";
-      case "booking_accepted":
-        return "checkmark-circle-outline";
-      case "booking_rejected":
-        return "close-circle-outline";
-      case "booking_cancelled":
-        return "ban-outline";
-      case "payment_received":
-        return "cash-outline";
-      case "funds_released":
-        return "wallet-outline";
-      default:
-        return "notifications-outline";
+      case "booking_request": return "calendar-outline";
+      case "booking_accepted": return "checkmark-circle-outline";
+      case "booking_rejected": return "close-circle-outline";
+      case "booking_cancelled": return "ban-outline";
+      case "payment_received": return "cash-outline";
+      case "funds_released": return "wallet-outline";
+      default: return "notifications-outline";
     }
   };
 
   const getIconColor = (type) => {
     switch (type) {
-      case "booking_request":
-        return colors.primary;
-      case "booking_accepted":
-        return colors.success;
-      case "booking_rejected":
-        return colors.danger;
-      case "booking_cancelled":
-        return colors.warning;
-      case "payment_received":
-        return colors.success;
-      case "funds_released":
-        return colors.primary;
-      default:
-        return colors.textTertiary;
+      case "booking_request": return colors.primary;
+      case "booking_accepted": return colors.success;
+      case "booking_rejected": return colors.danger;
+      case "booking_cancelled": return colors.warning;
+      case "payment_received": return colors.success;
+      case "funds_released": return colors.primary;
+      default: return colors.textTertiary;
     }
   };
 
@@ -99,21 +86,18 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       activeOpacity={0.7}
     >
       <View style={styles.notificationIconContainer}>
-        <Ionicons
-          name={getIcon(notification.type)}
-          size={24}
-          color={getIconColor(notification.type)}
-        />
+        <Ionicons name={getIcon(notification.type)} size={22} color={getIconColor(notification.type)} />
       </View>
       <View style={styles.notificationContent}>
-        <Text style={[styles.notificationTitle, { color: colors.textPrimary }]}>
+        <Text style={[styles.notificationTitle, { color: colors.textPrimary }]} numberOfLines={1}>
           {notification.title}
         </Text>
-        <Text style={[styles.notificationMessage, { color: colors.textSecondary }]}>
+        <Text style={[styles.notificationMessage, { color: colors.textSecondary }]} numberOfLines={2}>
           {notification.message}
         </Text>
         <Text style={[styles.notificationTime, { color: colors.textTertiary }]}>
-          {new Date(notification.createdAt).toLocaleDateString()} {new Date(notification.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date(notification.createdAt).toLocaleDateString()}{" "}
+          {new Date(notification.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </Text>
       </View>
       {!notification.read && (
@@ -123,7 +107,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
   );
 };
 
-// ------------------ Booking Card ------------------
+// ================== Booking Card ==================
 const BookingCard = ({
   booking,
   role,
@@ -173,20 +157,13 @@ const BookingCard = ({
       setActionLoading(true);
       onAccept(booking._id);
     };
-
     if (Platform.OS === "web") {
-      if (window.confirm(confirmMessage)) {
-        onConfirm();
-      }
+      if (window.confirm(confirmMessage)) onConfirm();
     } else {
-      Alert.alert(
-        "Accept Request",
-        confirmMessage,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Accept", onPress: onConfirm },
-        ]
-      );
+      Alert.alert("Accept Request", confirmMessage, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Accept", onPress: onConfirm },
+      ]);
     }
   };
 
@@ -196,20 +173,13 @@ const BookingCard = ({
       setActionLoading(true);
       onReject(booking._id);
     };
-
     if (Platform.OS === "web") {
-      if (window.confirm(confirmMessage)) {
-        onConfirm();
-      }
+      if (window.confirm(confirmMessage)) onConfirm();
     } else {
-      Alert.alert(
-        "Decline Request",
-        confirmMessage,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Decline", style: "destructive", onPress: onConfirm },
-        ]
-      );
+      Alert.alert("Decline Request", confirmMessage, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Decline", style: "destructive", onPress: onConfirm },
+      ]);
     }
   };
 
@@ -219,32 +189,21 @@ const BookingCard = ({
       setActionLoading(true);
       onCancel(booking._id);
     };
-
     if (Platform.OS === "web") {
-      if (window.confirm(confirmMessage)) {
-        onConfirm();
-      }
+      if (window.confirm(confirmMessage)) onConfirm();
     } else {
-      Alert.alert(
-        "Cancel Request",
-        confirmMessage,
-        [
-          { text: "No", style: "cancel" },
-          { text: "Yes", style: "destructive", onPress: onConfirm },
-        ]
-      );
+      Alert.alert("Cancel Request", confirmMessage, [
+        { text: "No", style: "cancel" },
+        { text: "Yes", style: "destructive", onPress: onConfirm },
+      ]);
     }
   };
 
   const isExpired = booking.isExpired === true;
+  const statusLabel = isExpired ? "Expired" : (STATUS_LABELS[booking.status] || booking.status);
 
-  const handleReviewPress = () => {
-    if (onPress) onPress(booking, "review");
-  };
-
-  const handlePayPress = () => {
-    if (onPayPress) onPayPress(booking);
-  };
+  const handleReviewPress = () => onPress && onPress(booking, "review");
+  const handlePayPress = () => onPayPress && onPayPress(booking);
 
   return (
     <View
@@ -252,28 +211,30 @@ const BookingCard = ({
         styles.card,
         {
           backgroundColor: colors.card,
+          borderColor: colors.inputBorder,
           shadowColor: colors.shadowColor,
-          shadowOpacity: colors.shadowOpacity,
         },
       ]}
     >
       <TouchableOpacity
-        onPress={() => {
-          if (onPress) onPress(booking);
-        }}
-        activeOpacity={0.7}
+        onPress={() => onPress && onPress(booking)}
+        activeOpacity={0.85}
         disabled={booking.status === "pending_acceptance"}
         style={styles.cardTouchable}
       >
+        {/* Top: avatar + name/role + status */}
         <View style={styles.cardHeader}>
           <View style={styles.userInfo}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
               <Text style={[styles.avatarText, { color: colors.textInverse }]}>
-                {otherPartyName.charAt(0)}
+                {otherPartyName.charAt(0).toUpperCase()}
               </Text>
             </View>
-            <View>
-              <Text style={[styles.userName, { color: colors.textPrimary }]}>
+            <View style={styles.userTextBlock}>
+              <Text
+                style={[styles.userName, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
                 {otherPartyName}
               </Text>
               <Text style={[styles.roleLabel, { color: colors.textTertiary }]}>
@@ -281,47 +242,59 @@ const BookingCard = ({
               </Text>
             </View>
           </View>
+
           <View
             style={[
               styles.statusBadge,
-              { backgroundColor: statusColor + "15" },
+              { backgroundColor: statusColor + "18" },
             ]}
           >
-            <Text style={[styles.statusText, { color: statusColor }]}>
-              {isExpired ? "Expired" : (STATUS_LABELS[booking.status] || booking.status)}
+            <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={1}>
+              {statusLabel}
             </Text>
           </View>
         </View>
 
-        <Text style={[styles.serviceTitle, { color: colors.textPrimary }]}>
+        {/* Service title */}
+        <Text
+          style={[styles.serviceTitle, { color: colors.textPrimary }]}
+          numberOfLines={2}
+        >
           {booking.serviceTitle}
         </Text>
-        <Text style={[styles.price, { color: colors.primary }]}>
-          ₦{booking.price?.toLocaleString()}
-        </Text>
-        <Text style={[styles.date, { color: colors.textTertiary }]}>
-          {new Date(booking.createdAt).toLocaleDateString()}
-        </Text>
+
+        {/* Price + date row */}
+        <View style={styles.metaRow}>
+          <Text style={[styles.price, { color: colors.primary }]}>
+            ₦{booking.price?.toLocaleString()}
+          </Text>
+          <View style={[styles.metaDot, { backgroundColor: colors.textTertiary }]} />
+          <Text style={[styles.date, { color: colors.textTertiary }]}>
+            {new Date(booking.createdAt).toLocaleDateString()}
+          </Text>
+        </View>
       </TouchableOpacity>
 
-      {/* Action Buttons */}
+      {/* Action area */}
       {!isClient && booking.status === "pending_acceptance" && !isExpired && (
         <View style={styles.requestActions}>
           <TouchableOpacity
             style={[styles.acceptButton, { backgroundColor: colors.success }]}
             onPress={handleAccept}
             disabled={actionLoading}
+            activeOpacity={0.85}
           >
             <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
               {actionLoading ? "..." : "Accept"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.rejectButton, { backgroundColor: colors.danger }]}
+            style={[styles.rejectButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
             onPress={handleReject}
             disabled={actionLoading}
+            activeOpacity={0.85}
           >
-            <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
+            <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
               {actionLoading ? "..." : "Decline"}
             </Text>
           </TouchableOpacity>
@@ -330,11 +303,12 @@ const BookingCard = ({
 
       {isClient && booking.status === "pending_acceptance" && !isExpired && (
         <TouchableOpacity
-          style={[styles.cancelButton, { backgroundColor: colors.danger }]}
+          style={[styles.cancelButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
           onPress={handleCancel}
           disabled={actionLoading}
+          activeOpacity={0.85}
         >
-          <Text style={[styles.cancelButtonText, { color: colors.textInverse }]}>
+          <Text style={[styles.cancelButtonText, { color: colors.danger }]}>
             {actionLoading ? "Cancelling..." : "Cancel Request"}
           </Text>
         </TouchableOpacity>
@@ -345,6 +319,7 @@ const BookingCard = ({
           style={[styles.actionButton, { backgroundColor: colors.primary }]}
           onPress={handleMarkCompleted}
           disabled={actionLoading}
+          activeOpacity={0.85}
         >
           <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
             {actionLoading ? "Processing..." : "Mark as Completed"}
@@ -357,6 +332,7 @@ const BookingCard = ({
           style={[styles.actionButton, { backgroundColor: colors.primary }]}
           onPress={handleConfirmCompletion}
           disabled={actionLoading}
+          activeOpacity={0.85}
         >
           <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
             {actionLoading ? "Processing..." : "Confirm Completion"}
@@ -364,29 +340,27 @@ const BookingCard = ({
         </TouchableOpacity>
       )}
 
-      {/* Pay Now Button */}
       {isClient && booking.status === "accepted" && !isExpired && (
         <TouchableOpacity
-          style={[styles.payNowButton, { backgroundColor: colors.success }]}
+          style={[styles.actionButton, { backgroundColor: colors.success }]}
           onPress={handlePayPress}
-          activeOpacity={0.7}
+          activeOpacity={0.85}
         >
-          <Ionicons name="wallet-outline" size={18} color={colors.textInverse} />
-          <Text style={[styles.payNowButtonText, { color: colors.textInverse }]}>
+          <Ionicons name="wallet-outline" size={17} color={colors.textInverse} />
+          <Text style={[styles.actionButtonText, { color: colors.textInverse, marginLeft: 6 }]}>
             Pay Now
           </Text>
         </TouchableOpacity>
       )}
 
-      {/* Review button */}
       {isClient && booking.status === "released" && !booking.reviewed && (
         <TouchableOpacity
-          style={[styles.reviewButton, { backgroundColor: colors.success }]}
+          style={[styles.actionButton, { backgroundColor: colors.primary }]}
           onPress={handleReviewPress}
-          activeOpacity={0.7}
+          activeOpacity={0.85}
         >
-          <Ionicons name="star-outline" size={18} color={colors.textInverse} />
-          <Text style={[styles.reviewButtonText, { color: colors.textInverse }]}>
+          <Ionicons name="star-outline" size={17} color={colors.textInverse} />
+          <Text style={[styles.actionButtonText, { color: colors.textInverse, marginLeft: 6 }]}>
             Leave Review
           </Text>
         </TouchableOpacity>
@@ -395,10 +369,12 @@ const BookingCard = ({
   );
 };
 
-// ------------------ Main Dashboard ------------------
+// ================== Main Dashboard ==================
 export default function Dashboard({ navigation }) {
   const { user } = useContext(AuthContext);
   const { colors, toggleTheme, theme } = useTheme();
+  const insets = useSafeAreaInsets();
+
   const [activeTab, setActiveTab] = useState("client");
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -409,7 +385,6 @@ export default function Dashboard({ navigation }) {
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Notification state
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -417,24 +392,20 @@ export default function Dashboard({ navigation }) {
   const [notificationPage, setNotificationPage] = useState(1);
   const [notificationHasMore, setNotificationHasMore] = useState(false);
 
-  // Review modal state
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [reviewBooking, setReviewBooking] = useState(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
-  // Fetch notifications
+  // ===== Notifications =====
   const fetchNotifications = async (page = 1, append = false) => {
     setNotificationsLoading(true);
     try {
       const res = await getNotifications(page, 20);
       if (res.success) {
-        if (append) {
-          setNotifications((prev) => [...prev, ...res.data]);
-        } else {
-          setNotifications(res.data);
-        }
+        if (append) setNotifications((prev) => [...prev, ...res.data]);
+        else setNotifications(res.data);
         setNotificationHasMore(res.pagination?.pages > page);
         setNotificationPage(page);
       }
@@ -448,28 +419,20 @@ export default function Dashboard({ navigation }) {
   const fetchUnreadCount = async () => {
     try {
       const res = await getUnreadNotificationCount();
-      if (res.success) {
-        setUnreadCount(res.count);
-      }
+      if (res.success) setUnreadCount(res.count);
     } catch (error) {
       console.log("Unread count error:", error);
     }
   };
 
   const handleNotificationPress = async (notification) => {
-    // Mark as read
     if (!notification.read) {
       await markNotificationRead(notification._id);
       setUnreadCount((prev) => Math.max(0, prev - 1));
-      // Update local notification state
       setNotifications((prev) =>
-        prev.map((n) =>
-          n._id === notification._id ? { ...n, read: true } : n
-        )
+        prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n))
       );
     }
-
-    // Navigate based on notification type
     if (notification.data?.bookingId) {
       setNotificationModalVisible(false);
       navigation.navigate("BookingScreen", {
@@ -495,7 +458,7 @@ export default function Dashboard({ navigation }) {
     }
   };
 
-  // Fetch bookings
+  // ===== Bookings + Wallet =====
   const fetchBookings = async () => {
     try {
       const response = await getMyBookings();
@@ -527,9 +490,7 @@ export default function Dashboard({ navigation }) {
       fetchBookings();
       fetchWalletBalance();
       fetchUnreadCount();
-      if (notificationModalVisible) {
-        fetchNotifications(1, false);
-      }
+      if (notificationModalVisible) fetchNotifications(1, false);
     }, [notificationModalVisible])
   );
 
@@ -542,12 +503,9 @@ export default function Dashboard({ navigation }) {
 
   const handleAccept = async (bookingId) => {
     setBookings((prev) =>
-      prev.map((b) =>
-        b._id === bookingId ? { ...b, status: "accepted" } : b
-      )
+      prev.map((b) => (b._id === bookingId ? { ...b, status: "accepted" } : b))
     );
     setRefreshKey((prev) => prev + 1);
-
     try {
       await acceptBooking(bookingId);
       Alert.alert("Accepted", "Booking request accepted.");
@@ -561,12 +519,9 @@ export default function Dashboard({ navigation }) {
 
   const handleReject = async (bookingId) => {
     setBookings((prev) =>
-      prev.map((b) =>
-        b._id === bookingId ? { ...b, status: "rejected" } : b
-      )
+      prev.map((b) => (b._id === bookingId ? { ...b, status: "rejected" } : b))
     );
     setRefreshKey((prev) => prev + 1);
-
     try {
       await rejectBooking(bookingId);
       Alert.alert("Declined", "Booking request declined.");
@@ -581,7 +536,6 @@ export default function Dashboard({ navigation }) {
   const handleCancel = async (bookingId) => {
     setBookings((prev) => prev.filter((b) => b._id !== bookingId));
     setRefreshKey((prev) => prev + 1);
-
     try {
       await cancelBookingRequest(bookingId);
       Alert.alert("Cancelled", "Request cancelled successfully.");
@@ -594,7 +548,6 @@ export default function Dashboard({ navigation }) {
   };
 
   const handlePayNow = (booking) => {
-    console.log("💳 [Dashboard] Pay Now clicked for booking:", booking._id);
     navigation.navigate("PaymentScreen", {
       bookingId: booking._id,
       amount: booking.price,
@@ -610,7 +563,6 @@ export default function Dashboard({ navigation }) {
       setReviewModalVisible(true);
       return;
     }
-
     if (activeTab === "client") {
       navigation.navigate("BookingScreen", {
         bookingId: booking._id,
@@ -660,7 +612,6 @@ export default function Dashboard({ navigation }) {
       Alert.alert("Insufficient Balance", "You cannot withdraw more than your balance");
       return;
     }
-
     setWithdrawLoading(true);
     try {
       const res = await requestWithdrawal(amountNum);
@@ -689,10 +640,10 @@ export default function Dashboard({ navigation }) {
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>📋</Text>
-      <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-        No bookings yet
-      </Text>
+      <View style={[styles.emptyIconWrap, { backgroundColor: colors.inputBackground }]}>
+        <Ionicons name="calendar-outline" size={26} color={colors.textTertiary} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No bookings yet</Text>
       <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
         {activeTab === "client"
           ? "Book a service to get started"
@@ -704,10 +655,21 @@ export default function Dashboard({ navigation }) {
   const renderSkeleton = () => (
     <View style={styles.skeletonContainer}>
       {[1, 2].map((_, idx) => (
-        <View key={idx} style={[styles.skeletonCard, { backgroundColor: colors.card }]}>
-          <View style={[styles.skeletonAvatar, { backgroundColor: colors.inputBackground }]} />
-          <View style={[styles.skeletonLine, { backgroundColor: colors.inputBackground }]} />
-          <View style={[styles.skeletonLine, { width: "60%", backgroundColor: colors.inputBackground }]} />
+        <View
+          key={idx}
+          style={[
+            styles.skeletonCard,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
+        >
+          <View style={styles.skeletonHeader}>
+            <View style={[styles.skeletonAvatar, { backgroundColor: colors.inputBackground }]} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <View style={[styles.skeletonLine, { backgroundColor: colors.inputBackground }]} />
+              <View style={[styles.skeletonLineShort, { backgroundColor: colors.inputBackground }]} />
+            </View>
+          </View>
+          <View style={[styles.skeletonBodyLine, { backgroundColor: colors.inputBackground }]} />
         </View>
       ))}
     </View>
@@ -716,17 +678,25 @@ export default function Dashboard({ navigation }) {
   const canGoBack = navigation.canGoBack();
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header with Notification Bell */}
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.background,
+            paddingTop: insets.top + 8,
+          },
+        ]}
+      >
+        {/* ===== HEADER ===== */}
         <View style={styles.header}>
           {canGoBack && (
             <TouchableOpacity
-              style={[styles.backButton, { backgroundColor: colors.card }]}
+              style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
               onPress={() => navigation.goBack()}
               activeOpacity={0.7}
             >
-              <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+              <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
             </TouchableOpacity>
           )}
           <Text
@@ -735,13 +705,13 @@ export default function Dashboard({ navigation }) {
               !canGoBack && styles.headerTitleCentered,
               { color: colors.textPrimary },
             ]}
+            numberOfLines={1}
           >
             Dashboard
           </Text>
           <View style={styles.headerRight}>
-            {/* Notification Bell */}
             <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: colors.card }]}
+              style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
               onPress={() => {
                 setNotificationModalVisible(true);
                 fetchNotifications(1, false);
@@ -749,116 +719,148 @@ export default function Dashboard({ navigation }) {
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="notifications-outline" size={24} color={colors.textPrimary} />
+              <Ionicons name="notifications-outline" size={20} color={colors.textPrimary} />
               {unreadCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: colors.danger }]}>
+                <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.card }]}>
                   <Text style={[styles.badgeText, { color: colors.textInverse }]}>
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
-            {/* Theme Toggle */}
             <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: colors.card }]}
+              style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
               onPress={toggleTheme}
               activeOpacity={0.7}
             >
               <Ionicons
                 name={theme === "light" ? "moon-outline" : "sunny-outline"}
-                size={24}
+                size={20}
                 color={colors.textPrimary}
               />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Wallet Card */}
+        {/* ===== WALLET CARD ===== */}
         <View
           style={[
             styles.walletCard,
             {
               backgroundColor: colors.card,
+              borderColor: colors.inputBorder,
               shadowColor: colors.shadowColor,
-              shadowOpacity: colors.shadowOpacity,
             },
           ]}
         >
-          <Text style={[styles.walletTitle, { color: colors.textTertiary }]}>
-            Wallet Balance
-          </Text>
-          <Text style={[styles.walletBalance, { color: colors.primary }]}>
-            ₦{walletBalance.toLocaleString()}
-          </Text>
+          <View style={styles.walletTop}>
+            <View style={styles.walletLeft}>
+              <Text style={[styles.walletTitle, { color: colors.textTertiary }]}>
+                Wallet Balance
+              </Text>
+              <Text
+                style={[styles.walletBalance, { color: colors.textPrimary }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                ₦{walletBalance.toLocaleString()}
+              </Text>
+            </View>
+            <View style={[styles.walletIconWrap, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="wallet-outline" size={22} color={colors.primary} />
+            </View>
+          </View>
+
+          <View style={[styles.walletDivider, { backgroundColor: colors.inputBorder }]} />
+
           <View style={styles.walletActions}>
             <TouchableOpacity
-              style={[styles.withdrawButton, { backgroundColor: colors.primary }]}
+              style={[styles.walletButton, { backgroundColor: colors.primary }]}
               onPress={openWithdrawModal}
+              activeOpacity={0.85}
             >
-              <Text style={[styles.withdrawText, { color: colors.textInverse }]}>
+              <Ionicons name="arrow-up-circle-outline" size={16} color={colors.textInverse} />
+              <Text style={[styles.walletButtonText, { color: colors.textInverse }]}>
                 Withdraw
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.bankButton, { backgroundColor: colors.success }]}
+              style={[
+                styles.walletButton,
+                styles.walletButtonOutline,
+                { backgroundColor: colors.card, borderColor: colors.success },
+              ]}
               onPress={() => navigation.navigate("BankSetup")}
+              activeOpacity={0.85}
             >
-              <Text style={[styles.bankButtonText, { color: colors.textInverse }]}>
+              <Ionicons name="card-outline" size={16} color={colors.success} />
+              <Text style={[styles.walletButtonText, { color: colors.success }]}>
                 Bank Account
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-          Recent Bookings
-        </Text>
+        {/* ===== SECTION TITLE ===== */}
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Recent Bookings
+          </Text>
+          <Text style={[styles.sectionCount, { color: colors.textTertiary }]}>
+            {filteredBookings.length}
+          </Text>
+        </View>
 
-        <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
+        {/* ===== SEGMENTED CONTROL ===== */}
+        <View
+          style={[
+            styles.segmentContainer,
+            { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
+          ]}
+        >
           <TouchableOpacity
             style={[
-              styles.tab,
-              activeTab === "client" && {
-                backgroundColor: colors.background,
-                shadowColor: colors.shadowColor,
-                shadowOpacity: colors.shadowOpacity,
-              },
+              styles.segment,
+              activeTab === "client" && { backgroundColor: colors.primary },
             ]}
             onPress={() => setActiveTab("client")}
+            activeOpacity={0.85}
           >
             <Text
               style={[
-                styles.tabText,
-                activeTab === "client" && { color: colors.primary },
-                { color: activeTab === "client" ? colors.primary : colors.textTertiary },
+                styles.segmentText,
+                {
+                  color: activeTab === "client" ? colors.textInverse : colors.textSecondary,
+                },
               ]}
+              numberOfLines={1}
             >
               Bookings I made
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
-              styles.tab,
-              activeTab === "worker" && {
-                backgroundColor: colors.background,
-                shadowColor: colors.shadowColor,
-                shadowOpacity: colors.shadowOpacity,
-              },
+              styles.segment,
+              activeTab === "worker" && { backgroundColor: colors.primary },
             ]}
             onPress={() => setActiveTab("worker")}
+            activeOpacity={0.85}
           >
             <Text
               style={[
-                styles.tabText,
-                activeTab === "worker" && { color: colors.primary },
-                { color: activeTab === "worker" ? colors.primary : colors.textTertiary },
+                styles.segmentText,
+                {
+                  color: activeTab === "worker" ? colors.textInverse : colors.textSecondary,
+                },
               ]}
+              numberOfLines={1}
             >
               Bookings with me
             </Text>
           </TouchableOpacity>
         </View>
 
+        {/* ===== BOOKINGS LIST ===== */}
         {loading && !refreshing ? (
           renderSkeleton()
         ) : (
@@ -897,7 +899,7 @@ export default function Dashboard({ navigation }) {
         )}
       </View>
 
-      {/* Withdrawal Modal (unchanged) */}
+      {/* ===== WITHDRAW MODAL (unchanged logic) ===== */}
       <Modal
         visible={withdrawModalVisible}
         transparent={true}
@@ -906,9 +908,7 @@ export default function Dashboard({ navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-              Withdraw Funds
-            </Text>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Withdraw Funds</Text>
             <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
               Available balance: ₦{walletBalance.toLocaleString()}
             </Text>
@@ -929,19 +929,17 @@ export default function Dashboard({ navigation }) {
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButtonModal, { backgroundColor: colors.gray || "#E2E8F0" }]}
+                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
                 onPress={() => setWithdrawModalVisible(false)}
               >
-                <Text style={[styles.cancelButtonTextModal, { color: colors.textPrimary }]}>
-                  Cancel
-                </Text>
+                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
                 onPress={submitWithdraw}
                 disabled={withdrawLoading}
               >
-                <Text style={[styles.confirmButtonText, { color: colors.textInverse }]}>
+                <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
                   {withdrawLoading ? "Processing..." : "Withdraw"}
                 </Text>
               </TouchableOpacity>
@@ -950,7 +948,7 @@ export default function Dashboard({ navigation }) {
         </View>
       </Modal>
 
-      {/* Notification Modal */}
+      {/* ===== NOTIFICATION MODAL (unchanged logic) ===== */}
       <Modal
         visible={notificationModalVisible}
         transparent={true}
@@ -959,7 +957,7 @@ export default function Dashboard({ navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.notificationModalContainer, { backgroundColor: colors.card }]}>
-            <View style={styles.notificationModalHeader}>
+            <View style={[styles.notificationModalHeader, { borderBottomColor: colors.inputBorder }]}>
               <Text style={[styles.notificationModalTitle, { color: colors.textPrimary }]}>
                 Notifications
               </Text>
@@ -976,14 +974,14 @@ export default function Dashboard({ navigation }) {
                   style={{ marginLeft: 12 }}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="close" size={24} color={colors.textPrimary} />
+                  <Ionicons name="close" size={22} color={colors.textPrimary} />
                 </TouchableOpacity>
               </View>
             </View>
 
             {notifications.length === 0 && !notificationsLoading ? (
               <View style={styles.emptyNotifications}>
-                <Ionicons name="notifications-off-outline" size={48} color={colors.textTertiary} />
+                <Ionicons name="notifications-off-outline" size={44} color={colors.textTertiary} />
                 <Text style={[styles.emptyNotificationsText, { color: colors.textTertiary }]}>
                   No notifications yet
                 </Text>
@@ -1014,7 +1012,7 @@ export default function Dashboard({ navigation }) {
         </View>
       </Modal>
 
-      {/* Review Modal (unchanged) */}
+      {/* ===== REVIEW MODAL (unchanged logic) ===== */}
       <Modal
         visible={reviewModalVisible}
         transparent={true}
@@ -1023,33 +1021,24 @@ export default function Dashboard({ navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-              Leave a Review
-            </Text>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Leave a Review</Text>
             <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
               How was your experience with {reviewBooking?.provider?.name || "the provider"}?
             </Text>
-
             <View style={styles.ratingStars}>
               {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity
-                  key={star}
-                  onPress={() => setReviewRating(star)}
-                  activeOpacity={0.7}
-                >
+                <TouchableOpacity key={star} onPress={() => setReviewRating(star)} activeOpacity={0.7}>
                   <Ionicons
                     name={star <= reviewRating ? "star" : "star-outline"}
-                    size={40}
-                    color={star <= reviewRating ? colors.warning : colors.textTertiary}
+                    size={38}
+                    color={star <= reviewRating ? "#F59E0B" : colors.textTertiary}
                   />
                 </TouchableOpacity>
               ))}
             </View>
-
             <Text style={[styles.reviewRatingLabel, { color: colors.textSecondary }]}>
               {reviewRating} / 5 stars
             </Text>
-
             <TextInput
               style={[
                 styles.reviewInput,
@@ -1066,22 +1055,19 @@ export default function Dashboard({ navigation }) {
               value={reviewComment}
               onChangeText={setReviewComment}
             />
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButtonModal, { backgroundColor: colors.gray || "#E2E8F0" }]}
+                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
                 onPress={() => setReviewModalVisible(false)}
               >
-                <Text style={[styles.cancelButtonTextModal, { color: colors.textPrimary }]}>
-                  Cancel
-                </Text>
+                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton, { backgroundColor: colors.primary }]}
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
                 onPress={submitReviewHandler}
                 disabled={reviewSubmitting}
               >
-                <Text style={[styles.confirmButtonText, { color: colors.textInverse }]}>
+                <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
                   {reviewSubmitting ? "Submitting..." : "Submit Review"}
                 </Text>
               </TouchableOpacity>
@@ -1089,122 +1075,157 @@ export default function Dashboard({ navigation }) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ========================================
-// Styles
+// STYLES
 // ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
+  container: { flex: 1, paddingHorizontal: 18 },
+
+  // ===== HEADER =====
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 18,
+    gap: 10,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "800",
     letterSpacing: -0.5,
     flex: 1,
   },
-  headerTitleCentered: { textAlign: "center" },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  headerTitleCentered: { textAlign: "left" },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   iconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
     position: "relative",
   },
   badge: {
     position: "absolute",
-    top: -2,
-    right: -2,
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
+    top: -3,
+    right: -3,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
   },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-  },
+  badgeText: { fontSize: 9.5, fontWeight: "800" },
+
+  // ===== WALLET CARD =====
   walletCard: {
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 20,
     shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
     shadowRadius: 12,
-    elevation: 4,
-    alignItems: "center",
+    elevation: 2,
   },
-  walletTitle: { fontSize: 16, marginBottom: 8 },
-  walletBalance: { fontSize: 36, fontWeight: "800", marginBottom: 16 },
-  walletActions: {
+  walletTop: {
     flexDirection: "row",
-    gap: 12,
-    width: "100%",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  walletLeft: { flex: 1, paddingRight: 12 },
+  walletTitle: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+    marginBottom: 4,
+  },
+  walletBalance: {
+    fontSize: 30,
+    fontWeight: "800",
+    letterSpacing: -0.8,
+  },
+  walletIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
     justifyContent: "center",
   },
-  withdrawButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    borderRadius: 40,
+  walletDivider: { height: 1, marginBottom: 14 },
+  walletActions: { flexDirection: "row", gap: 10 },
+  walletButton: {
     flex: 1,
-    alignItems: "center",
-  },
-  withdrawText: { fontWeight: "600", fontSize: 14 },
-  bankButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    borderRadius: 40,
-    flex: 1,
-    alignItems: "center",
-  },
-  bankButtonText: { fontWeight: "600", fontSize: 14 },
-  sectionTitle: { fontSize: 20, fontWeight: "700", marginBottom: 16 },
-  tabContainer: {
+    height: 44,
+    borderRadius: 14,
     flexDirection: "row",
-    borderRadius: 40,
-    padding: 4,
-    marginBottom: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 36, alignItems: "center" },
-  tabText: { fontSize: 14, fontWeight: "600" },
-  listContent: { paddingBottom: 40, gap: 16 },
+  walletButtonOutline: { borderWidth: 1.5 },
+  walletButtonText: { fontWeight: "700", fontSize: 13.5, letterSpacing: 0.1 },
+
+  // ===== SECTION HEADER =====
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  sectionCount: {
+    fontSize: 13,
+    fontWeight: "700",
+    minWidth: 22,
+    textAlign: "right",
+  },
+
+  // ===== SEGMENTED CONTROL =====
+  segmentContainer: {
+    flexDirection: "row",
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 16,
+    gap: 4,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentText: { fontSize: 13, fontWeight: "700", letterSpacing: -0.1 },
+
+  // ===== LIST =====
+  listContent: { paddingBottom: 110, paddingTop: 2 },
+
+  // ===== BOOKING CARD =====
   card: {
-    borderRadius: 24,
-    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 12,
     shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 3,
-    marginBottom: 4,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
   cardTouchable: { flex: 1 },
   cardHeader: {
@@ -1213,77 +1234,117 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  userInfo: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
-  avatarText: { fontSize: 18, fontWeight: "bold" },
-  userName: { fontSize: 16, fontWeight: "600" },
-  roleLabel: { fontSize: 12 },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  statusText: { fontSize: 12, fontWeight: "600" },
-  serviceTitle: { fontSize: 16, fontWeight: "500", marginBottom: 6 },
-  price: { fontSize: 18, fontWeight: "700", marginBottom: 4 },
-  date: { fontSize: 13 },
-  actionButton: {
-    paddingVertical: 10,
-    borderRadius: 40,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  actionButtonText: { fontWeight: "600", fontSize: 14 },
-  requestActions: {
+  userInfo: {
     flexDirection: "row",
-    gap: 12,
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    paddingRight: 8,
+  },
+  userTextBlock: { flex: 1 },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: { fontSize: 17, fontWeight: "700" },
+  userName: {
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+    marginBottom: 1,
+  },
+  roleLabel: { fontSize: 11.5, fontWeight: "500" },
+  statusBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
+    maxWidth: 130,
+  },
+  statusText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.1 },
+
+  serviceTitle: {
+    fontSize: 14.5,
+    fontWeight: "500",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  price: {
+    fontSize: 16.5,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    opacity: 0.5,
+  },
+  date: { fontSize: 12.5, fontWeight: "500" },
+
+  // ===== ACTION BUTTONS =====
+  actionButton: {
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     marginTop: 12,
   },
+  actionButtonText: { fontWeight: "700", fontSize: 13.5, letterSpacing: 0.1 },
+
+  requestActions: { flexDirection: "row", gap: 10, marginTop: 12 },
   acceptButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 40,
+    paddingVertical: 11,
+    borderRadius: 12,
     alignItems: "center",
   },
   rejectButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 40,
+    paddingVertical: 11,
+    borderRadius: 12,
     alignItems: "center",
+    borderWidth: 1,
   },
   cancelButton: {
-    paddingVertical: 10,
-    borderRadius: 40,
+    paddingVertical: 11,
+    borderRadius: 12,
     alignItems: "center",
     marginTop: 12,
+    borderWidth: 1,
   },
-  cancelButtonText: { fontWeight: "600", fontSize: 14 },
-  payNowButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 30,
-    marginTop: 10,
-    gap: 6,
-  },
-  payNowButtonText: { fontWeight: "700", fontSize: 15 },
-  reviewButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 30,
-    marginTop: 10,
-    gap: 6,
-  },
-  reviewButtonText: { fontWeight: "600", fontSize: 14 },
+  cancelButtonText: { fontWeight: "700", fontSize: 13.5 },
+
+  // ===== EMPTY / SKELETON =====
   emptyContainer: { alignItems: "center", paddingVertical: 60 },
-  emptyIcon: { fontSize: 48, marginBottom: 16, opacity: 0.6 },
-  emptyTitle: { fontSize: 18, fontWeight: "600", marginBottom: 6 },
-  emptySubtitle: { fontSize: 14, textAlign: "center" },
-  skeletonContainer: { gap: 16 },
-  skeletonCard: { borderRadius: 24, padding: 18, marginBottom: 4 },
-  skeletonAvatar: { width: 44, height: 44, borderRadius: 22, marginBottom: 12 },
-  skeletonLine: { height: 14, borderRadius: 8, marginVertical: 6, width: "80%" },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: "700", marginBottom: 6 },
+  emptySubtitle: { fontSize: 13, textAlign: "center", maxWidth: 260, lineHeight: 18 },
+
+  skeletonContainer: { gap: 12 },
+  skeletonCard: { borderRadius: 20, borderWidth: 1, padding: 14 },
+  skeletonHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  skeletonAvatar: { width: 42, height: 42, borderRadius: 21 },
+  skeletonLine: { height: 12, borderRadius: 6, marginBottom: 6, width: "60%" },
+  skeletonLineShort: { height: 10, borderRadius: 5, width: "35%" },
+  skeletonBodyLine: { height: 12, borderRadius: 6, width: "80%" },
+
+  // ===== MODALS =====
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1291,51 +1352,47 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalContainer: {
-    borderRadius: 28,
-    padding: 24,
-    width: "85%",
+    borderRadius: 24,
+    padding: 20,
+    width: "88%",
     alignItems: "center",
   },
-  modalTitle: { fontSize: 20, fontWeight: "700", marginBottom: 8 },
-  modalSubtitle: { fontSize: 14, marginBottom: 20 },
+  modalTitle: { fontSize: 19, fontWeight: "800", marginBottom: 6 },
+  modalSubtitle: { fontSize: 13.5, marginBottom: 18, textAlign: "center" },
   modalInput: {
     width: "100%",
-    borderRadius: 16,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-  },
-  modalButtons: { flexDirection: "row", gap: 12, width: "100%" },
-  modalButton: { flex: 1, paddingVertical: 12, borderRadius: 40, alignItems: "center" },
-  cancelButtonModal: { backgroundColor: "#F1F5F9" },
-  confirmButton: { backgroundColor: "#2563EB" },
-  cancelButtonTextModal: { fontWeight: "600" },
-  confirmButtonText: { fontWeight: "600" },
-  ratingStars: {
-    flexDirection: "row",
-    gap: 8,
-    marginVertical: 16,
-  },
-  reviewRatingLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 16,
-  },
-  reviewInput: {
-    width: "100%",
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 14,
     fontSize: 15,
-    marginBottom: 24,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  modalButtons: { flexDirection: "row", gap: 10, width: "100%" },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  modalButtonText: { fontWeight: "700", fontSize: 14 },
+
+  ratingStars: { flexDirection: "row", gap: 6, marginVertical: 14 },
+  reviewRatingLabel: { fontSize: 15, fontWeight: "700", marginBottom: 14 },
+  reviewInput: {
+    width: "100%",
+    borderRadius: 14,
+    padding: 14,
+    fontSize: 14.5,
+    marginBottom: 20,
     borderWidth: 1,
     minHeight: 100,
     textAlignVertical: "top",
   },
-  // Notification Modal Styles
+
+  // ===== NOTIFICATION MODAL =====
   notificationModalContainer: {
-    borderRadius: 28,
-    padding: 20,
+    borderRadius: 24,
+    padding: 18,
     width: "92%",
     maxHeight: "80%",
   },
@@ -1343,75 +1400,41 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 14,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
   },
-  notificationModalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  notificationModalActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  markAllReadText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  notificationList: {
-    gap: 8,
-    paddingBottom: 8,
-  },
+  notificationModalTitle: { fontSize: 18, fontWeight: "800" },
+  notificationModalActions: { flexDirection: "row", alignItems: "center" },
+  markAllReadText: { fontSize: 12.5, fontWeight: "700" },
+  notificationList: { gap: 8, paddingBottom: 8 },
   notificationItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
+    padding: 12,
     borderRadius: 14,
     borderWidth: 1,
     marginBottom: 4,
   },
   notificationIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.04)",
-    marginRight: 12,
+    marginRight: 10,
   },
-  notificationContent: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  notificationMessage: {
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  notificationTime: {
-    fontSize: 12,
-  },
-  unreadDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: 8,
-  },
+  notificationContent: { flex: 1 },
+  notificationTitle: { fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  notificationMessage: { fontSize: 13, marginBottom: 2, lineHeight: 18 },
+  notificationTime: { fontSize: 11.5 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 6 },
   emptyNotifications: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
   },
-  emptyNotificationsText: {
-    fontSize: 16,
-    marginTop: 12,
-  },
-  notificationLoader: {
-    paddingVertical: 16,
-  },
+  emptyNotificationsText: { fontSize: 14.5, marginTop: 12 },
+  notificationLoader: { paddingVertical: 14 },
 });
