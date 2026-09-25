@@ -5,6 +5,8 @@ import { useContext, useEffect, useState, useRef } from "react";
 import { AuthContext, AuthProvider } from "./context/AuthContext";
 import { ActivityIndicator, View, AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Landing from "./src/screens/LandingScreen";
 import Register from "./src/screens/Register";
@@ -18,7 +20,7 @@ import PaymentScreen from "./src/screens/PaymentScreen";
 import PaymentReturnHandler from "./src/screens/PaymentReturnHandler";
 import Dashboard from "./src/screens/Dashboard";
 import BankSetupScreen from "./src/screens/BankSetupScreen";
-import { ThemeProvider } from "./src/context/ThemeContext";
+import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
 import { sendHeartbeat } from "./src/services/api";
 import SplashLogo from "./src/components/SplashLogo";
 import ReviewsScreen from "./src/screens/ReviewsScreen";
@@ -29,18 +31,68 @@ import VerificationPendingScreen from "./src/screens/VerificationPendingScreen";
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Bottom Tabs for logged-in users
+// =====================================================
+// Bottom Tabs — Icon-based navigation with safe-area
+// =====================================================
 function MainTabs() {
+  const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
+
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: "#0A66FF",
-        tabBarInactiveTintColor: "#6B7280",
-      }}
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textTertiary,
+        tabBarShowLabel: true,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "700",
+          letterSpacing: 0.1,
+          marginTop: -2,
+          marginBottom: 4,
+        },
+        tabBarStyle: {
+          // ✅ Height + padding adapt to phone's bottom safe area
+          height: 62 + insets.bottom,
+          paddingTop: 6,
+          paddingBottom: 6 + insets.bottom,
+          borderTopWidth: 1,
+          borderTopColor: colors.inputBorder,
+          backgroundColor: colors.card,
+          elevation: 8,
+          shadowColor: colors.shadowColor,
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 8,
+        },
+        tabBarIcon: ({ focused, color }) => {
+          let iconName;
+
+          if (route.name === "Home") {
+            iconName = focused ? "home" : "home-outline";
+          } else if (route.name === "MyProfile") {
+            iconName = focused ? "person" : "person-outline";
+          } else if (route.name === "Dashboard") {
+            iconName = focused ? "grid" : "grid-outline";
+          }
+
+          return (
+            <Ionicons
+              name={iconName}
+              size={focused ? 22 : 20}
+              color={color}
+            />
+          );
+        },
+      })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="MyProfile" component={UserProfileScreen} />
+      <Tab.Screen
+        name="MyProfile"
+        component={UserProfileScreen}
+        options={{ tabBarLabel: "Profile" }}
+      />
       <Tab.Screen name="Dashboard" component={Dashboard} />
     </Tab.Navigator>
   );
@@ -53,7 +105,6 @@ function AuthStack() {
       <Stack.Screen name="Landing" component={Landing} />
       <Stack.Screen name="Register" component={Register} />
       <Stack.Screen name="VerificationPending" component={VerificationPendingScreen} />
-     
     </Stack.Navigator>
   );
 }
@@ -72,7 +123,6 @@ function AppStack() {
       <Stack.Screen name="PaymentDashboard" component={Dashboard} />
       <Stack.Screen name="BankSetup" component={BankSetupScreen} />
       <Stack.Screen name="ReviewsScreen" component={ReviewsScreen} />
-
     </Stack.Navigator>
   );
 }
@@ -92,18 +142,14 @@ function HeartbeatManager() {
       return;
     }
 
-    // Send heartbeat immediately on mount
     sendHeartbeat();
 
-    // Set up interval
     intervalRef.current = setInterval(() => {
       sendHeartbeat();
-    }, 30000); // every 30 seconds
+    }, 30000);
 
-    // Listen for app state changes (background/foreground)
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (appState.current.match(/inactive|background/) && nextAppState === "active") {
-        // App came to foreground – send heartbeat immediately
         sendHeartbeat();
       }
       appState.current = nextAppState;
@@ -129,11 +175,10 @@ function RootNavigator() {
   const [showSplash, setShowSplash] = useState(true);
   const { logout } = useContext(AuthContext);
 
-useEffect(() => {
-  setLogoutCallback(logout);
-  return () => setLogoutCallback(null);
-}, [logout]);
-
+  useEffect(() => {
+    setLogoutCallback(logout);
+    return () => setLogoutCallback(null);
+  }, [logout]);
 
   // Restore navigation state on mount
   useEffect(() => {
@@ -146,7 +191,7 @@ useEffect(() => {
       } catch (e) {
         // ignore parsing errors
       } finally {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         setIsReady(true);
         setShowSplash(false);
       }
@@ -154,11 +199,8 @@ useEffect(() => {
     restoreNavigationState();
   }, []);
 
-
-
- // Inside RootNavigator, replace the loading return with:
   if (loading || !isReady) {
-    return <SplashLogo/>; // instead of the ActivityIndicator
+    return <SplashLogo />;
   }
 
   return (

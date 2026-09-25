@@ -132,60 +132,88 @@ router.get("/", async (req, res) => {
 SEARCH POSTS BY SKILL
 ========================================
 */
+// ================================================
+// SEARCH POSTS (name + skill + description + city + state)
+// ================================================
 router.get("/search", async (req, res) => {
   try {
-    const { 
-      q, 
-      city, 
-      state, 
-      country, 
-      minPrice, 
-      maxPrice, 
-      sortBy = "relevance" 
-    } = req.query;
+    const { q, city, state, country, minPrice, maxPrice } = req.query;
 
     let filter = {};
+    let nameMatchedUserIds = [];
 
-    // Text search across multiple fields
+    // 1. If there's a text query, find users whose NAME matches
     if (q && q.trim().length > 0) {
-      const searchRegex = { $regex: q, $options: "i" };
+      const nameRegex = { $regex: q.trim(), $options: "i" };
+      const matchingUsers = await User.find({ name: nameRegex }).select("_id");
+      nameMatchedUserIds = matchingUsers.map((u) => u._id);
+    }
+
+    // 2. Build text search $or conditions (Post fields + matched users)
+    if (q && q.trim().length > 0) {
+      const searchRegex = { $regex: q.trim(), $options: "i" };
       filter.$or = [
         { skill: searchRegex },
         { description: searchRegex },
-        { tags: { $in: [new RegExp(q, "i")] } },
+        { tags: { $in: [new RegExp(q.trim(), "i")] } },
         { location: searchRegex },
         { locationCity: searchRegex },
         { locationState: searchRegex },
+        // ✅ Posts created by users whose name matches
+        ...(nameMatchedUserIds.length > 0
+          ? [{ user: { $in: nameMatchedUserIds } }]
+          : []),
       ];
     }
 
-    // Location filters
-    if (city) {
-      filter.locationCity = { $regex: city, $options: "i" };
-    }
-    if (state) {
-      filter.locationState = { $regex: state, $options: "i" };
-    }
-    if (country) {
-      filter.locationCountry = { $regex: country, $options: "i" };
+    // 3. City filter
+    if (city && city.trim().length > 0) {
+      const cityRegex = { $regex: city.trim(), $options: "i" };
+      const cityOr = [
+        { locationCity: cityRegex },
+        { location: cityRegex },
+      ];
+
+      if (filter.$or) {
+        // Combine existing text $or with city $or using $and
+        filter = {
+          $and: [{ $or: filter.$or }, { $or: cityOr }],
+        };
+      } else {
+        filter.$or = cityOr;
+      }
     }
 
-    // Price range
+    // 4. State filter
+    if (state && state.trim().length > 0) {
+      filter.locationState = { $regex: state.trim(), $options: "i" };
+    }
+
+    // 5. Country filter
+    if (country && country.trim().length > 0) {
+      filter.locationCountry = { $regex: country.trim(), $options: "i" };
+    }
+
+    // 6. Price range
     if (minPrice || maxPrice) {
       filter.price = {};
       if (minPrice) filter.price.$gte = parseFloat(minPrice);
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    // Build sort
-    let sortOptions = { createdAt: -1 };
-    if (sortBy === "price_asc") sortOptions = { price: 1 };
-    else if (sortBy === "price_desc") sortOptions = { price: -1 };
-    else if (sortBy === "rating") sortOptions = { "user.rating": -1 };
-
     const posts = await Post.find(filter)
-      .populate("user", "name profileImage email lastActive rating jobsCompleted location")
-      .sort(sortOptions);
+      .populate(
+        "user",
+        "name profileImage email lastActive rating jobsCompleted isVerified"
+      )
+      .sort({ createdAt: -1 });
+
+    console.log(
+      `🔍 Search: q="${q || ""}" city="${city || ""}" → ${posts.length} results` +
+        (nameMatchedUserIds.length > 0
+          ? ` (${nameMatchedUserIds.length} users matched name)`
+          : "")
+    );
 
     res.json(posts);
   } catch (error) {

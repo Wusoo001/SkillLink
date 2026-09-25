@@ -27,7 +27,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router",
+      
       [
         "expo-splash-screen",
         {
@@ -41,6 +41,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "714c044b-a6a0-435a-8df9-0af198359c3d"
+      }
     }
   }
 }

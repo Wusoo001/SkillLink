@@ -13,7 +13,7 @@ import {
   Alert,
   Platform,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Video } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -24,11 +24,11 @@ import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
 
 // ==============================
-// PostItem Component (with review icon)
+// PostItem Component (UI polished, logic identical)
 // ==============================
 const PostItem = ({
   item,
-  userId, // provider ID (used for booking and reviews)
+  userId,
   isOwnPost,
   onEdit,
   onDelete,
@@ -50,8 +50,8 @@ const PostItem = ({
   };
 
   const handleDelete = () => {
-    if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
         onDelete(item._id);
       }
     } else {
@@ -66,7 +66,6 @@ const PostItem = ({
     }
   };
 
-  // Navigate to ReviewsScreen with provider ID and name
   const goToAllReviews = () => {
     navigation.navigate("ReviewsScreen", {
       userId: userId,
@@ -75,25 +74,47 @@ const PostItem = ({
   };
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.inputBorder,
+          shadowColor: colors.shadowColor,
+        },
+      ]}
+    >
+      {/* Description + actions */}
       <View style={styles.postHeader}>
-        <Text style={[styles.description, { color: colors.textSecondary }]}>
+        <Text
+          style={[styles.description, { color: colors.textPrimary }]}
+          numberOfLines={3}
+        >
           {item.description}
         </Text>
         {isOwnPost && (
           <View style={styles.postActions}>
-            <TouchableOpacity onPress={() => onEdit(item)} style={styles.actionIcon}>
-              <Ionicons name="pencil-outline" size={20} color={colors.textTertiary} />
+            <TouchableOpacity
+              onPress={() => onEdit(item)}
+              style={styles.actionIcon}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="pencil-outline" size={17} color={colors.textTertiary} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleDelete} style={styles.actionIcon}>
-              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+            <TouchableOpacity
+              onPress={handleDelete}
+              style={styles.actionIcon}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={17} color={colors.danger} />
             </TouchableOpacity>
           </View>
         )}
       </View>
 
+      {/* Media */}
       {item.media && item.mediaType === "image" && (
-        <Image source={{ uri: item.media }} style={styles.mediaImage} />
+        <Image source={{ uri: item.media }} style={styles.mediaImage} resizeMode="cover" />
       )}
       {item.media && item.mediaType === "video" && (
         <Video
@@ -103,64 +124,87 @@ const PostItem = ({
           resizeMode="cover"
         />
       )}
-      <View style={styles.tagContainer}>
-        {item.tags?.map((tag, idx) => (
-          <View key={idx} style={[styles.tag, { backgroundColor: colors.primaryLight }]}>
-            <Text style={[styles.tagText, { color: colors.primary }]}>#{tag}</Text>
-          </View>
-        ))}
-      </View>
 
-      {/* ===== ACTION ROW with Review Icon ===== */}
+      {/* Tags */}
+      {item.tags?.length > 0 && (
+        <View style={styles.tagRow}>
+          {item.tags.slice(0, 3).map((tag, idx) => (
+            <View
+              key={idx}
+              style={[styles.tag, { backgroundColor: colors.primaryLight }]}
+            >
+              <Text style={[styles.tagText, { color: colors.primary }]} numberOfLines={1}>
+                #{tag}
+              </Text>
+            </View>
+          ))}
+          {item.tags.length > 3 && (
+            <Text style={[styles.moreTagsText, { color: colors.textTertiary }]}>
+              +{item.tags.length - 3}
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/* Divider */}
+      <View style={[styles.divider, { backgroundColor: colors.inputBorder }]} />
+
+      {/* Actions row */}
       <View style={styles.actionRow}>
-        {/* Like Button */}
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.gray }]}
+          style={styles.actionButton}
           onPress={() => onLikePress(item._id)}
           activeOpacity={0.7}
         >
           <Ionicons
             name={isLiked ? "heart" : "heart-outline"}
             size={20}
-            color={isLiked ? colors.danger : colors.textTertiary}
+            color={isLiked ? colors.danger : colors.textSecondary}
           />
           <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
             {likesCount > 0 ? likesCount : ""}
           </Text>
         </TouchableOpacity>
 
-        {/* NEW: Reviews Icon with Count */}
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.gray }]}
+          style={styles.actionButton}
           onPress={goToAllReviews}
           activeOpacity={0.7}
         >
-          <Ionicons
-            name="chatbubble-outline"
-            size={20}
-            color={colors.textTertiary}
-          />
+          <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
           <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
             {item.reviewCount || 0}
           </Text>
         </TouchableOpacity>
 
-        {/* Save Button */}
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.gray }]}
+          style={[styles.actionButton, styles.actionRight]}
           onPress={() => onSavePress(item._id)}
           activeOpacity={0.7}
         >
-          <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
-            {isSaved ? "❤️ Saved" : "🤍 Save"}
+          <Ionicons
+            name={isSaved ? "bookmark" : "bookmark-outline"}
+            size={18}
+            color={isSaved ? colors.primary : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.actionButtonText,
+              { color: isSaved ? colors.primary : colors.textPrimary },
+            ]}
+          >
+            {isSaved ? "Saved" : "Save"}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Book Button */}
+      {/* Book CTA */}
       <Animated.View style={{ transform: [{ scale: bookScale }] }}>
         <TouchableOpacity
-          style={[styles.bookButton, { backgroundColor: colors.primary }]}
+          style={[
+            styles.bookButton,
+            { backgroundColor: colors.primary, shadowColor: colors.primary },
+          ]}
           onPress={() =>
             navigation.navigate("BookingScreen", {
               providerId: userId,
@@ -175,7 +219,12 @@ const PostItem = ({
           onPressOut={handlePressOut}
           activeOpacity={0.9}
         >
-          <Text style={[styles.bookButtonText, { color: colors.textInverse }]}>Book This Service</Text>
+          <Text style={styles.bookButtonText}>Book This Service</Text>
+          <View style={styles.bookPricePill}>
+            <Text style={styles.bookPriceText}>
+              ₦{item.price?.toLocaleString?.() ?? item.price}
+            </Text>
+          </View>
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -188,8 +237,9 @@ const PostItem = ({
 export default function UserProfileScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
 
-  const { user, loading: authLoading } = useContext(AuthContext);
+  const { user, loading: authLoading, logout } = useContext(AuthContext);
   const { colors } = useTheme();
   const { userId: routeUserId } = route.params || {};
   const resolvedUserId = routeUserId || user?._id;
@@ -200,14 +250,13 @@ export default function UserProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
-  // Like & Save state
   const [likedPosts, setLikedPosts] = useState([]);
   const [savedPosts, setSavedPosts] = useState([]);
 
   const isOwnProfile = user?._id === resolvedUserId;
   const userActive = isUserActive(userInfo?.lastActive);
 
-  // Load user data
+  // ===== LOAD USER DATA =====
   const loadUserData = async (id) => {
     setLoading(true);
     try {
@@ -246,7 +295,7 @@ export default function UserProfileScreen() {
     }, [resolvedUserId])
   );
 
-  // Edit & Delete handlers
+  // ===== EDIT & DELETE =====
   const handleEditPost = (post) => {
     navigation.navigate("CreatePostScreen", { editPost: post });
   };
@@ -261,7 +310,7 @@ export default function UserProfileScreen() {
     }
   };
 
-  // Like handler
+  // ===== LIKE =====
   const toggleLike = async (postId) => {
     const isLiked = likedPosts.includes(postId);
     setLikedPosts((prev) =>
@@ -278,17 +327,14 @@ export default function UserProfileScreen() {
       )
     );
     try {
-      if (isLiked) {
-        await unlikePost(postId);
-      } else {
-        await likePost(postId);
-      }
+      if (isLiked) await unlikePost(postId);
+      else await likePost(postId);
     } catch (error) {
       await loadUserData(resolvedUserId);
     }
   };
 
-  // Save handler
+  // ===== SAVE =====
   const toggleSave = async (postId) => {
     try {
       await savePost(postId);
@@ -302,75 +348,193 @@ export default function UserProfileScreen() {
     }
   };
 
+  // ===== LOGOUT =====
+  const handleLogout = () => {
+    Alert.alert(
+      "Log Out",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: () => logout(),
+        },
+      ]
+    );
+  };
+
   if (loading || authLoading || !resolvedUserId) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  // Profile Header (unchanged)
+  // ===== PROFILE HEADER =====
   const ProfileHeader = () => (
-    <View style={[styles.header, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}>
-      {userInfo?.profileImage ? (
-        <Image source={{ uri: userInfo.profileImage }} style={[styles.avatarImage, { borderColor: colors.card }]} />
-      ) : (
-        <View style={[styles.avatar, { backgroundColor: colors.primary, borderColor: colors.card }]}>
-          <Text style={[styles.avatarText, { color: colors.textInverse }]}>{userInfo?.name?.charAt(0) || "U"}</Text>
-        </View>
-      )}
-      <View style={styles.nameRow}>
-        <Text style={[styles.name, { color: colors.textPrimary }]}>
-          {userInfo?.name || "User"}
-        </Text>
-        <View style={[
-          styles.statusDot,
-          { backgroundColor: userActive ? '#22C55E' : '#94A3B8' }
-        ]} />
+    <View style={styles.profileSection}>
+      {/* Back + Logout row */}
+      <View style={styles.backRow}>
+        <TouchableOpacity
+          style={[
+            styles.backButton,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
+
+        {/* Logout — only on own profile */}
+        {isOwnProfile && (
+          <TouchableOpacity
+            style={[
+              styles.logoutButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+          </TouchableOpacity>
+        )}
       </View>
-      <Text style={[styles.skill, { color: colors.textTertiary }]}>
+
+      {/* Avatar + name + bio row */}
+      <View style={styles.profileTop}>
+        <View style={styles.avatarWrap}>
+          {userInfo?.profileImage ? (
+            <Image
+              source={{ uri: userInfo.profileImage }}
+              style={[styles.avatarImage, { borderColor: colors.card }]}
+            />
+          ) : (
+            <View
+              style={[
+                styles.avatar,
+                { backgroundColor: colors.primary, borderColor: colors.card },
+              ]}
+            >
+              <Text style={[styles.avatarText, { color: colors.textInverse }]}>
+                {userInfo?.name?.charAt(0)?.toUpperCase() || "U"}
+              </Text>
+            </View>
+          )}
+          <View
+            style={[
+              styles.avatarStatusDot,
+              {
+                backgroundColor: userActive ? "#22C55E" : "#94A3B8",
+                borderColor: colors.card,
+              },
+            ]}
+          />
+        </View>
+
+        <View style={styles.profileInfo}>
+          <Text
+            style={[styles.name, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
+            {userInfo?.name || "User"}
+          </Text>
+          {userInfo?.location ? (
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+              <Text
+                style={[styles.locationText, { color: colors.textTertiary }]}
+                numberOfLines={1}
+              >
+                {userInfo.location}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      {/* Bio */}
+      <Text
+        style={[styles.bio, { color: colors.textSecondary }]}
+        numberOfLines={3}
+      >
         {userInfo?.bio || "No description provided"}
       </Text>
-      <View style={[styles.ratingContainer, { backgroundColor: colors.inputBackground }]}>
-        <Text style={[styles.ratingText, { color: colors.warning }]}>⭐ {userInfo?.rating || 0}</Text>
-        <Text style={[styles.jobsText, { color: colors.textTertiary }]}>• {userInfo?.jobsCompleted || 0} jobs completed</Text>
-      </View>
-      {isOwnProfile && (
-        <TouchableOpacity
-          style={[styles.editButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
-          onPress={() => navigation.navigate("EditProfile", { userInfo })}
-          activeOpacity={0.8}
+
+      {/* Stats + Edit button row */}
+      <View style={styles.statsRow}>
+        <View
+          style={[
+            styles.statsBox,
+            {
+              backgroundColor: colors.inputBackground,
+              borderColor: colors.inputBorder,
+            },
+          ]}
         >
-          <Text style={[styles.editButtonText, { color: colors.textInverse }]}>Edit Profile</Text>
-        </TouchableOpacity>
-      )}
+          <View style={styles.statItem}>
+            <Ionicons name="star" size={14} color="#F59E0B" />
+            <Text style={[styles.statValue, { color: colors.textPrimary }]}>
+              {Number(userInfo?.rating || 0).toFixed(1)}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Rating</Text>
+          </View>
+
+          <View style={[styles.statDivider, { backgroundColor: colors.inputBorder }]} />
+
+          <View style={styles.statItem}>
+            <Ionicons name="briefcase-outline" size={14} color={colors.primary} />
+            <Text style={[styles.statValue, { color: colors.textPrimary }]}>
+              {userInfo?.jobsCompleted || 0}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Jobs</Text>
+          </View>
+        </View>
+
+        {isOwnProfile && (
+          <TouchableOpacity
+            style={[styles.editButton, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("EditProfile", { userInfo })}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="create-outline" size={15} color={colors.textInverse} />
+            <Text style={[styles.editButtonText, { color: colors.textInverse }]}>
+              Edit
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 
-  // Section Header for services
+  // ===== SECTION HEADER =====
   const SectionHeader = () => (
     <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Services</Text>
-      <View style={[styles.sectionBadge, { backgroundColor: colors.inputBackground }]}>
-        <Text style={[styles.sectionBadgeText, { color: colors.textSecondary }]}>{userPosts.length}</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+        Services
+      </Text>
+      <View
+        style={[styles.sectionBadge, { backgroundColor: colors.primaryLight }]}
+      >
+        <Text style={[styles.sectionBadgeText, { color: colors.primary }]}>
+          {userPosts.length}
+        </Text>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={["top"]}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.card, shadowColor: colors.shadowColor, shadowOpacity: colors.shadowOpacity }]}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.background, paddingTop: insets.top },
+        ]}
+      >
         <FlatList
           key={resetKey}
           data={userPosts}
@@ -408,8 +572,17 @@ export default function UserProfileScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={[styles.emptyIcon, { color: colors.textTertiary }]}>📦</Text>
-              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No services yet</Text>
+              <View
+                style={[
+                  styles.emptyIconWrap,
+                  { backgroundColor: colors.inputBackground },
+                ]}
+              >
+                <Ionicons name="cube-outline" size={28} color={colors.textTertiary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+                No services yet
+              </Text>
               <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
                 {isOwnProfile
                   ? "Create your first service post"
@@ -420,187 +593,303 @@ export default function UserProfileScreen() {
           style={{ flex: 1 }}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
+// ========================================
+// STYLES
+// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1 },
-  backButton: {
-    position: "absolute",
-    top: 12,
-    left: 20,
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
-  },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    alignItems: "center",
-    marginBottom: 20,
-    paddingVertical: 20,
+
+  // ===== PROFILE HEADER =====
+  profileSection: {
     paddingHorizontal: 20,
-    borderRadius: 32,
-    marginHorizontal: 20,
-    marginTop: 12,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 3,
+    paddingTop: 4,
+    paddingBottom: 12,
   },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  backRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+  },
+  logoutButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+
+  profileTop: {
+    flexDirection: "row",
     alignItems: "center",
     marginBottom: 12,
-    borderWidth: 3,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 4,
+  },
+  avatarWrap: { position: "relative", marginRight: 14 },
+  avatar: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
   },
   avatarImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 12,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 2,
+  },
+  avatarText: { fontSize: 28, fontWeight: "800" },
+  avatarStatusDot: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     borderWidth: 3,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 4,
   },
-  avatarText: { fontSize: 32, fontWeight: "bold" },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  profileInfo: { flex: 1 },
+  name: {
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.4,
+    marginBottom: 4,
   },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: 4,
+  locationRow: { flexDirection: "row", alignItems: "center", gap: 3 },
+  locationText: { fontSize: 12.5, fontWeight: "500" },
+
+  bio: {
+    fontSize: 13.5,
+    lineHeight: 19,
+    fontWeight: "400",
+    marginBottom: 14,
   },
-  name: { fontSize: 24, fontWeight: "800", letterSpacing: -0.3, marginBottom: 4 },
-  skill: { fontSize: 14, marginTop: 4, textAlign: "center", paddingHorizontal: 20 },
-  ratingContainer: {
+
+  // Stats row
+  statsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 40,
-    gap: 6,
+    gap: 10,
   },
-  ratingText: { fontSize: 14, fontWeight: "600" },
-  jobsText: { fontSize: 14 },
-  editButton: {
-    marginTop: 16,
+  statsBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    borderWidth: 1,
     paddingVertical: 10,
-    paddingHorizontal: 24,
-    borderRadius: 40,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 2,
+    paddingHorizontal: 6,
+    flex: 1,
   },
-  editButtonText: { fontWeight: "700", fontSize: 15 },
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  statValue: {
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  statLabel: {
+    fontSize: 10.5,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  statDivider: { width: 1, height: 28 },
+
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+  },
+  editButtonText: { fontWeight: "700", fontSize: 13.5 },
+
+  // ===== SECTION HEADER =====
   sectionHeader: {
     flexDirection: "row",
-    alignItems: "baseline",
+    alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
-    marginHorizontal: 20,
-  },
-  sectionTitle: { fontSize: 20, fontWeight: "700", letterSpacing: -0.3 },
-  sectionBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  sectionBadgeText: { fontSize: 13, fontWeight: "600" },
-  // ===== POST STYLES =====
-  listContent: {
-    paddingBottom: 40,
     paddingHorizontal: 20,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  sectionBadge: {
+    minWidth: 26,
+    height: 24,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionBadgeText: { fontSize: 12.5, fontWeight: "800" },
+
+  // ===== LIST =====
+  listContent: {
+    paddingBottom: 110,
     minHeight: "100%",
   },
+
+  // ===== CARD =====
   card: {
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
+    marginHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 14,
     shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
     shadowRadius: 12,
-    elevation: 3,
+    elevation: 2,
   },
   postHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  description: { fontSize: 15, lineHeight: 22, flex: 1 },
-  postActions: { flexDirection: "row", gap: 12, marginLeft: 10 },
-  actionIcon: { padding: 4 },
+  description: {
+    fontSize: 14.5,
+    lineHeight: 21,
+    fontWeight: "400",
+    flex: 1,
+  },
+  postActions: {
+    flexDirection: "row",
+    gap: 6,
+    marginLeft: 10,
+  },
+  actionIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Media
   mediaImage: {
     width: "100%",
-    height: 200,
-    borderRadius: 16,
-    marginTop: 8,
-    marginBottom: 8,
-    resizeMode: "cover",
+    aspectRatio: 1.5,
+    borderRadius: 14,
+    backgroundColor: "#E2E8F0",
+    marginBottom: 10,
   },
   mediaVideo: {
     width: "100%",
-    height: 200,
-    borderRadius: 16,
-    marginTop: 8,
-    marginBottom: 8,
+    aspectRatio: 1.5,
+    borderRadius: 14,
+    marginBottom: 10,
   },
-  tagContainer: {
+
+  // Tags
+  tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginTop: 8,
-    marginBottom: 16,
-    gap: 8,
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
   },
-  tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  tagText: { fontSize: 12, fontWeight: "500" },
-  // ===== ACTION ROW =====
+  tag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  tagText: { fontSize: 11.5, fontWeight: "600" },
+  moreTagsText: { fontSize: 12, fontWeight: "600", marginLeft: 2 },
+
+  // Divider
+  divider: { height: 1, marginBottom: 8 },
+
+  // Action row
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 6,
-    marginBottom: 10,
+    gap: 4,
+    marginBottom: 12,
   },
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 40,
-    gap: 4,
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
   },
-  actionButtonText: { fontWeight: "600", fontSize: 14 },
-  // ===== BOOK BUTTON =====
+  actionRight: { marginLeft: "auto" },
+  actionButtonText: { fontWeight: "600", fontSize: 13.5 },
+
+  // Book CTA
   bookButton: {
-    paddingVertical: 8,
+    height: 48,
     paddingHorizontal: 16,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  bookButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 14.5,
+    letterSpacing: 0.1,
+  },
+  bookPricePill: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  bookPriceText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 12.5,
+  },
+
+  // ===== EMPTY STATE =====
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
     borderRadius: 30,
     alignItems: "center",
-    alignSelf: "flex-start",
-    marginTop: 6,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 1,
+    justifyContent: "center",
+    marginBottom: 14,
   },
-  bookButtonText: { fontWeight: "600", fontSize: 13, letterSpacing: 0.2 },
-  emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
-  emptyIcon: { fontSize: 56, marginBottom: 16, opacity: 0.6 },
-  emptyTitle: { fontSize: 18, fontWeight: "600", marginBottom: 6 },
-  emptySubtitle: { fontSize: 14, textAlign: "center" },
+  emptyTitle: { fontSize: 16.5, fontWeight: "700", marginBottom: 6 },
+  emptySubtitle: {
+    fontSize: 13,
+    textAlign: "center",
+    maxWidth: 260,
+    lineHeight: 18,
+  },
 });

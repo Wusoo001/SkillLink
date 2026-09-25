@@ -7,17 +7,36 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
   Image,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { getUserReviews } from "../services/api";
 
+// ===== Star rating component =====
+const StarRow = ({ rating, size = 14 }) => {
+  const rounded = Math.round(rating || 0);
+  return (
+    <View style={styles.starRow}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Ionicons
+          key={i}
+          name={i <= rounded ? "star" : "star-outline"}
+          size={size}
+          color="#F59E0B"
+          style={{ marginRight: 1 }}
+        />
+      ))}
+    </View>
+  );
+};
+
 export default function ReviewsScreen({ navigation, route }) {
   const { userId, providerName } = route.params || {};
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,21 +86,48 @@ export default function ReviewsScreen({ navigation, route }) {
     }, [userId])
   );
 
+  // ===== RENDER ITEM =====
   const renderReviewItem = ({ item }) => (
-    <View style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}>
+    <View
+      style={[
+        styles.reviewCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.inputBorder,
+          shadowColor: colors.shadowColor,
+        },
+      ]}
+    >
+      {/* Top: avatar + name + date | stars + number */}
       <View style={styles.reviewHeader}>
         <View style={styles.reviewUser}>
           {item.client?.profileImage ? (
-            <Image source={{ uri: item.client.profileImage }} style={styles.reviewAvatar} />
+            <Image
+              source={{ uri: item.client.profileImage }}
+              style={[styles.reviewAvatar, { borderColor: colors.card }]}
+            />
           ) : (
-            <View style={[styles.reviewAvatarPlaceholder, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.reviewAvatarText, { color: colors.textInverse }]}>
-                {item.client?.name?.charAt(0) || "U"}
+            <View
+              style={[
+                styles.reviewAvatarPlaceholder,
+                { backgroundColor: colors.primary },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.reviewAvatarText,
+                  { color: colors.textInverse },
+                ]}
+              >
+                {item.client?.name?.charAt(0)?.toUpperCase() || "U"}
               </Text>
             </View>
           )}
-          <View>
-            <Text style={[styles.reviewUserName, { color: colors.textPrimary }]}>
+          <View style={styles.reviewUserInfo}>
+            <Text
+              style={[styles.reviewUserName, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
               {item.client?.name || "User"}
             </Text>
             <Text style={[styles.reviewDate, { color: colors.textTertiary }]}>
@@ -89,30 +135,63 @@ export default function ReviewsScreen({ navigation, route }) {
             </Text>
           </View>
         </View>
-        <Text style={[styles.reviewRating, { color: colors.warning }]}>
-          {'⭐'.repeat(Math.floor(item.rating))}
-        </Text>
+
+        <View style={styles.reviewRatingBlock}>
+          <StarRow rating={item.rating} />
+          <Text style={[styles.reviewRatingNumber, { color: colors.textPrimary }]}>
+            {Number(item.rating || 0).toFixed(1)}
+          </Text>
+        </View>
       </View>
+
+      {/* Comment */}
       {item.comment ? (
-        <Text style={[styles.reviewComment, { color: colors.textSecondary }]}>
+        <Text
+          style={[styles.reviewComment, { color: colors.textSecondary }]}
+        >
           {item.comment}
         </Text>
-      ) : null}
+      ) : (
+        <Text
+          style={[
+            styles.reviewComment,
+            styles.reviewCommentEmpty,
+            { color: colors.textTertiary },
+          ]}
+        >
+          No comment
+        </Text>
+      )}
     </View>
   );
 
+  // ===== EMPTY STATE =====
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Text style={[styles.emptyIcon, { color: colors.textTertiary }]}>📝</Text>
-      <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No reviews yet</Text>
+      <View
+        style={[
+          styles.emptyIconWrap,
+          { backgroundColor: colors.inputBackground },
+        ]}
+      >
+        <Ionicons
+          name="chatbubble-ellipses-outline"
+          size={28}
+          color={colors.textTertiary}
+        />
+      </View>
+      <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+        No reviews yet
+      </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
         {providerName || "This user"} hasn't received any reviews yet.
       </Text>
     </View>
   );
 
+  // ===== FOOTER LOADER =====
   const renderFooter = () => {
-    if (!hasMore) return null;
+    if (!hasMore || reviews.length === 0) return null;
     return (
       <View style={styles.footerLoader}>
         <ActivityIndicator size="small" color={colors.primary} />
@@ -120,46 +199,101 @@ export default function ReviewsScreen({ navigation, route }) {
     );
   };
 
+  // ===== INITIAL LOADER =====
   if (loading && reviews.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-        <View style={styles.centerLoader}>
-          <ActivityIndicator size="large" color={colors.primary} />
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.container,
+            { paddingTop: insets.top + 8 },
+          ]}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={[
+                styles.backButton,
+                { backgroundColor: colors.card, borderColor: colors.inputBorder },
+              ]}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+              Reviews
+            </Text>
+            <View style={styles.headerRight} />
+          </View>
+          <View style={styles.centerLoader}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.container,
+          { paddingTop: insets.top + 8 },
+        ]}
+      >
+        {/* ===== HEADER ===== */}
         <View style={styles.header}>
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: colors.card }]}
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+          <Text
+            style={[styles.headerTitle, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
             Reviews
           </Text>
           <View style={styles.headerRight}>
-            <Text style={[styles.reviewCount, { color: colors.textTertiary }]}>
-              {total}
-            </Text>
+            {total > 0 && (
+              <View
+                style={[
+                  styles.countBadge,
+                  { backgroundColor: colors.primaryLight },
+                ]}
+              >
+                <Text
+                  style={[styles.countBadgeText, { color: colors.primary }]}
+                >
+                  {total}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
-        <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
-          Reviews for {providerName || "this provider"}
+        {/* ===== SUBTITLE ===== */}
+        <Text
+          style={[styles.subtitle, { color: colors.textTertiary }]}
+          numberOfLines={1}
+        >
+          {providerName ? `Reviews for ${providerName}` : "All reviews"}
         </Text>
 
+        {/* ===== LIST ===== */}
         <FlatList
           data={reviews}
           keyExtractor={(item) => item._id}
           renderItem={renderReviewItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + 32 },
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -175,18 +309,24 @@ export default function ReviewsScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
+// ========================================
+// STYLES
+// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
+  container: { flex: 1, paddingHorizontal: 20 },
+
+  // ===== HEADER =====
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 4,
+    marginBottom: 8,
+    gap: 12,
   },
   backButton: {
     width: 40,
@@ -194,106 +334,157 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.4,
     flex: 1,
-    textAlign: "center",
   },
   headerRight: {
-    width: 40,
+    minWidth: 40,
+    alignItems: "flex-end",
+  },
+  countBadge: {
+    minWidth: 30,
+    height: 26,
+    paddingHorizontal: 10,
+    borderRadius: 13,
     alignItems: "center",
+    justifyContent: "center",
   },
-  reviewCount: {
-    fontSize: 14,
-    fontWeight: "600",
+  countBadgeText: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
+
+  // ===== SUBTITLE =====
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: "500",
     marginBottom: 16,
-    paddingLeft: 4,
+    letterSpacing: 0.1,
   },
+
+  // ===== LIST =====
   listContent: {
-    paddingBottom: 40,
-    gap: 12,
+    gap: 10,
+    paddingTop: 2,
   },
+
+  // ===== CARD =====
   reviewCard: {
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 1,
   },
   reviewHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
+    alignItems: "flex-start",
+    marginBottom: 10,
   },
   reviewUser: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    flex: 1,
+    paddingRight: 8,
   },
   reviewAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
   },
   reviewAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
   },
   reviewAvatarText: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  reviewUserName: {
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "800",
+  },
+  reviewUserInfo: { flex: 1 },
+  reviewUserName: {
+    fontSize: 14.5,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+    marginBottom: 2,
   },
   reviewDate: {
+    fontSize: 11.5,
+    fontWeight: "500",
+  },
+  reviewRatingBlock: {
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  starRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  reviewRatingNumber: {
     fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: -0.1,
   },
-  reviewRating: {
-    fontSize: 14,
-  },
+
+  // ===== COMMENT =====
   reviewComment: {
     fontSize: 14,
-    marginTop: 4,
     lineHeight: 20,
+    fontWeight: "400",
   },
+  reviewCommentEmpty: {
+    fontStyle: "italic",
+    fontSize: 13,
+  },
+
+  // ===== EMPTY STATE =====
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 80,
+    paddingVertical: 60,
+    paddingHorizontal: 20,
   },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 16.5,
+    fontWeight: "700",
     marginBottom: 6,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     textAlign: "center",
+    maxWidth: 260,
+    lineHeight: 18,
   },
+
+  // ===== LOADERS =====
   centerLoader: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
   footerLoader: {
-    paddingVertical: 16,
+    paddingVertical: 18,
     alignItems: "center",
   },
 });
