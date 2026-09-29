@@ -28,7 +28,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/icon.png",
+          "image": "./assets/images/street_logo.png",
           "resizeMode": "contain",
           "backgroundColor": "#F8FAFC"
         }
