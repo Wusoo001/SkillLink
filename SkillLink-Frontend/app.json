@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "SkillLink-App",
+    "name": "Street",
     "slug": "SkillLink-App",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/street_logo.png",
     "scheme": "skilllinkapp",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -31,6 +31,14 @@
           "image": "./assets/images/street_logo.png",
           "resizeMode": "contain",
           "backgroundColor": "#F8FAFC"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ],
       "expo-video",
