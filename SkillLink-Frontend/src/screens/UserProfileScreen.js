@@ -14,7 +14,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Video } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useFocusEffect } from "@react-navigation/native";
@@ -22,6 +22,25 @@ import { AuthContext } from "../../context/AuthContext";
 import { getPosts, api, deletePost, savePost, likePost, unlikePost } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
+
+// ==============================
+// VideoItem — replaces expo-av Video (hook must live per-item)
+// ==============================
+const VideoItem = ({ uri, style }) => {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+    p.muted = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={style}
+      contentFit="cover"
+      nativeControls
+    />
+  );
+};
 
 // ==============================
 // PostItem Component (UI polished, logic identical)
@@ -117,12 +136,7 @@ const PostItem = ({
         <Image source={{ uri: item.media }} style={styles.mediaImage} resizeMode="cover" />
       )}
       {item.media && item.mediaType === "video" && (
-        <Video
-          source={{ uri: item.media }}
-          style={styles.mediaVideo}
-          useNativeControls
-          resizeMode="cover"
-        />
+        <VideoItem uri={item.media} style={styles.mediaVideo} />
       )}
 
       {/* Tags */}
@@ -598,7 +612,7 @@ export default function UserProfileScreen() {
 }
 
 // ========================================
-// STYLES
+// STYLES (unchanged)
 // ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
@@ -681,7 +695,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  // Stats row
   statsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -724,7 +737,6 @@ const styles = StyleSheet.create({
   },
   editButtonText: { fontWeight: "700", fontSize: 13.5 },
 
-  // ===== SECTION HEADER =====
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -748,13 +760,11 @@ const styles = StyleSheet.create({
   },
   sectionBadgeText: { fontSize: 12.5, fontWeight: "800" },
 
-  // ===== LIST =====
   listContent: {
     paddingBottom: 110,
     minHeight: "100%",
   },
 
-  // ===== CARD =====
   card: {
     marginHorizontal: 20,
     borderRadius: 20,
@@ -791,7 +801,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  // Media
   mediaImage: {
     width: "100%",
     aspectRatio: 1.5,
@@ -806,7 +815,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // Tags
   tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -818,10 +826,8 @@ const styles = StyleSheet.create({
   tagText: { fontSize: 11.5, fontWeight: "600" },
   moreTagsText: { fontSize: 12, fontWeight: "600", marginLeft: 2 },
 
-  // Divider
   divider: { height: 1, marginBottom: 8 },
 
-  // Action row
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -839,7 +845,6 @@ const styles = StyleSheet.create({
   actionRight: { marginLeft: "auto" },
   actionButtonText: { fontWeight: "600", fontSize: 13.5 },
 
-  // Book CTA
   bookButton: {
     height: 48,
     paddingHorizontal: 16,
@@ -870,7 +875,6 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
   },
 
-  // ===== EMPTY STATE =====
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",

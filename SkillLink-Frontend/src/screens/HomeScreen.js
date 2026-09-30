@@ -28,10 +28,27 @@ import {
   markAllNotificationsRead,
 } from "../services/api";
 import { PostContext } from "../../context/PostContext";
-import { Video } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
+
+// ===== VIDEO ITEM COMPONENT (replaces expo-av Video) =====
+const VideoItem = ({ uri, style }) => {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+    p.muted = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={style}
+      contentFit="cover"
+      nativeControls
+    />
+  );
+};
 
 // ===== NOTIFICATION ITEM COMPONENT =====
 const NotificationItem = ({ notification, onPress, colors }) => {
@@ -118,7 +135,7 @@ export default function HomeScreen() {
   const [posts, setPosts] = useState([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false); // ✅ NEW
+  const [refreshing, setRefreshing] = useState(false);
 
   // ===== SEARCH STATE =====
   const [searchQuery, setSearchQuery] = useState("");
@@ -385,7 +402,6 @@ export default function HomeScreen() {
     fetchUnreadCount();
   };
 
-  // ✅ NEW: Pull-to-refresh handler
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -503,7 +519,6 @@ export default function HomeScreen() {
                 )}
               </View>
 
-              {/* ONLINE INDICATOR */}
               <View
                 style={[
                   styles.onlineDot,
@@ -576,12 +591,7 @@ export default function HomeScreen() {
             />
           )}
           {item.media && item.mediaType === "video" && (
-            <Video
-              source={{ uri: item.media }}
-              style={styles.media}
-              useNativeControls
-              resizeMode="cover"
-            />
+            <VideoItem uri={item.media} style={styles.media} />
           )}
 
           {/* ===== HASHTAGS ===== */}
@@ -766,7 +776,6 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.topButtons}>
-            {/* BELL — OPENS MODAL DIRECTLY */}
             <TouchableOpacity
               style={[
                 styles.iconButton,
@@ -1074,13 +1083,12 @@ export default function HomeScreen() {
 }
 
 // ========================================
-// STYLES
+// STYLES (unchanged)
 // ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 30 },
 
-  // ----- Header -----
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1126,7 +1134,6 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { color: "#FFFFFF", fontSize: 9.5, fontWeight: "800" },
 
-  // ----- Search area -----
   searchSection: { marginBottom: 14, gap: 8 },
   searchBar: {
     flexDirection: "row",
@@ -1160,7 +1167,6 @@ const styles = StyleSheet.create({
   },
   clearCity: { padding: 2 },
 
-  // ----- Categories -----
   categorySection: { marginBottom: 14 },
   categoryList: { paddingHorizontal: 2, gap: 8 },
   categoryChip: {
@@ -1173,7 +1179,6 @@ const styles = StyleSheet.create({
   },
   categoryText: { fontWeight: "600", fontSize: 13.5 },
 
-  // ----- Card -----
   cardWrapper: { marginBottom: 14 },
   card: {
     borderRadius: 20,
@@ -1351,7 +1356,6 @@ const styles = StyleSheet.create({
   footerLoader: { marginVertical: 20 },
   listContent: { paddingBottom: 100, paddingTop: 4 },
 
-  // ===== NOTIFICATION MODAL =====
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
