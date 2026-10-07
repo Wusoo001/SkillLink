@@ -26,6 +26,9 @@ import SplashLogo from "./src/components/SplashLogo";
 import ReviewsScreen from "./src/screens/ReviewsScreen";
 import { setLogoutCallback } from "./src/services/logout";
 import VerificationPendingScreen from "./src/screens/VerificationPendingScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
+import PrivacyPolicyScreen from "./src/screens/PrivacyPolicyScreen";
+import TermsScreen from "./src/screens/TermsScreen";
 
 
 const Stack = createStackNavigator();
@@ -123,6 +126,9 @@ function AppStack() {
       <Stack.Screen name="PaymentDashboard" component={Dashboard} />
       <Stack.Screen name="BankSetup" component={BankSetupScreen} />
       <Stack.Screen name="ReviewsScreen" component={ReviewsScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+      <Stack.Screen name="Terms" component={TermsScreen} />
     </Stack.Navigator>
   );
 }

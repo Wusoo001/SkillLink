@@ -22,6 +22,7 @@ import { AuthContext } from "../../context/AuthContext";
 import { getPosts, api, deletePost, savePost, likePost, unlikePost } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
+import ReportModal from "./ReportModal"; // ✅ NEW
 
 // ==============================
 // VideoItem — replaces expo-av Video (hook must live per-item)
@@ -267,6 +268,9 @@ export default function UserProfileScreen() {
   const [likedPosts, setLikedPosts] = useState([]);
   const [savedPosts, setSavedPosts] = useState([]);
 
+  // ✅ NEW: report modal state
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+
   const isOwnProfile = user?._id === resolvedUserId;
   const userActive = isUserActive(userInfo?.lastActive);
 
@@ -364,19 +368,26 @@ export default function UserProfileScreen() {
 
   // ===== LOGOUT =====
   const handleLogout = () => {
-    Alert.alert(
-      "Log Out",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Log Out",
-          style: "destructive",
-          onPress: () => logout(),
-        },
-      ]
-    );
-  };
+  // Web doesn't support Alert.alert — use window.confirm
+  if (Platform.OS === "web") {
+    const confirmed = window.confirm("Are you sure you want to log out?");
+    if (confirmed) logout();
+    return;
+  }
+
+  Alert.alert(
+    "Log Out",
+    "Are you sure you want to log out?",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log Out",
+        style: "destructive",
+        onPress: () => logout(),
+      },
+    ]
+  );
+};
 
   if (loading || authLoading || !resolvedUserId) {
     return (
@@ -391,7 +402,7 @@ export default function UserProfileScreen() {
   // ===== PROFILE HEADER =====
   const ProfileHeader = () => (
     <View style={styles.profileSection}>
-      {/* Back + Logout row */}
+      {/* Back + actions row */}
       <View style={styles.backRow}>
         <TouchableOpacity
           style={[
@@ -404,17 +415,43 @@ export default function UserProfileScreen() {
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
 
-        {/* Logout — only on own profile */}
-        {isOwnProfile && (
+        {/* Right side: Settings + Logout (own) OR Report (other) */}
+        {isOwnProfile ? (
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {/* Settings */}
+            <TouchableOpacity
+              style={[
+                styles.backButton,
+                { backgroundColor: colors.card, borderColor: colors.inputBorder },
+              ]}
+              onPress={() => navigation.navigate("Settings")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="settings-outline" size={18} color={colors.textPrimary} />
+            </TouchableOpacity>
+
+            {/* Logout */}
+            <TouchableOpacity
+              style={[
+                styles.backButton,
+                { backgroundColor: colors.card, borderColor: colors.inputBorder },
+              ]}
+              onPress={handleLogout}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+            </TouchableOpacity>
+          </View>
+        ) : (
           <TouchableOpacity
             style={[
-              styles.logoutButton,
+              styles.backButton,
               { backgroundColor: colors.card, borderColor: colors.inputBorder },
             ]}
-            onPress={handleLogout}
+            onPress={() => setReportModalVisible(true)}
             activeOpacity={0.7}
           >
-            <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+            <Ionicons name="flag-outline" size={18} color={colors.danger} />
           </TouchableOpacity>
         )}
       </View>
@@ -607,6 +644,14 @@ export default function UserProfileScreen() {
           style={{ flex: 1 }}
         />
       </View>
+
+      {/* ✅ Report Modal */}
+      <ReportModal
+        visible={reportModalVisible}
+        onClose={() => setReportModalVisible(false)}
+        type="user"
+        targetId={resolvedUserId}
+      />
     </View>
   );
 }
@@ -619,7 +664,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  // ===== PROFILE HEADER =====
   profileSection: {
     paddingHorizontal: 20,
     paddingTop: 4,

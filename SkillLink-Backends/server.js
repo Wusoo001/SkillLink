@@ -31,6 +31,7 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/bank", bankRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/reports", require("./routes/reportRoutes"));
 
 // 🔧 DEBUG ROUTE – remove after testing
 app.get("/test", (req, res) => {

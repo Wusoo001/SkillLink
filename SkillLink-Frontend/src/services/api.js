@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { triggerLogout } from "./logout";
 
-const API_BASE = "http://192.168.1.215:5000/api";
+const API_BASE = "http://192.168.1.212:5000/api";
 
 // ================================
 // AXIOS INSTANCE
@@ -457,6 +457,47 @@ export const resendVerificationEmail = async (email) => {
   }
 };
 
+// ================================
+// COMPLIANCE
+// ================================
+
+/**
+ * Delete the current user's account permanently
+ */
+export const deleteAccount = async () => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.delete("/users/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  } catch (error) {
+    console.log("Delete account error:", error);
+    throw error;
+  }
+};
+
+/**
+ * Submit a report for a user or post
+ */
+export const submitReport = async ({ type, reason, description, reportedUserId, reportedPostId }) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.post(
+      "/reports",
+      { type, reason, description, reportedUserId, reportedPostId },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    console.log("Submit report error:", error);
+    throw error;
+  }
+};
 // ================================
 // EXPORT API INSTANCE (if needed)
 // ================================
