@@ -47,6 +47,15 @@ const STATUS_LABELS = {
   in_progress: "In Progress",
 };
 
+// Chat is available in these statuses
+const CHAT_ACTIVE_STATUSES = [
+  "paid_in_escrow",
+  "in_progress",
+  "completed",
+  "ready_for_release",
+  "released",
+];
+
 // ================== Notification Item ==================
 const NotificationItem = ({ notification, onPress, colors }) => {
   const getIcon = (type) => {
@@ -57,6 +66,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_cancelled": return "ban-outline";
       case "payment_received": return "cash-outline";
       case "funds_released": return "wallet-outline";
+      case "chat_message": return "chatbubble-ellipses-outline";
       default: return "notifications-outline";
     }
   };
@@ -69,6 +79,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_cancelled": return colors.warning;
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
+      case "chat_message": return colors.primary; 
       default: return colors.textTertiary;
     }
   };
@@ -118,6 +129,7 @@ const BookingCard = ({
   onReject,
   onCancel,
   onPayPress,
+  onChatPress, // ✅ NEW
 }) => {
   const isClient = role === "client";
   const otherParty = isClient ? booking.provider : booking.client;
@@ -201,9 +213,11 @@ const BookingCard = ({
 
   const isExpired = booking.isExpired === true;
   const statusLabel = isExpired ? "Expired" : (STATUS_LABELS[booking.status] || booking.status);
+  const canChat = CHAT_ACTIVE_STATUSES.includes(booking.status);
 
   const handleReviewPress = () => onPress && onPress(booking, "review");
   const handlePayPress = () => onPayPress && onPayPress(booking);
+  const handleChatPress = () => onChatPress && onChatPress(booking, isClient ? "provider" : "client");
 
   return (
     <View
@@ -222,7 +236,6 @@ const BookingCard = ({
         disabled={booking.status === "pending_acceptance"}
         style={styles.cardTouchable}
       >
-        {/* Top: avatar + name/role + status */}
         <View style={styles.cardHeader}>
           <View style={styles.userInfo}>
             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
@@ -255,7 +268,6 @@ const BookingCard = ({
           </View>
         </View>
 
-        {/* Service title */}
         <Text
           style={[styles.serviceTitle, { color: colors.textPrimary }]}
           numberOfLines={2}
@@ -263,7 +275,6 @@ const BookingCard = ({
           {booking.serviceTitle}
         </Text>
 
-        {/* Price + date row */}
         <View style={styles.metaRow}>
           <Text style={[styles.price, { color: colors.primary }]}>
             ₦{booking.price?.toLocaleString()}
@@ -365,6 +376,23 @@ const BookingCard = ({
           </Text>
         </TouchableOpacity>
       )}
+
+      {/* ✅ NEW: Chat button — only on active bookings */}
+      {canChat && (
+        <TouchableOpacity
+          style={[
+            styles.chatButton,
+            { backgroundColor: colors.card, borderColor: colors.primary },
+          ]}
+          onPress={handleChatPress}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="chatbubble-outline" size={16} color={colors.primary} />
+          <Text style={[styles.chatButtonText, { color: colors.primary }]}>
+            Open Chat
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -432,6 +460,15 @@ export default function Dashboard({ navigation }) {
       setNotifications((prev) =>
         prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n))
       );
+    }
+    if (notification.type === "chat_message" && notification.data?.bookingId) {
+      setNotificationModalVisible(false);
+      navigation.navigate("Chat", {
+        bookingId: notification.data.bookingId,
+        otherPartyName: notification.title.replace("New message from ", ""),
+        otherPartyImage: null,
+      });
+      return;
     }
     if (notification.data?.bookingId) {
       setNotificationModalVisible(false);
@@ -552,6 +589,16 @@ export default function Dashboard({ navigation }) {
       bookingId: booking._id,
       amount: booking.price,
       serviceTitle: booking.serviceTitle,
+    });
+  };
+
+  // ✅ NEW: Open chat from a booking card
+  const handleChatPress = (booking, otherRole) => {
+    const otherParty = otherRole === "provider" ? booking.provider : booking.client;
+    navigation.navigate("Chat", {
+      bookingId: booking._id,
+      otherPartyName: otherParty?.name || "User",
+      otherPartyImage: otherParty?.profileImage || null,
     });
   };
 
@@ -688,7 +735,6 @@ export default function Dashboard({ navigation }) {
           },
         ]}
       >
-        {/* ===== HEADER ===== */}
         <View style={styles.header}>
           {canGoBack && (
             <TouchableOpacity
@@ -742,7 +788,6 @@ export default function Dashboard({ navigation }) {
           </View>
         </View>
 
-        {/* ===== WALLET CARD ===== */}
         <View
           style={[
             styles.walletCard,
@@ -801,7 +846,6 @@ export default function Dashboard({ navigation }) {
           </View>
         </View>
 
-        {/* ===== SECTION TITLE ===== */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
             Recent Bookings
@@ -811,7 +855,6 @@ export default function Dashboard({ navigation }) {
           </Text>
         </View>
 
-        {/* ===== SEGMENTED CONTROL ===== */}
         <View
           style={[
             styles.segmentContainer,
@@ -860,7 +903,6 @@ export default function Dashboard({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ===== BOOKINGS LIST ===== */}
         {loading && !refreshing ? (
           renderSkeleton()
         ) : (
@@ -874,6 +916,7 @@ export default function Dashboard({ navigation }) {
                 role={activeTab}
                 onPress={handleBookingPress}
                 onPayPress={handlePayNow}
+                onChatPress={handleChatPress} // ✅ NEW
                 onStatusChange={() => {
                   fetchBookings();
                   fetchWalletBalance();
@@ -899,7 +942,7 @@ export default function Dashboard({ navigation }) {
         )}
       </View>
 
-      {/* ===== WITHDRAW MODAL (unchanged logic) ===== */}
+      {/* ===== WITHDRAW MODAL ===== */}
       <Modal
         visible={withdrawModalVisible}
         transparent={true}
@@ -948,7 +991,7 @@ export default function Dashboard({ navigation }) {
         </View>
       </Modal>
 
-      {/* ===== NOTIFICATION MODAL (unchanged logic) ===== */}
+      {/* ===== NOTIFICATION MODAL ===== */}
       <Modal
         visible={notificationModalVisible}
         transparent={true}
@@ -1012,7 +1055,7 @@ export default function Dashboard({ navigation }) {
         </View>
       </Modal>
 
-      {/* ===== REVIEW MODAL (unchanged logic) ===== */}
+      {/* ===== REVIEW MODAL ===== */}
       <Modal
         visible={reviewModalVisible}
         transparent={true}
@@ -1086,7 +1129,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 18 },
 
-  // ===== HEADER =====
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1125,7 +1167,6 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontSize: 9.5, fontWeight: "800" },
 
-  // ===== WALLET CARD =====
   walletCard: {
     borderRadius: 20,
     borderWidth: 1,
@@ -1175,7 +1216,6 @@ const styles = StyleSheet.create({
   walletButtonOutline: { borderWidth: 1.5 },
   walletButtonText: { fontWeight: "700", fontSize: 13.5, letterSpacing: 0.1 },
 
-  // ===== SECTION HEADER =====
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1195,7 +1235,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 
-  // ===== SEGMENTED CONTROL =====
   segmentContainer: {
     flexDirection: "row",
     borderRadius: 14,
@@ -1213,10 +1252,8 @@ const styles = StyleSheet.create({
   },
   segmentText: { fontSize: 13, fontWeight: "700", letterSpacing: -0.1 },
 
-  // ===== LIST =====
   listContent: { paddingBottom: 110, paddingTop: 2 },
 
-  // ===== BOOKING CARD =====
   card: {
     borderRadius: 20,
     borderWidth: 1,
@@ -1289,7 +1326,6 @@ const styles = StyleSheet.create({
   },
   date: { fontSize: 12.5, fontWeight: "500" },
 
-  // ===== ACTION BUTTONS =====
   actionButton: {
     paddingVertical: 11,
     borderRadius: 12,
@@ -1323,7 +1359,22 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: { fontWeight: "700", fontSize: 13.5 },
 
-  // ===== EMPTY / SKELETON =====
+  // ✅ NEW: chat button style
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    marginTop: 10,
+  },
+  chatButtonText: {
+    fontWeight: "700",
+    fontSize: 13.5,
+  },
+
   emptyContainer: { alignItems: "center", paddingVertical: 60 },
   emptyIconWrap: {
     width: 60,
@@ -1344,7 +1395,6 @@ const styles = StyleSheet.create({
   skeletonLineShort: { height: 10, borderRadius: 5, width: "35%" },
   skeletonBodyLine: { height: 12, borderRadius: 6, width: "80%" },
 
-  // ===== MODALS =====
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1389,7 +1439,6 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
 
-  // ===== NOTIFICATION MODAL =====
   notificationModalContainer: {
     borderRadius: 24,
     padding: 18,

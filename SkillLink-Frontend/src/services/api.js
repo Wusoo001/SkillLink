@@ -498,6 +498,42 @@ export const submitReport = async ({ type, reason, description, reportedUserId, 
     throw error;
   }
 };
+
+// ================================
+// CHAT
+// ================================
+
+export const getMessages = async (bookingId) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.get(`/chat/${bookingId}/messages`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  } catch (error) {
+    console.log("Get messages error:", error);
+    throw error;
+  }
+};
+
+export const sendMessage = async (bookingId, text) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.post(
+      `/chat/${bookingId}/messages`,
+      { text },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    console.log("Send message error:", error);
+    throw error;
+  }
+};
 // ================================
 // EXPORT API INSTANCE (if needed)
 // ================================
