@@ -29,6 +29,7 @@ import VerificationPendingScreen from "./src/screens/VerificationPendingScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import PrivacyPolicyScreen from "./src/screens/PrivacyPolicyScreen";
 import TermsScreen from "./src/screens/TermsScreen";
+import ChatScreen from "./src/screens/ChatScreen";
 
 
 const Stack = createStackNavigator();
@@ -129,6 +130,7 @@ function AppStack() {
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
       <Stack.Screen name="Terms" component={TermsScreen} />
+      <Stack.Screen name="Chat" component={ChatScreen} />
     </Stack.Navigator>
   );
 }

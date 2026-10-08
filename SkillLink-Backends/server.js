@@ -32,6 +32,7 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/bank", bankRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/reports", require("./routes/reportRoutes"));
+app.use("/api/chat", require("./routes/chatRoutes"));
 
 // 🔧 DEBUG ROUTE – remove after testing
 app.get("/test", (req, res) => {

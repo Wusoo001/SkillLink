@@ -60,6 +60,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_cancelled": return "ban-outline";
       case "payment_received": return "cash-outline";
       case "funds_released": return "wallet-outline";
+      case "chat_message": return "chatbubble-ellipses-outline";
       default: return "notifications-outline";
     }
   };
@@ -72,6 +73,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_cancelled": return colors.warning;
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
+      case "chat_message": return colors.primary;
       default: return colors.textTertiary;
     }
   };
@@ -236,6 +238,17 @@ export default function HomeScreen() {
         )
       );
     }
+
+    if (notification.type === "chat_message" && notification.data?.bookingId) {
+      setNotificationModalVisible(false);
+      navigation.navigate("Chat", {
+        bookingId: notification.data.bookingId,
+        otherPartyName: notification.title.replace("New message from ", ""),
+        otherPartyImage: null,
+      });
+      return;
+    }
+    
     if (notification.data?.bookingId) {
       setNotificationModalVisible(false);
       navigation.navigate("BookingScreen", {

@@ -299,6 +299,18 @@ export default function BookingScreen({ navigation, route }) {
     });
   };
 
+  // ===== OPEN CHAT =====
+  const handleOpenChat = () => {
+    const isClient = userRole === "client";
+    const otherParty = isClient ? booking?.provider : booking?.client;
+
+    navigation.navigate("Chat", {
+      bookingId: bookingId,
+      otherPartyName: otherParty?.name || "User",
+      otherPartyImage: otherParty?.profileImage || null,
+    });
+  };
+
   const animatePressIn = (scale) => {
     Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start();
   };
@@ -360,17 +372,13 @@ export default function BookingScreen({ navigation, route }) {
 
   // ================= PENDING ACCEPTANCE =================
   if (status === "pending_acceptance") {
-    // Provider view
     if (userRole === "provider") {
       return (
         <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
           <ScrollView
             contentContainerStyle={[
               styles.scrollContent,
-              {
-                paddingTop: insets.top + 8,
-                paddingBottom: insets.bottom + 32,
-              },
+              { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
             ]}
             showsVerticalScrollIndicator={false}
           >
@@ -419,9 +427,7 @@ export default function BookingScreen({ navigation, route }) {
                     },
                   ]}
                 >
-                  <Text
-                    style={[styles.serviceLabel, { color: colors.textTertiary }]}
-                  >
+                  <Text style={[styles.serviceLabel, { color: colors.textTertiary }]}>
                     Service
                   </Text>
                   <Text
@@ -439,10 +445,7 @@ export default function BookingScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[
                       styles.rejectOutline,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: colors.inputBorder,
-                      },
+                      { backgroundColor: colors.card, borderColor: colors.inputBorder },
                     ]}
                     onPress={handleReject}
                     activeOpacity={0.85}
@@ -454,17 +457,12 @@ export default function BookingScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[
                       styles.acceptFill,
-                      {
-                        backgroundColor: colors.success,
-                        shadowColor: colors.success,
-                      },
+                      { backgroundColor: colors.success, shadowColor: colors.success },
                     ]}
                     onPress={handleAccept}
                     activeOpacity={0.9}
                   >
-                    <Text
-                      style={[styles.actionButtonText, { color: colors.textInverse }]}
-                    >
+                    <Text style={[styles.actionButtonText, { color: colors.textInverse }]}>
                       Accept
                     </Text>
                   </TouchableOpacity>
@@ -476,16 +474,12 @@ export default function BookingScreen({ navigation, route }) {
       );
     }
 
-    // Client view
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            {
-              paddingTop: insets.top + 8,
-              paddingBottom: insets.bottom + 32,
-            },
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
           ]}
           showsVerticalScrollIndicator={false}
         >
@@ -538,10 +532,7 @@ export default function BookingScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  {
-                    backgroundColor: colors.primary,
-                    shadowColor: colors.primary,
-                  },
+                  { backgroundColor: colors.primary, shadowColor: colors.primary },
                 ]}
                 onPress={manualRefresh}
                 disabled={refreshingStatus}
@@ -566,10 +557,7 @@ export default function BookingScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[
                   styles.outlineBtn,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.inputBorder,
-                  },
+                  { backgroundColor: colors.card, borderColor: colors.inputBorder },
                 ]}
                 onPress={handleCancelRequest}
                 disabled={cancelLoading}
@@ -634,10 +622,7 @@ export default function BookingScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  {
-                    backgroundColor: colors.primary,
-                    shadowColor: colors.primary,
-                  },
+                  { backgroundColor: colors.primary, shadowColor: colors.primary },
                 ]}
                 onPress={() => navigation.goBack()}
                 activeOpacity={0.9}
@@ -699,10 +684,7 @@ export default function BookingScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  {
-                    backgroundColor: colors.primary,
-                    shadowColor: colors.primary,
-                  },
+                  { backgroundColor: colors.primary, shadowColor: colors.primary },
                 ]}
                 onPress={() => navigation.goBack()}
                 activeOpacity={0.9}
@@ -720,7 +702,6 @@ export default function BookingScreen({ navigation, route }) {
 
   // ================= ACCEPTED =================
   if (status === "accepted") {
-    // Provider view — waiting for client to pay
     if (userRole === "provider") {
       return (
         <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -771,10 +752,7 @@ export default function BookingScreen({ navigation, route }) {
                 <TouchableOpacity
                   style={[
                     styles.primaryBtn,
-                    {
-                      backgroundColor: colors.primary,
-                      shadowColor: colors.primary,
-                    },
+                    { backgroundColor: colors.primary, shadowColor: colors.primary },
                   ]}
                   onPress={() => navigation.goBack()}
                   activeOpacity={0.9}
@@ -790,7 +768,6 @@ export default function BookingScreen({ navigation, route }) {
       );
     }
 
-    // Client view — invoice + pay
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <ScrollView
@@ -841,7 +818,6 @@ export default function BookingScreen({ navigation, route }) {
               </Text>
             </View>
 
-            {/* Invoice card */}
             <View
               style={[
                 styles.card,
@@ -853,16 +829,10 @@ export default function BookingScreen({ navigation, route }) {
               ]}
             >
               <View
-                style={[
-                  styles.invoiceHeader,
-                  { borderBottomColor: colors.inputBorder },
-                ]}
+                style={[styles.invoiceHeader, { borderBottomColor: colors.inputBorder }]}
               >
                 <View
-                  style={[
-                    styles.cardIconWrap,
-                    { backgroundColor: colors.primaryLight },
-                  ]}
+                  style={[styles.cardIconWrap, { backgroundColor: colors.primaryLight }]}
                 >
                   <Ionicons name="receipt-outline" size={17} color={colors.primary} />
                 </View>
@@ -890,10 +860,7 @@ export default function BookingScreen({ navigation, route }) {
               </View>
 
               <View
-                style={[
-                  styles.dashedDivider,
-                  { borderColor: colors.inputBorder },
-                ]}
+                style={[styles.dashedDivider, { borderColor: colors.inputBorder }]}
               />
 
               <View style={styles.invoiceRow}>
@@ -910,10 +877,7 @@ export default function BookingScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  {
-                    backgroundColor: colors.primary,
-                    shadowColor: colors.primary,
-                  },
+                  { backgroundColor: colors.primary, shadowColor: colors.primary },
                 ]}
                 onPress={handleConfirmBooking}
                 onPressIn={() => animatePressIn(primaryScale)}
@@ -928,11 +892,7 @@ export default function BookingScreen({ navigation, route }) {
                 <Text style={[styles.primaryText, { color: colors.textInverse }]}>
                   Confirm & Pay
                 </Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={18}
-                  color={colors.textInverse}
-                />
+                <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
               </TouchableOpacity>
             </Animated.View>
           </View>
@@ -941,7 +901,7 @@ export default function BookingScreen({ navigation, route }) {
     );
   }
 
-  // ================= RELEASED (review prompt) =================
+  // ================= RELEASED (review + chat) =================
   if (status === "released" && userRole === "client" && !booking?.reviewed) {
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -985,13 +945,28 @@ export default function BookingScreen({ navigation, route }) {
                 review.
               </Text>
 
+              {/* Open Chat */}
+              <TouchableOpacity
+                style={[
+                  styles.chatBtn,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.primary,
+                  },
+                ]}
+                onPress={handleOpenChat}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                <Text style={[styles.chatBtnText, { color: colors.primary }]}>
+                  Open Chat
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  {
-                    backgroundColor: colors.success,
-                    shadowColor: colors.success,
-                  },
+                  { backgroundColor: colors.success, shadowColor: colors.success },
                 ]}
                 onPress={() => navigation.goBack()}
                 activeOpacity={0.9}
@@ -1046,7 +1021,6 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, fontSize: 14, fontWeight: "500" },
 
-  // ===== HEADER =====
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1070,7 +1044,6 @@ const styles = StyleSheet.create({
   },
   placeholder: { width: 40 },
 
-  // ===== CARD =====
   card: {
     borderRadius: 20,
     borderWidth: 1,
@@ -1083,7 +1056,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // ===== ICON + BADGE =====
   iconWrap: { alignItems: "center", marginBottom: 14 },
   iconCircle: {
     width: 68,
@@ -1106,7 +1078,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
 
-  // ===== TEXT =====
   statusTitle: {
     fontSize: 20,
     fontWeight: "800",
@@ -1122,7 +1093,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
 
-  // ===== SERVICE BOX (provider pending) =====
   serviceBox: {
     width: "100%",
     borderRadius: 14,
@@ -1150,7 +1120,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.6,
   },
 
-  // ===== BUTTONS =====
   primaryBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1186,7 +1155,25 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== REQUEST ACTIONS (provider pending) =====
+  // ✅ NEW: chat button
+  chatBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 52,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    width: "100%",
+    borderWidth: 1.5,
+    gap: 8,
+    marginBottom: 12,
+  },
+  chatBtnText: {
+    fontWeight: "700",
+    fontSize: 15,
+    letterSpacing: 0.1,
+  },
+
   requestActions: {
     flexDirection: "row",
     gap: 10,
@@ -1217,7 +1204,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== POLLING HINT =====
   pollingHint: {
     flexDirection: "row",
     alignItems: "center",
@@ -1229,7 +1215,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // ===== INVOICE =====
   invoiceHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1281,21 +1266,5 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.5,
-  },
-
-  // ===== REVIEW CTA ICON ALIGN =====
-  reviewButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 54,
-    borderRadius: 14,
-    width: "100%",
-    gap: 8,
-  },
-  reviewButtonText: {
-    fontWeight: "700",
-    fontSize: 15.5,
-    letterSpacing: 0.1,
   },
 });
