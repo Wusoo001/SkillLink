@@ -33,7 +33,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
 
-// ===== VIDEO ITEM COMPONENT (replaces expo-av Video) =====
+// ===== VIDEO ITEM COMPONENT =====
 const VideoItem = ({ uri, style }) => {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = false;
@@ -248,7 +248,7 @@ export default function HomeScreen() {
       });
       return;
     }
-    
+
     if (notification.data?.bookingId) {
       setNotificationModalVisible(false);
       navigation.navigate("BookingScreen", {
@@ -682,27 +682,25 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* ===== BOOK CTA ===== */}
+          {/* ===== VIEW PROFILE CTA (outlined, secondary) ===== */}
           <TouchableOpacity
-            style={[
-              styles.bookButton,
-              { backgroundColor: colors.primary, shadowColor: colors.primary },
-            ]}
-            onPress={() =>
-              navigation.navigate("BookingScreen", {
-                providerId: item.user?._id,
-                providerName: item.user?.name || "Provider",
-                serviceTitle: item.description,
-                price: item.price,
-                description: item.description,
-                postId: item._id,
-              })
-            }
-            activeOpacity={0.9}
+            style={[styles.viewProfileButton, { borderColor: colors.primary }]}
+            onPress={() => goToUserProfile(item.user?._id)}
+            activeOpacity={0.85}
           >
-            <Text style={styles.bookButtonText}>Book This Service</Text>
-            <View style={styles.bookPricePill}>
-              <Text style={styles.bookPriceText}>
+            <View style={styles.viewProfileLeft}>
+              <Ionicons name="person-outline" size={16} color={colors.primary} />
+              <Text style={[styles.viewProfileText, { color: colors.primary }]}>
+                View Profile
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.viewProfilePricePill,
+                { backgroundColor: colors.primaryLight },
+              ]}
+            >
+              <Text style={[styles.viewProfilePriceText, { color: colors.primary }]}>
                 ₦{item.price?.toLocaleString?.() ?? item.price}
               </Text>
             </View>
@@ -1096,7 +1094,7 @@ export default function HomeScreen() {
 }
 
 // ========================================
-// STYLES (unchanged)
+// STYLES
 // ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
@@ -1287,35 +1285,37 @@ const styles = StyleSheet.create({
   },
   actionRight: { marginLeft: "auto" },
   actionButtonText: { fontWeight: "600", fontSize: 13.5 },
-  bookButton: {
+
+  // ✅ NEW: View Profile CTA (outlined)
+  viewProfileButton: {
     height: 52,
     paddingHorizontal: 18,
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    elevation: 3,
+    borderWidth: 1.5,
   },
-  bookButtonText: {
-    color: "#FFFFFF",
+  viewProfileLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  viewProfileText: {
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 14.5,
     letterSpacing: 0.1,
   },
-  bookPricePill: {
-    paddingVertical: 6,
+  viewProfilePricePill: {
+    paddingVertical: 5,
     paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    borderRadius: 14,
   },
-  bookPriceText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 13.5,
+  viewProfilePriceText: {
+    fontWeight: "800",
+    fontSize: 13,
   },
+
   fabWrap: {
     position: "absolute",
     bottom: 24,

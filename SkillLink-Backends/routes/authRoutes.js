@@ -117,6 +117,47 @@ router.post("/login", async (req, res) => {
         message: "Invalid email or password.",
       });
     }
+     
+    // Check for pending deletion
+    if (user.scheduledDeletionAt) {
+      const now = new Date();
+
+      // If the 7 days have passed, delete the account permanently
+    if (user.scheduledDeletionAt <= now) {
+      // Import helper
+      const Post = require("../models/Post");
+      const Wallet = require("../models/Wallet");
+      const Booking = require("../models/Booking");
+      const Notification = require("../models/Notification");
+      const Review = require("../models/Review");
+      const Report = require("../models/Report");
+
+      const userId = user._id;
+
+      const posts = await Post.find({ user: userId });
+      for (const post of posts) await post.deleteOne();
+      await Wallet.deleteOne({ provider: userId });
+      await Notification.deleteMany({ user: userId });
+      await Review.deleteMany({ client: userId });
+      await Report.deleteMany({ reporter: userId });
+      await Booking.updateMany(
+        { $or: [{ client: userId }, { provider: userId }] },
+        { $set: { deletedAccount: true, clientAnonymized: true } }
+      );
+      await User.findByIdAndDelete(userId);
+
+      console.log(`🗑️  Auto-deleted account after grace period: ${userId}`);
+
+      return res.json({
+        success: false,
+        message: "This account has been permanently deleted.",
+        code: "ACCOUNT_DELETED",
+      });
+    }
+
+    // Deletion pending — let them log in but flag it
+    // (continue with normal login, but return pendingDeletion flag)
+    }
 
     // 2. Check if email is verified
     if (!user.isVerified) {
@@ -149,9 +190,18 @@ router.post("/login", async (req, res) => {
       jobsCompleted: user.jobsCompleted || 0,
       skills: user.skills || [],
       location: user.location || "",
+      phoneVerified: user.phoneVerified || false,
+      scheduledDeletionAt: user.scheduledDeletionAt || null,
     };
 
-    res.json({ success: true, token, user: userResponse });
+    res.json({ 
+      success: true,
+      token, 
+      user: userResponse,  
+      pendingDeletion: user.scheduledDeletionAt
+      ? { scheduledAt: user.scheduledDeletionAt }
+      : null, 
+      });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });

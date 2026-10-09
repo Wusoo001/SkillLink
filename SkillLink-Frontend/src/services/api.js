@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { triggerLogout } from "./logout";
 
-const API_BASE = "http://192.168.1.212:5000/api";
+const API_BASE = "http://192.168.1.240:5000/api";
 
 // ================================
 // AXIOS INSTANCE
@@ -464,17 +464,40 @@ export const resendVerificationEmail = async (email) => {
 /**
  * Delete the current user's account permanently
  */
-export const deleteAccount = async () => {
+// ================================
+// ACCOUNT DELETION (7-day grace period)
+// ================================
+
+export const requestAccountDeletion = async (password) => {
   try {
     const token = await AsyncStorage.getItem("userToken");
     if (!token) throw new Error("No token found");
 
-    const response = await api.delete("/users/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await api.post(
+      "/users/request-delete",
+      { password },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
     return response.data;
   } catch (error) {
-    console.log("Delete account error:", error);
+    console.log("Request delete error:", error);
+    throw error;
+  }
+};
+
+export const cancelAccountDeletion = async () => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+
+    const response = await api.post(
+      "/users/cancel-delete",
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    console.log("Cancel delete error:", error);
     throw error;
   }
 };
@@ -518,14 +541,17 @@ export const getMessages = async (bookingId) => {
   }
 };
 
-export const sendMessage = async (bookingId, text) => {
+export const sendMessage = async (bookingId, text, location = null) => {
   try {
     const token = await AsyncStorage.getItem("userToken");
     if (!token) throw new Error("No token found");
 
+    const body = { text: text || "" };
+    if (location) body.location = location;
+
     const response = await api.post(
       `/chat/${bookingId}/messages`,
-      { text },
+      body,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     return response.data;
