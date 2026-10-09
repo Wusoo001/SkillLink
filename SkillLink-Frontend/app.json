@@ -41,6 +41,12 @@
           }
         }
       ],
+      [
+    "expo-location",
+    {
+      "locationAlwaysAndWhenInUsePermission": "Street uses your location to help you share where the work should be done and to let providers navigate to you."
+    }
+    ],
       "expo-video",
       "expo-font",
       "expo-image",

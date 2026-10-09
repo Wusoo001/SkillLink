@@ -74,6 +74,15 @@ const userSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: Date.now },
     },
 
+    deleteRequestedAt: {
+      type: Date,
+      default: null,
+    },
+    scheduledDeletionAt: {
+      type: Date,
+      default: null,
+    },
+
     savedPosts: [
       {
         type: mongoose.Schema.Types.ObjectId,

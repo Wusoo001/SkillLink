@@ -18,6 +18,15 @@ const messageSchema = new mongoose.Schema(
       trim: true,
       maxlength: 2000,
     },
+    location: {
+      lat: { type: Number },
+      lng: { type: Number },
+      label: { type: String, trim: true, maxlength: 200 },
+      type: {
+        type: String,
+        enum: ["work_location", "in_transit", "arrived"],
+      },
+      },
     // Set if the message was blocked by the contact filter
     blocked: {
       type: Boolean,

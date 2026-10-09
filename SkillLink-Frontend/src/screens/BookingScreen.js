@@ -35,6 +35,8 @@ export default function BookingScreen({ navigation, route }) {
     mode,
     role,
     postId,
+    prefilledMessage, // ✅ NEW
+    prefilledDate,    // ✅ NEW
   } = route.params || {};
 
   const [bookingId, setBookingId] = useState(existingBookingId || null);
@@ -42,7 +44,7 @@ export default function BookingScreen({ navigation, route }) {
   const [status, setStatus] = useState("loading");
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(prefilledMessage || ""); // ✅ NEW
   const [invoice, setInvoice] = useState({ serviceFee: 0, platformFee: 0, total: 0 });
   const [cancelLoading, setCancelLoading] = useState(false);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
@@ -108,12 +110,23 @@ export default function BookingScreen({ navigation, route }) {
   const createBookingRequest = async () => {
     setLoading(true);
     try {
+      // ✅ NEW: Map prefilledDate option to actual scheduledDate
+      let scheduledDate = new Date();
+      if (prefilledDate === "tomorrow") {
+        scheduledDate = new Date();
+        scheduledDate.setDate(scheduledDate.getDate() + 1);
+      } else if (prefilledDate === "flexible") {
+        scheduledDate = new Date();
+        scheduledDate.setDate(scheduledDate.getDate() + 3);
+      }
+      // "today" or undefined → keep `new Date()` (now)
+
       const res = await api.post("/bookings", {
         client: user?._id,
         provider: providerId,
         post: postId,
         serviceTitle,
-        scheduledDate: new Date(),
+        scheduledDate,
         price: Number(price),
         message: message || "Service request",
         status: "pending_acceptance",
@@ -945,7 +958,6 @@ export default function BookingScreen({ navigation, route }) {
                 review.
               </Text>
 
-              {/* Open Chat */}
               <TouchableOpacity
                 style={[
                   styles.chatBtn,
@@ -1012,7 +1024,7 @@ export default function BookingScreen({ navigation, route }) {
 }
 
 // ========================================
-// STYLES
+// STYLES (unchanged)
 // ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
@@ -1155,7 +1167,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ✅ NEW: chat button
   chatBtn: {
     flexDirection: "row",
     alignItems: "center",

@@ -22,10 +22,11 @@ import { AuthContext } from "../../context/AuthContext";
 import { getPosts, api, deletePost, savePost, likePost, unlikePost } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
-import ReportModal from "./ReportModal"; // ✅ NEW
+import ReportModal from "./ReportModal";
+import BookingSheet from "../components/BookingSheet"; // ✅ NEW
 
 // ==============================
-// VideoItem — replaces expo-av Video (hook must live per-item)
+// VideoItem
 // ==============================
 const VideoItem = ({ uri, style }) => {
   const player = useVideoPlayer(uri, (p) => {
@@ -44,7 +45,7 @@ const VideoItem = ({ uri, style }) => {
 };
 
 // ==============================
-// PostItem Component (UI polished, logic identical)
+// PostItem Component
 // ==============================
 const PostItem = ({
   item,
@@ -58,6 +59,7 @@ const PostItem = ({
   onLikePress,
   isSaved,
   onSavePress,
+  onBook, // ✅ NEW
 }) => {
   const navigation = useNavigation();
   const bookScale = useRef(new Animated.Value(1)).current;
@@ -220,16 +222,7 @@ const PostItem = ({
             styles.bookButton,
             { backgroundColor: colors.primary, shadowColor: colors.primary },
           ]}
-          onPress={() =>
-            navigation.navigate("BookingScreen", {
-              providerId: userId,
-              providerName: item.user?.name || "Provider",
-              serviceTitle: item.description,
-              price: item.price,
-              description: item.description,
-              postId: item._id,
-            })
-          }
+          onPress={() => onBook && onBook(item)}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           activeOpacity={0.9}
@@ -270,6 +263,10 @@ export default function UserProfileScreen() {
 
   // ✅ NEW: report modal state
   const [reportModalVisible, setReportModalVisible] = useState(false);
+
+  // ✅ NEW: booking sheet state
+  const [bookingSheetVisible, setBookingSheetVisible] = useState(false);
+  const [selectedPost, setSelectedPost] = useState(null);
 
   const isOwnProfile = user?._id === resolvedUserId;
   const userActive = isUserActive(userInfo?.lastActive);
@@ -312,6 +309,39 @@ export default function UserProfileScreen() {
       if (resolvedUserId) loadUserData(resolvedUserId);
     }, [resolvedUserId])
   );
+
+  // ✅ NEW: Booking sheet handlers
+  const openBookingSheet = (post) => {
+    setSelectedPost(post);
+    setBookingSheetVisible(true);
+  };
+
+  const closeBookingSheet = () => {
+    setBookingSheetVisible(false);
+    setSelectedPost(null);
+  };
+
+  const handleBookingConfirm = async ({ message, scheduledDate }) => {
+    if (!selectedPost) return;
+
+    const provider = selectedPost.user;
+    const post = selectedPost;
+
+    // Close sheet first
+    closeBookingSheet();
+
+    // Navigate to BookingScreen with pre-filled data
+    navigation.navigate("BookingScreen", {
+      providerId: provider?._id || resolvedUserId,
+      providerName: provider?.name || "Provider",
+      serviceTitle: post.description || post.skill || "Service",
+      price: post.price,
+      description: post.description,
+      postId: post._id,
+      prefilledMessage: message,
+      prefilledDate: scheduledDate,
+    });
+  };
 
   // ===== EDIT & DELETE =====
   const handleEditPost = (post) => {
@@ -368,26 +398,26 @@ export default function UserProfileScreen() {
 
   // ===== LOGOUT =====
   const handleLogout = () => {
-  // Web doesn't support Alert.alert — use window.confirm
-  if (Platform.OS === "web") {
-    const confirmed = window.confirm("Are you sure you want to log out?");
-    if (confirmed) logout();
-    return;
-  }
+    // Web doesn't support Alert.alert — use window.confirm
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Are you sure you want to log out?");
+      if (confirmed) logout();
+      return;
+    }
 
-  Alert.alert(
-    "Log Out",
-    "Are you sure you want to log out?",
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: () => logout(),
-      },
-    ]
-  );
-};
+    Alert.alert(
+      "Log Out",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: () => logout(),
+        },
+      ]
+    );
+  };
 
   if (loading || authLoading || !resolvedUserId) {
     return (
@@ -418,7 +448,6 @@ export default function UserProfileScreen() {
         {/* Right side: Settings + Logout (own) OR Report (other) */}
         {isOwnProfile ? (
           <View style={{ flexDirection: "row", gap: 8 }}>
-            {/* Settings */}
             <TouchableOpacity
               style={[
                 styles.backButton,
@@ -430,7 +459,6 @@ export default function UserProfileScreen() {
               <Ionicons name="settings-outline" size={18} color={colors.textPrimary} />
             </TouchableOpacity>
 
-            {/* Logout */}
             <TouchableOpacity
               style={[
                 styles.backButton,
@@ -603,6 +631,7 @@ export default function UserProfileScreen() {
               onLikePress={toggleLike}
               isSaved={savedPosts.includes(item._id)}
               onSavePress={toggleSave}
+              onBook={openBookingSheet} // ✅ NEW
             />
           )}
           showsVerticalScrollIndicator={false}
@@ -651,6 +680,16 @@ export default function UserProfileScreen() {
         onClose={() => setReportModalVisible(false)}
         type="user"
         targetId={resolvedUserId}
+      />
+
+      {/* ✅ Booking Sheet */}
+      <BookingSheet
+        visible={bookingSheetVisible}
+        onClose={closeBookingSheet}
+        provider={selectedPost?.user}
+        service={selectedPost?.description || selectedPost?.skill}
+        price={selectedPost?.price}
+        onConfirm={handleBookingConfirm}
       />
     </View>
   );
