@@ -64,8 +64,18 @@ export const AuthProvider = ({ children }) => {
   }
 };
 
+  const updateUser = async (updatedUser) => {
+  try {
+    const merged = { ...user, ...updatedUser };
+    await AsyncStorage.setItem("userData", JSON.stringify(merged));
+    setUser(merged);
+  } catch (error) {
+    console.log("Update user error:", error);
+  }
+};
+
   return (
-    <AuthContext.Provider value={{ login, logout, userToken, user, loading }}>
+    <AuthContext.Provider value={{ login, logout, updateUser, userToken, user, loading }}>
       {children}
     </AuthContext.Provider>
   );

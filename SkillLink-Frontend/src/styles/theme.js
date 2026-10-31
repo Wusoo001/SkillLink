@@ -30,14 +30,21 @@ export const lightTheme = {
   shadowOpacity: 0.06,
 
   // Status badges
-  status: {
-    pending: '#F59E0B',
-    confirmed: '#7C4DFF',
-    completed: '#10B981',
-    cancelled: '#EF4444',
-    awaiting_payment: '#F59E0B',
-    paid_in_escrow: '#10B981',
-  },
+
+// NEW
+status: {
+  pending_acceptance: '#F59E0B',
+  accepted: '#7C4DFF',
+  rejected: '#EF4444',
+  awaiting_payment: '#F59E0B',
+  paid_in_escrow: '#10B981',
+  in_progress: '#7C4DFF',
+  completed: '#10B981',
+  ready_for_release: '#7C4DFF',
+  released: '#10B981',
+  cancelled: '#EF4444',
+  disputed: '#EF4444',
+},
 };
 
 export const darkTheme = {
@@ -71,11 +78,16 @@ export const darkTheme = {
 
   // Status badges
   status: {
-    pending: '#F59E0B',
-    confirmed: '#7C4DFF',
-    completed: '#10B981',
-    cancelled: '#EF4444',
+    pending_acceptance: '#F59E0B',
+    accepted: '#7C4DFF',
+    rejected: '#EF4444',
     awaiting_payment: '#F59E0B',
     paid_in_escrow: '#10B981',
+    in_progress: '#7C4DFF',
+    completed: '#10B981',
+    ready_for_release: '#7C4DFF',
+    released: '#10B981',
+    cancelled: '#EF4444',
+    disputed: '#EF4444',
   },
 };

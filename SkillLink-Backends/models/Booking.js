@@ -85,6 +85,10 @@ const bookingSchema = new mongoose.Schema(
       amountPaid: { type: Number },
       paidAt: { type: Date },
       releasedAt: { type: Date },
+        // Pandascrow escrow fields
+      pandascrowEscrowId: { type: String, default: null },
+      pandascrowPaymentUrl: { type: String, default: null },
+      pandascrowReference: { type: String, default: null },
     },
   },
   { timestamps: true }

@@ -2,6 +2,7 @@ const express = require("express");
 const Post = require("../models/Post");
 const User = require("../models/User");
 const protect = require("../middleware/authMiddleware");
+const optionalAuth = require("../middleware/optionalAuth");
 const Review = require("../models/Review");
 
 const router = express.Router();
@@ -27,7 +28,7 @@ router.post("/", async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(401).json({ message: "User not found" });
 
-    const { skill, description, tags, location, media, price, mediaType } = req.body;
+    const { skill, description, tags, location, locationCity, locationState, locationCountry, media, price, mediaType } = req.body;
     const post = new Post({
       user: user._id,
       name: user.name,
@@ -36,6 +37,9 @@ router.post("/", async (req, res) => {
       price: Number(price),
       tags: tags || [],
       location: location || "",
+      locationCity: locationCity || "",
+      locationState: locationState || "",
+      locationCountry: locationCountry || "Nigeria",
       media: media || null,
       mediaType: mediaType || "image"
     });
@@ -52,17 +56,20 @@ router.post("/", async (req, res) => {
 });
 
 // GET / – newest first, per‑post reviews
-router.get("/", async (req, res) => {
+// GET / – ranked feed (weighted score), paginated
+router.get("/", optionalAuth, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const totalPosts = await Post.countDocuments();
 
+    // Ranking considers the most recent N posts, then paginates by score.
+    // Older posts beyond this pool fall off the ranked feed by design.
+    const CANDIDATE_POOL = 500;
     const posts = await Post.find()
-      .populate("user", "name profileImage email lastActive rating jobsCompleted")
+      .populate("user", "name profileImage email lastActive rating jobsCompleted isVerified")
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+      .limit(CANDIDATE_POOL);
 
     const postIds = posts.map(p => p._id);
     let reviewsMap = {};
@@ -83,18 +90,16 @@ router.get("/", async (req, res) => {
         {
           $project: {
             totalCount: 1,
-            reviews: { $slice: ["$reviews", 3] }, // only keep the 3 most recent
+            reviews: { $slice: ["$reviews", 3] },
           },
         },
       ]);
 
-      // Populate client details for all reviews
       const allReviews = reviewData.flatMap(g => g.reviews);
       if (allReviews.length > 0) {
         await Review.populate(allReviews, { path: "client", select: "name profileImage" });
       }
 
-      // Build the maps
       reviewData.forEach(group => {
         const postId = group._id.toString();
         countMap[postId] = group.totalCount;
@@ -116,10 +121,51 @@ router.get("/", async (req, res) => {
       reviewCount: countMap[post._id.toString()] || 0,
     }));
 
+    // ============ FEED RANKING (new) ============
+    const now = Date.now();
+    const viewerCity = (req.user?.locationDetails?.city || "").toLowerCase().trim();
+
+    const scored = postsWithReviews.map(post => {
+      // 1. Provider reputation — 35%
+      const ratingNorm = Math.min(post.user?.rating || 0, 5) / 5;
+      const jobsNorm = Math.min(post.user?.jobsCompleted || 0, 100) / 100;
+      const reputation = (ratingNorm * 0.6 + jobsNorm * 0.4) * 35;
+
+      // 2. Freshness — 25% (linear decay over 48h)
+      const hoursSince = (now - new Date(post.createdAt).getTime()) / 3600000;
+      const freshness = Math.max(0, 1 - hoursSince / 48) * 25;
+
+      // 3. Location match — 15%
+      // NOTE: depends on Post.locationCity being saved on create (pending B5).
+      const postCity = (post.locationCity || "").toLowerCase().trim();
+      const locationScore = (viewerCity && postCity && viewerCity === postCity) ? 15 : 0;
+
+      // 4. Engagement — 15% (reviews weighted 3x likes, capped at 50 raw points)
+      const engagementRaw = (post.likesCount || 0) + (post.reviewCount || 0) * 3;
+      const engagement = (Math.min(engagementRaw, 50) / 50) * 15;
+
+      // 5. Verification — 10%
+      const verification = post.user?.isVerified ? 10 : 0;
+
+      const score = reputation + freshness + locationScore + engagement + verification;
+
+      return { ...post, rankingScore: Math.round(score * 10) / 10 };
+    });
+
+    // Sort by score desc, tie-break by recency
+    scored.sort((a, b) => {
+      if (b.rankingScore !== a.rankingScore) return b.rankingScore - a.rankingScore;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    // Paginate the ranked list
+    const start = (page - 1) * limit;
+    const pagedPosts = scored.slice(start, start + limit);
+
     res.json({
       success: true,
-      hasMore: page * limit < totalPosts,
-      posts: postsWithReviews,
+      hasMore: start + limit < scored.length,
+      posts: pagedPosts,
     });
   } catch (error) {
     console.error("❌ GET /posts error:", error);
@@ -272,7 +318,15 @@ GET POSTS BY USER
 router.get("/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const posts = await Post.find({ user: userId }).sort({ createdAt: -1 });
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 500, 500);
+
+    const posts = await Post.find({ user: userId })
+      .populate("user", "name profileImage") 
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
     res.json(posts);
   } catch (err) {
     console.error(err);
@@ -329,16 +383,17 @@ router.put("/:id", protect, async (req, res) => {
     }
 
     // Allowed fields to update
-    const { skill, description, price, tags, location, media, mediaType } = req.body;
-
+    const { skill, description, price, tags, location, locationCity, locationState, locationCountry, media, mediaType } = req.body;
     if (skill !== undefined) post.skill = skill;
     if (description !== undefined) post.description = description;
     if (price !== undefined) post.price = Number(price);
     if (tags !== undefined) post.tags = tags || [];
     if (location !== undefined) post.location = location || "";
+    if (locationCity !== undefined) post.locationCity = locationCity || "";
+    if (locationState !== undefined) post.locationState = locationState || "";
+    if (locationCountry !== undefined) post.locationCountry = locationCountry || "Nigeria";
     if (media !== undefined) post.media = media || null;
     if (mediaType !== undefined) post.mediaType = mediaType || "image";
-
     await post.save();
 
     res.json({ success: true, post });

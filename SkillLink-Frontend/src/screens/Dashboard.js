@@ -20,8 +20,6 @@ import { useTheme } from "../context/ThemeContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getMyBookings,
-  getWalletBalance,
-  requestWithdrawal,
   markBookingCompleted,
   confirmBookingCompletion,
   acceptBooking,
@@ -40,11 +38,12 @@ const STATUS_LABELS = {
   rejected: "Rejected",
   awaiting_payment: "Awaiting Payment",
   paid_in_escrow: "Escrow Funded",
+  in_progress: "In Progress",
   completed: "Completed",
+  ready_for_release: "Ready for Release",
+  released: "Released",
   cancelled: "Cancelled",
   disputed: "Disputed",
-  released: "Released",
-  in_progress: "In Progress",
 };
 
 // Chat is available in these statuses
@@ -79,7 +78,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_cancelled": return colors.warning;
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
-      case "chat_message": return colors.primary; 
+      case "chat_message": return colors.primary;
       default: return colors.textTertiary;
     }
   };
@@ -129,7 +128,7 @@ const BookingCard = ({
   onReject,
   onCancel,
   onPayPress,
-  onChatPress, // ✅ NEW
+  onChatPress,
 }) => {
   const isClient = role === "client";
   const otherParty = isClient ? booking.provider : booking.client;
@@ -153,8 +152,51 @@ const BookingCard = ({
   const handleConfirmCompletion = async () => {
     setActionLoading(true);
     try {
-      await confirmBookingCompletion(booking._id);
-      Alert.alert("Success", "Job confirmed! Funds have been released to the provider.");
+      // Step 1 — request OTP
+      const res = await confirmBookingCompletion(booking._id);
+
+      if (res?.requires_otp) {
+        // Step 2 — prompt for OTP
+        const promptForOtp = async (otpValue) => {
+          if (!otpValue) return;
+          try {
+            const final = await confirmBookingCompletion(booking._id, otpValue);
+            if (final?.success) {
+              Alert.alert("Success", "Funds released to provider.");
+              onStatusChange();
+            } else {
+              Alert.alert("Error", final?.message || "Release failed");
+            }
+          } catch (err) {
+            Alert.alert("Error", err.response?.data?.message || "Release failed");
+          }
+        };
+
+        if (Platform.OS === "web") {
+          const otp = window.prompt("Enter OTP sent to your email:");
+          await promptForOtp(otp);
+        } else if (Alert.prompt) {
+          Alert.prompt(
+            "Enter OTP",
+            "Pandascrow sent a code to your email.",
+            async (otp) => {
+              await promptForOtp(otp);
+            },
+            "plain-text",
+            "",
+            "numeric"
+          );
+        } else {
+          Alert.alert(
+            "Check your email",
+            "Enter the OTP via the confirm button — OTP input modal not implemented on this platform yet."
+          );
+        }
+        return;
+      }
+
+      // Direct success path
+      Alert.alert("Success", "Job confirmed.");
       onStatusChange();
     } catch (error) {
       Alert.alert("Error", error.response?.data?.message || "Action failed");
@@ -377,7 +419,6 @@ const BookingCard = ({
         </TouchableOpacity>
       )}
 
-      {/* ✅ NEW: Chat button — only on active bookings */}
       {canChat && (
         <TouchableOpacity
           style={[
@@ -407,10 +448,6 @@ export default function Dashboard({ navigation }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [notifications, setNotifications] = useState([]);
@@ -495,7 +532,7 @@ export default function Dashboard({ navigation }) {
     }
   };
 
-  // ===== Bookings + Wallet =====
+  // ===== Bookings =====
   const fetchBookings = async () => {
     try {
       const response = await getMyBookings();
@@ -513,19 +550,9 @@ export default function Dashboard({ navigation }) {
     }
   };
 
-  const fetchWalletBalance = async () => {
-    try {
-      const res = await getWalletBalance();
-      setWalletBalance(res.balance || 0);
-    } catch (error) {
-      console.log("Wallet balance error:", error);
-    }
-  };
-
   useFocusEffect(
     useCallback(() => {
       fetchBookings();
-      fetchWalletBalance();
       fetchUnreadCount();
       if (notificationModalVisible) fetchNotifications(1, false);
     }, [notificationModalVisible])
@@ -534,7 +561,6 @@ export default function Dashboard({ navigation }) {
   const onRefresh = () => {
     setRefreshing(true);
     fetchBookings();
-    fetchWalletBalance();
     fetchUnreadCount();
   };
 
@@ -592,7 +618,6 @@ export default function Dashboard({ navigation }) {
     });
   };
 
-  // ✅ NEW: Open chat from a booking card
   const handleChatPress = (booking, otherRole) => {
     const otherParty = otherRole === "provider" ? booking.provider : booking.client;
     navigation.navigate("Chat", {
@@ -644,46 +669,20 @@ export default function Dashboard({ navigation }) {
     return booking.provider?._id === user?._id;
   });
 
-  const openWithdrawModal = () => {
-    setWithdrawAmount("");
-    setWithdrawModalVisible(true);
-  };
+  // ✅ Earnings — computed from provider-side released bookings
+  const totalEarnings = bookings
+    .filter(
+      (b) => b.provider?._id === user?._id && b.status === "released"
+    )
+    .reduce((sum, b) => sum + (Number(b.price) || 0), 0);
 
-  const submitWithdraw = async () => {
-    const amountNum = parseFloat(withdrawAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount greater than 0");
-      return;
-    }
-    if (amountNum > walletBalance) {
-      Alert.alert("Insufficient Balance", "You cannot withdraw more than your balance");
-      return;
-    }
-    setWithdrawLoading(true);
-    try {
-      const res = await requestWithdrawal(amountNum);
-      Alert.alert("Success", res.message || "Withdrawal request submitted");
-      setWithdrawModalVisible(false);
-      setWithdrawAmount("");
-      fetchWalletBalance();
-    } catch (error) {
-      const msg = error.response?.data?.message || "";
-      if (msg.toLowerCase().includes("bank account") || msg.toLowerCase().includes("bank details")) {
-        Alert.alert(
-          "Bank Account Required",
-          "Please set up your bank account before withdrawing.",
-          [
-            { text: "Set Up", onPress: () => navigation.navigate("BankSetup") },
-            { text: "Cancel" },
-          ]
-        );
-      } else {
-        Alert.alert("Error", msg || "Withdrawal failed");
-      }
-    } finally {
-      setWithdrawLoading(false);
-    }
-  };
+  const pendingEarnings = bookings
+    .filter(
+      (b) =>
+        b.provider?._id === user?._id &&
+        ["paid_in_escrow", "completed"].includes(b.status)
+    )
+    .reduce((sum, b) => sum + (Number(b.price) || 0), 0);
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -788,6 +787,7 @@ export default function Dashboard({ navigation }) {
           </View>
         </View>
 
+        {/* ===== EARNINGS CARD (replaces wallet) ===== */}
         <View
           style={[
             styles.walletCard,
@@ -801,34 +801,29 @@ export default function Dashboard({ navigation }) {
           <View style={styles.walletTop}>
             <View style={styles.walletLeft}>
               <Text style={[styles.walletTitle, { color: colors.textTertiary }]}>
-                Wallet Balance
+                Total Earnings
               </Text>
               <Text
                 style={[styles.walletBalance, { color: colors.textPrimary }]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
-                ₦{walletBalance.toLocaleString()}
+                ₦{totalEarnings.toLocaleString()}
               </Text>
+              {pendingEarnings > 0 && (
+                <Text style={[styles.walletPending, { color: colors.textTertiary }]}>
+                  ₦{pendingEarnings.toLocaleString()} in escrow
+                </Text>
+              )}
             </View>
             <View style={[styles.walletIconWrap, { backgroundColor: colors.primaryLight }]}>
-              <Ionicons name="wallet-outline" size={22} color={colors.primary} />
+              <Ionicons name="trending-up" size={22} color={colors.primary} />
             </View>
           </View>
 
           <View style={[styles.walletDivider, { backgroundColor: colors.inputBorder }]} />
 
           <View style={styles.walletActions}>
-            <TouchableOpacity
-              style={[styles.walletButton, { backgroundColor: colors.primary }]}
-              onPress={openWithdrawModal}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="arrow-up-circle-outline" size={16} color={colors.textInverse} />
-              <Text style={[styles.walletButtonText, { color: colors.textInverse }]}>
-                Withdraw
-              </Text>
-            </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.walletButton,
@@ -840,7 +835,7 @@ export default function Dashboard({ navigation }) {
             >
               <Ionicons name="card-outline" size={16} color={colors.success} />
               <Text style={[styles.walletButtonText, { color: colors.success }]}>
-                Bank Account
+                Manage Bank Account
               </Text>
             </TouchableOpacity>
           </View>
@@ -916,10 +911,9 @@ export default function Dashboard({ navigation }) {
                 role={activeTab}
                 onPress={handleBookingPress}
                 onPayPress={handlePayNow}
-                onChatPress={handleChatPress} // ✅ NEW
+                onChatPress={handleChatPress}
                 onStatusChange={() => {
                   fetchBookings();
-                  fetchWalletBalance();
                 }}
                 colors={colors}
                 onAccept={handleAccept}
@@ -941,55 +935,6 @@ export default function Dashboard({ navigation }) {
           />
         )}
       </View>
-
-      {/* ===== WITHDRAW MODAL ===== */}
-      <Modal
-        visible={withdrawModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setWithdrawModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Withdraw Funds</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
-              Available balance: ₦{walletBalance.toLocaleString()}
-            </Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  backgroundColor: colors.inputBackground,
-                  borderColor: colors.inputBorder,
-                  color: colors.textPrimary,
-                },
-              ]}
-              placeholder="Enter amount"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="numeric"
-              value={withdrawAmount}
-              onChangeText={setWithdrawAmount}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
-                onPress={() => setWithdrawModalVisible(false)}
-              >
-                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={submitWithdraw}
-                disabled={withdrawLoading}
-              >
-                <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
-                  {withdrawLoading ? "Processing..." : "Withdraw"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* ===== NOTIFICATION MODAL ===== */}
       <Modal
@@ -1195,6 +1140,12 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: -0.8,
   },
+  walletPending: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.1,
+    marginTop: 4,
+  },
   walletIconWrap: {
     width: 46,
     height: 46,
@@ -1359,7 +1310,6 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: { fontWeight: "700", fontSize: 13.5 },
 
-  // ✅ NEW: chat button style
   chatButton: {
     flexDirection: "row",
     alignItems: "center",

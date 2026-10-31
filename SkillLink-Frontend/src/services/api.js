@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { triggerLogout } from "./logout";
 
-const API_BASE = "http://192.168.1.240:5000/api";
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.233:5000/api";
 
 // ================================
 // AXIOS INSTANCE
@@ -43,6 +43,19 @@ api.interceptors.response.use(
         triggerLogout(); // 👈 triggers logout in App
       }
     }
+    if (error.response?.status === 403) {
+      const data = error.response?.data;
+      if (data?.code === "ACCOUNT_BANNED" || data?.code === "ACCOUNT_SUSPENDED") {
+        try {
+          await AsyncStorage.setItem("restrictionInfo", JSON.stringify(data));
+          await AsyncStorage.removeItem("userToken");
+          await AsyncStorage.removeItem("userData");
+          triggerLogout();
+        } catch (e) {
+          console.log("Restriction save error:", e);
+        }
+      }
+    }
     return Promise.reject(error);
   }
 );
@@ -70,16 +83,31 @@ export const loginUser = async (userData) => {
       token: res.data.token,
       user: res.data.user,
       message: res.data.message,
+      code: res.data.code,
+      restriction: res.data.restriction,
     };
   } catch (error) {
     return {
       success: false,
       token: null,
       message: error.response?.data?.message || "Login failed",
+      code: error.response?.data?.code,
+      restriction: error.response?.data?.restriction,
     };
   }
 };
 
+export const submitAppeal = async ({ email, password, reason }) => {
+  try {
+    const res = await api.post("/appeals", { email, password, reason });
+    return res.data;
+  } catch (error) {
+    return {
+      success: false,
+      message: error.response?.data?.message || "Failed to submit appeal",
+    };
+  }
+};
 // ================================
 // POSTS
 // ================================
@@ -255,12 +283,13 @@ export const markBookingCompleted = async (bookingId) => {
   }
 };
 
-export const confirmBookingCompletion = async (bookingId) => {
+export const confirmBookingCompletion = async (bookingId, otp = null) => {
   try {
-    const response = await api.put(`/bookings/${bookingId}/confirm`);
+    const body = otp ? { otp } : {};
+    const response = await api.put(`/bookings/${bookingId}/confirm`, body);
     return response.data;
   } catch (error) {
-    console.log('Confirm completion error:', error);
+    console.log("Confirm completion error:", error.response?.data || error.message);
     throw error;
   }
 };
@@ -558,6 +587,18 @@ export const sendMessage = async (bookingId, text, location = null) => {
   } catch (error) {
     console.log("Send message error:", error);
     throw error;
+  }
+};
+
+export const checkRestriction = async ({ email, password }) => {
+  try {
+    const res = await api.post("/auth/check-restriction", { email, password });
+    return res.data;
+  } catch (error) {
+    return {
+      success: false,
+      message: error.response?.data?.message || "Failed to check status",
+    };
   }
 };
 // ================================

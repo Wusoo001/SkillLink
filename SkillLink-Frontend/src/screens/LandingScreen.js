@@ -1,4 +1,4 @@
-import { useContext, useState, useRef } from "react";
+import { useContext, useState, useRef, useEffect } from "react";
 import {
   Alert,
   StyleSheet,
@@ -13,6 +13,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { AuthContext } from "../../context/AuthContext";
 import { loginUser } from "../services/api";
@@ -27,6 +28,22 @@ export default function Landing({ navigation }) {
   const insets = useSafeAreaInsets();
 
   const buttonScale = useRef(new Animated.Value(1)).current;
+  // Check for stored restriction info (user got banned while logged in)
+  useEffect(() => {
+    const checkRestriction = async () => {
+      try {
+        const stored = await AsyncStorage.getItem("restrictionInfo");
+        if (stored) {
+          await AsyncStorage.removeItem("restrictionInfo");
+          const restriction = JSON.parse(stored).restriction || JSON.parse(stored);
+          navigation.navigate("AccountRestricted", { restriction });
+        }
+      } catch (e) {
+        console.log("Restriction check error:", e);
+      }
+    };
+    checkRestriction();
+  }, [navigation]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -37,9 +54,24 @@ export default function Landing({ navigation }) {
     try {
       const response = await loginUser({ email, password });
 
+      if (response.token && response.user) {
+        await AsyncStorage.removeItem("restrictionInfo"); // safety net
+        login(response.token, response.user);
+        return;
+      }
       // Success: token + user returned
       if (response.token && response.user) {
         login(response.token, response.user);
+        return;
+      }
+      // Banned or suspended → show restriction screen
+      if (response.code === "ACCOUNT_BANNED" || response.code === "ACCOUNT_SUSPENDED") {
+        navigation.navigate("AccountRestricted", {
+          restriction: response.restriction || {
+            type: response.code === "ACCOUNT_BANNED" ? "ban" : "suspension",
+            reason: response.message,
+          },
+        });
         return;
       }
 

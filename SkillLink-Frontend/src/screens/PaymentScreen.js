@@ -108,7 +108,7 @@ export default function PaymentScreen({ route, navigation }) {
   const secondaryScale = useRef(new Animated.Value(1)).current;
 
   // =========================
-  // INIT PAYMENT (unchanged)
+  // INIT PAYMENT
   // =========================
   const initializePayment = async () => {
     try {
@@ -117,59 +117,66 @@ export default function PaymentScreen({ route, navigation }) {
       const res = await api.post("/bookings/initialize-payment", { bookingId });
       const data = res.data;
 
-      if (!data?.authorization_url) {
+      if (!data?.checkout_url) {
         Alert.alert("Error", "Unable to initialize payment");
         return;
       }
 
-      setPaymentUrl(data.authorization_url);
+      setPaymentUrl(data.checkout_url);
       setReference(data.reference);
       setStep("initialized");
 
-      await Linking.openURL(data.authorization_url);
+      await Linking.openURL(data.checkout_url);
     } catch (error) {
-      console.log("INIT ERROR:", error);
-      Alert.alert("Error", "Payment initialization failed");
+      const msg = error.response?.data?.message || error.message || "Unknown error";
+      console.log("❌ INIT ERROR:", msg);
+      console.log("❌ FULL RESPONSE:", JSON.stringify(error.response?.data, null, 2));
+      Alert.alert("Payment Error", msg);
     } finally {
       setLoading(false);
     }
   };
 
   // =========================
-  // VERIFY PAYMENT (unchanged)
+  // VERIFY PAYMENT
   // =========================
-  const verifyPayment = async () => {
-    try {
-      if (!reference) {
-        Alert.alert("Error", "Missing payment reference");
-        return;
-      }
-
-      setLoading(true);
-      setStep("pending_verification");
-
-      const res = await api.get(`/bookings/verify-payment/${reference}`);
-
-      if (res.data?.success) {
-        setStep("completed");
-        Alert.alert("Success", "Payment confirmed");
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "Home" }],
-        });
-      } else {
-        Alert.alert("Pending", "Payment not confirmed yet");
-        setStep("initialized");
-      }
-    } catch (error) {
-      console.log("VERIFY ERROR:", error);
-      Alert.alert("Error", "Verification failed");
-      setStep("initialized");
-    } finally {
-      setLoading(false);
+ const verifyPayment = async () => {
+  try {
+    if (!reference) {
+      Alert.alert("Error", "Missing payment reference");
+      return;
     }
-  };
+
+    setLoading(true);
+    setStep("pending_verification");
+
+    const res = await api.get(`/bookings/by-reference/${reference}`);
+    const status = res.data?.data?.status;
+
+    if (status === "paid_in_escrow" || status === "released") {
+      setStep("completed");
+      Alert.alert("Success", "Payment confirmed");
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "MainTabs" }],
+      });
+      return;
+    }
+
+    Alert.alert(
+      "Pending",
+      "Payment not confirmed yet. If you just paid, please wait a few seconds and try again."
+    );
+    setStep("initialized");
+  } catch (error) {
+    console.log("VERIFY ERROR:", error);
+    const msg = error.response?.data?.message || "Verification failed";
+    Alert.alert("Error", msg);
+    setStep("initialized");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const animatePressIn = (scale) => {
     Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start();
@@ -351,13 +358,13 @@ export default function PaymentScreen({ route, navigation }) {
               >
                 <Ionicons name="lock-closed-outline" size={18} color={colors.textInverse} />
                 <Text style={[styles.primaryText, { color: colors.textInverse }]}>
-                  Proceed to Paystack
+                  Proceed to Payment
                 </Text>
                 <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
               </TouchableOpacity>
 
               <Text style={[styles.helperText, { color: colors.textTertiary }]}>
-                You'll be redirected to a secure Paystack page to complete payment.
+                You'll be redirected to a secure payment page to complete payment.
               </Text>
             </Animated.View>
           )}
@@ -384,7 +391,7 @@ export default function PaymentScreen({ route, navigation }) {
               </TouchableOpacity>
 
               <Text style={[styles.helperText, { color: colors.textTertiary }]}>
-                Finished paying? Tap "Confirm Payment" to verify with Paystack.
+                Finished paying? Tap "Confirm Payment" to verify your payment.
               </Text>
             </Animated.View>
           )}

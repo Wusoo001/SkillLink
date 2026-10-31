@@ -17,7 +17,6 @@ import BookingScreen from "./src/screens/BookingScreen";
 import CreatePostScreen from "./src/screens/CreatePostScreen";
 import { PostProvider } from "./context/PostContext";
 import PaymentScreen from "./src/screens/PaymentScreen";
-import PaymentReturnHandler from "./src/screens/PaymentReturnHandler";
 import Dashboard from "./src/screens/Dashboard";
 import BankSetupScreen from "./src/screens/BankSetupScreen";
 import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
@@ -30,7 +29,25 @@ import SettingsScreen from "./src/screens/SettingsScreen";
 import PrivacyPolicyScreen from "./src/screens/PrivacyPolicyScreen";
 import TermsScreen from "./src/screens/TermsScreen";
 import ChatScreen from "./src/screens/ChatScreen";
+import AccountRestrictedScreen from "./src/screens/AccountRestrictedScreen";
+import * as Linking from "expo-linking";
+import { Platform } from "react-native";
+import PaymentReturnScreen from "./src/screens/PaymentReturnScreen";
 
+const linking = {
+  prefixes: [
+    Linking.createURL("/"),
+    Platform.OS === "web" && typeof window !== "undefined"
+      ? window.location.origin
+      : "streetapp://",
+  ],
+  config: {
+    screens: {
+      PaymentReturn: "payment-return",
+      MainTabs: "",
+    },
+  },
+}
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -109,6 +126,7 @@ function AuthStack() {
       <Stack.Screen name="Landing" component={Landing} />
       <Stack.Screen name="Register" component={Register} />
       <Stack.Screen name="VerificationPending" component={VerificationPendingScreen} />
+      <Stack.Screen name="AccountRestricted" component={AccountRestrictedScreen} />
     </Stack.Navigator>
   );
 }
@@ -123,7 +141,6 @@ function AppStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="BookingScreen" component={BookingScreen} />
       <Stack.Screen name="PaymentScreen" component={PaymentScreen} />
-      <Stack.Screen name="PaymentReturnHandler" component={PaymentReturnHandler} />
       <Stack.Screen name="PaymentDashboard" component={Dashboard} />
       <Stack.Screen name="BankSetup" component={BankSetupScreen} />
       <Stack.Screen name="ReviewsScreen" component={ReviewsScreen} />
@@ -131,6 +148,7 @@ function AppStack() {
       <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
       <Stack.Screen name="Terms" component={TermsScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
     </Stack.Navigator>
   );
 }
@@ -215,7 +233,7 @@ function RootNavigator() {
     <>
       <HeartbeatManager />
       <NavigationContainer
-        initialState={initialState}
+        linking={linking}
         onStateChange={(state) => {
           if (state) {
             AsyncStorage.setItem("NAVIGATION_STATE", JSON.stringify(state));

@@ -89,6 +89,46 @@ const userSchema = new mongoose.Schema(
         ref: "Post",
       },
     ],
+
+        // ADD THESE AFTER isVerified:
+    isBanned: {
+      type: Boolean,
+      default: false,
+    },
+    bannedAt: {
+      type: Date,
+      default: null,
+    },
+    banReason: {
+      type: String,
+      default: "",
+    },
+    bannedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    suspendedUntil: {
+      type: Date,
+      default: null,
+    },
+    suspendReason: {
+      type: String,
+      default: "",
+    },
+    suspendedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    warnings: [
+      {
+        reason: { type: String, required: true },
+        issuedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        issuedAt: { type: Date, default: Date.now },
+        reportId: { type: mongoose.Schema.Types.ObjectId, ref: "Report", default: null },
+      },
+    ],
   },
   { timestamps: true }
 );

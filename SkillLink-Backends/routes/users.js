@@ -38,7 +38,7 @@ setTimeout(cleanupExpiredDeletions, 10000);
 // ========================================
 router.get("/me", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password");
+    const user = await User.findById(req.user._id).select("-password -verificationToken -verificationTokenExpires");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -171,9 +171,9 @@ const permanentlyDeleteUser = async (userId) => {
 // ========================================
 // GET USER PROFILE
 // ========================================
-router.get("/:id", async (req, res) => {
+router.get("/:id", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("-password");
+    const user = await User.findById(req.params.id).select("-password -verificationToken -verificationTokenExpires -bankDetails -deleteRequestedAt -scheduledDeletionAt -email -phone");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -216,9 +216,12 @@ router.put("/:id", async (req, res) => {
         country: locationDetails.country || user.locationDetails?.country || "Nigeria",
       };
     }
-
     const updatedUser = await user.save();
-    res.json(updatedUser);
+    const userObj = updatedUser.toObject();
+    delete userObj.password;
+    delete userObj.verificationToken;
+    delete userObj.verificationTokenExpires;
+    res.json(userObj);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });

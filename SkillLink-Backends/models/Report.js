@@ -46,6 +46,22 @@ const reportSchema = new mongoose.Schema(
       enum: ["pending", "reviewed", "dismissed", "actioned"],
       default: "pending",
     },
+
+    adminAction: {
+      action: {
+        type: String,
+        enum: ["none", "warning", "suspension", "ban"],
+        default: "none",
+      },
+      reason: { type: String, default: "" },
+      durationDays: { type: Number, default: null },
+      actedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      actedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

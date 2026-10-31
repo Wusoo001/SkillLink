@@ -176,6 +176,40 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    const isBanned = user.isBanned === true;
+    const isSuspended = user.suspendedUntil && new Date(user.suspendedUntil) > new Date();
+
+    if (isBanned || isSuspended) {
+      const Appeal = require("../models/Appeal");
+      const appeal = await Appeal.findOne({ user: user._id }).sort({ submittedAt: -1 });
+
+      return res.json({
+        success: false,
+        code: isBanned ? "ACCOUNT_BANNED" : "ACCOUNT_SUSPENDED",
+        message: isBanned
+          ? user.banReason || "This account has been banned."
+          : `Account suspended until ${user.suspendedUntil.toISOString().split("T")[0]}.`,
+        restriction: {
+          type: isBanned ? "ban" : "suspension",
+          reason: isBanned ? user.banReason : user.suspendReason,
+          bannedAt: user.bannedAt || null,
+          suspendedUntil: user.suspendedUntil || null,
+          appeal: appeal
+            ? {
+                _id: appeal._id,
+                type: appeal.type,
+                status: appeal.status,
+                submittedAt: appeal.submittedAt,
+                dueBy: appeal.dueBy,
+                resolvedAt: appeal.resolvedAt,
+                adminNote: appeal.adminNote,
+              }
+            : null,
+        },
+      });
+    }
+
+
     // 4. All good – generate token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -207,7 +241,45 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+router.post("/check-restriction", async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const user = await User.findOne({ email: (email || "").toLowerCase().trim() });
+    if (!user) {
+      return res.json({ success: false, message: "Invalid credentials." });
+    }
+    const isMatch = await bcrypt.compare(password || "", user.password);
+    if (!isMatch) {
+      return res.json({ success: false, message: "Invalid credentials." });
+    }
 
+    const isBanned = user.isBanned === true;
+    const isSuspended = user.suspendedUntil && new Date(user.suspendedUntil) > new Date();
+
+    if (!isBanned && !isSuspended) {
+      return res.json({ success: true, restricted: false, token: jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" }), user: { _id: user._id, name: user.name, email: user.email, profileImage: user.profileImage } });
+    }
+
+    const Appeal = require("../models/Appeal");
+    const appeal = await Appeal.findOne({ user: user._id }).sort({ submittedAt: -1 });
+    return res.json({
+      success: true,
+      restricted: true,
+      restriction: {
+        type: isBanned ? "ban" : "suspension",
+        reason: isBanned ? user.banReason : user.suspendReason,
+        bannedAt: user.bannedAt || null,
+        suspendedUntil: user.suspendedUntil || null,
+        appeal: appeal
+          ? { _id: appeal._id, type: appeal.type, status: appeal.status, submittedAt: appeal.submittedAt, dueBy: appeal.dueBy, adminNote: appeal.adminNote }
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("Check restriction error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
 
 module.exports = router;

@@ -1,0 +1,37 @@
+{
+  "name": "pandascrow",
+  "version": "1.0.0",
+  "description": "Official Node.js / JavaScript SDK for the Pandascrow v3 API: escrow, wallets, payouts, bank transfers, virtual accounts, invoices, payment links, KYC and webhooks.",
+  "keywords": ["pandascrow", "escrow", "payments", "nigeria", "fintech", "api", "sdk", "webhooks", "typescript"],
+  "homepage": "https://pandascrow.io",
+  "bugs": { "url": "https://github.com/Circlepandaa/pandascrow-javascript-sdk/issues", "email": "hi@pandascrow.io" },
+  "repository": { "type": "git", "url": "git+https://github.com/Circlepandaa/pandascrow-javascript-sdk.git" },
+  "license": "MIT",
+  "author": "Pandascrow Technologies Limited <hi@pandascrow.io> (https://pandascrow.io)",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "CHANGELOG.md", "LICENSE"],
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

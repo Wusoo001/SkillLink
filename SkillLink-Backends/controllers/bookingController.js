@@ -1,35 +1,9 @@
 const axios = require("axios");
 const Booking = require("../models/Booking");
 const User = require("../models/User");          // ← ADDED
-const escrowService = require("../services/escrowService");
-const paystackService = require("../services/paystackService");
-const { v4: uuidv4 } = require("uuid");
 const walletService = require("../services/walletService");
 const notificationController = require("./notificationController"); // ← ADDED
-
-// ======================================================
-//  INTERNAL HELPER – MUST BE DEFINED BEFORE USE
-// ======================================================
-const releaseFundsToProvider = async (bookingId) => {
-  const booking = await Booking.findById(bookingId);
-  if (!booking) throw new Error("Booking not found");
-  if (booking.status !== "ready_for_release") {
-    throw new Error("Booking not ready for release");
-  }
-  await walletService.creditWallet(
-    booking.provider,
-    booking.price,
-    booking._id,
-    booking.payment?.reference || "no_reference"
-  );
-  booking.status = "released";
-  booking.reviewed = false;
-  if (booking.payment) {
-    booking.payment.escrowStatus = "released";
-  }
-  await booking.save();
-  return booking;
-};
+const pandascrowService = require("../services/pandascrowService");
 
 // ======================================================
 //  CONTROLLER FUNCTIONS
@@ -42,6 +16,12 @@ const createBooking = async (req, res) => {
   try {
     if (!req.body.status) {
       req.body.status = "pending_acceptance";
+    }
+    if (String(req.body.client) === String(req.body.provider)) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot book your own service.",
+      });
     }
     const booking = await Booking.create(req.body);
 
@@ -88,9 +68,11 @@ const createBooking = async (req, res) => {
  */
 const getBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find()
-      .populate("client")
-      .populate("provider");
+    const bookings = await Booking.find({
+      $or: [{ client: req.user._id }, { provider: req.user._id }],
+    })
+      .populate("client", "name profileImage")
+      .populate("provider", "name profileImage");
     res.json({
       success: true,
       data: bookings,
@@ -121,6 +103,43 @@ const getBookingById = async (req, res) => {
   }
 };
 
+/**
+ * GET /bookings/by-reference/:reference
+ * Returns a booking by its Pandascrow reference (skilllink_<bookingId>).
+ * Used by the mobile "Confirm Payment" button to poll for webhook confirmation
+ * instead of querying Pandascrow's API directly.
+ * Access restricted to the booking's client or provider.
+ */
+const getBookingByReference = async (req, res) => {
+  try {
+    const { reference } = req.params;
+    console.log("🔍 [by-reference] Looking up:", reference);
+
+    const booking = await Booking.findOne({
+      "payment.pandascrowReference": reference,
+    })
+      .populate("client", "name profileImage")
+      .populate("provider", "name profileImage");
+      console.log("🔍 [by-reference] Found:", booking ? booking._id : "NOT FOUND");   // ← ADD
+      console.log("🔍 [by-reference] Status:", booking?.status);
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const isClient = String(booking.client?._id || booking.client) === String(req.user._id);
+    const isProvider = String(booking.provider?._id || booking.provider) === String(req.user._id);
+
+    if (!isClient && !isProvider) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    return res.json({ success: true, data: booking });
+  } catch (error) {
+    console.error("Get booking by reference error:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
 /**
  * PROVIDER ACCEPTS BOOKING
  */
@@ -295,55 +314,69 @@ const cancelBookingRequest = async (req, res) => {
 // ======================================================
 
 /**
- * INITIATE PAYMENT (PAYSTACK)
+ * INITIATE PAYMENT (PANDASCROW)
  */
 const initializePayment = async (req, res) => {
   try {
     const { bookingId } = req.body;
-    console.log("📦 initializePayment called with bookingId:", bookingId);
+    const booking = await Booking.findById(bookingId)
+      .populate("client", "name email phone")
+      .populate("provider", "name email phone bankDetails");
 
-    const booking = await Booking.findById(bookingId);
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    console.log("💰 Booking price:", booking.price);
-    console.log("👤 User email:", req.user?.email);
+    if (!booking.provider?.email) {
+      return res.status(400).json({ success: false, message: "Provider has no email on file" });
+    }
 
-    const amount = Number(booking.price);
-    if (isNaN(amount) || amount <= 0) {
+    if (!booking.provider?.bankDetails?.accountNumber) {
       return res.status(400).json({
         success: false,
-        message: "Invalid booking price",
+        message: "Provider has not set up bank details. Ask them to complete Bank Setup.",
       });
     }
 
-    const reference = `skilllink_${uuidv4()}`;
-    const payment = await paystackService.initializePayment({
-      email: req.user?.email || "test@example.com",
-      amount: amount,
-      reference,
+    if (Number(booking.price) <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid booking price" });
+    }
+
+    // Idempotency — return existing escrow if already created
+    if (booking.payment?.pandascrowPaymentUrl) {
+      return res.json({
+        success: true,
+        checkout_url: booking.payment.pandascrowPaymentUrl,
+        reference: booking.payment.pandascrowReference,
+      });
+    }
+
+    const escrow = await pandascrowService.initiateEscrow(booking, {
+      useVirtualAccount: false, // set true for NGN bank-transfer checkout
     });
 
-    booking.payment.reference = reference;
-    booking.payment.status = "pending";
+    // Pandascrow returns payment_url for payment_link, or account details for virtual_account
+    const paymentUrl = escrow.payment_url || escrow.checkout_url || escrow.authorization_url;
+
+    booking.payment = {
+      ...booking.payment,
+      pandascrowEscrowId: String(escrow.escrow_id || escrow.id),
+      pandascrowPaymentUrl: paymentUrl,
+      pandascrowReference: `skilllink_${booking._id}`,
+      status: "pending",
+    };
     booking.status = "awaiting_payment";
     await booking.save();
 
     return res.json({
       success: true,
-      authorization_url: payment.authorization_url,
-      reference,
+      checkout_url: paymentUrl,
+      reference: booking.payment.pandascrowReference,
+      escrow_id: booking.payment.pandascrowEscrowId,
     });
   } catch (error) {
-    console.error("❌ initializePayment error:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    console.error("Pandascrow initiate error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -365,70 +398,45 @@ const holdPayment = async (req, res) => {
 };
 
 /**
- * RELEASE PAYMENT (uses helper)
- */
-const releasePayment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const booking = await Booking.findById(id);
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
-    }
-    if (booking.status !== "ready_for_release") {
-      return res.status(400).json({
-        success: false,
-        message: "Booking not ready for release (client must confirm first)",
-      });
-    }
-    const updated = await releaseFundsToProvider(id);
-    res.json({
-      success: true,
-      message: "Funds released to provider's wallet",
-      data: updated,
-    });
-  } catch (error) {
-    console.error("Release error:", error.message);
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+
 
 /**
  * MARK BOOKING AS COMPLETED (PROVIDER)
  */
 const markBookingCompleted = async (req, res) => {
   try {
-    const { id } = req.params;
-    const booking = await Booking.findById(id);
+    const booking = await Booking.findById(req.params.id);
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
+
     if (booking.status !== "paid_in_escrow") {
       return res.status(400).json({
         success: false,
-        message: "Only bookings with funds in escrow can be marked as completed",
+        message: "Funds must be in escrow before marking complete",
       });
     }
+
+    if (!booking.payment?.pandascrowEscrowId) {
+      return res.status(400).json({
+        success: false,
+        message: "No Pandascrow escrow ID on this booking",
+      });
+    }
+
+    // Pandascrow has no separate "deliver" call — completion happens on release.
+    // We just record the provider's completion on our side.
     booking.status = "completed";
     await booking.save();
+
     res.json({
       success: true,
       message: "Job marked as completed. Waiting for client confirmation.",
       data: booking,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    console.error("Mark completed error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -436,38 +444,62 @@ const markBookingCompleted = async (req, res) => {
  * CLIENT CONFIRMS COMPLETION → TRIGGER FUND RELEASE
  */
 const clientConfirmCompletion = async (req, res) => {
+  console.log("📥 [confirm] Request received for:", req.params.id);
   try {
-    const { id } = req.params;
-    const booking = await Booking.findById(id);
+    const booking = await Booking.findById(req.params.id);
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
+
     if (booking.status !== "completed") {
       return res.status(400).json({
         success: false,
         message: "Job not yet marked as completed by provider",
       });
     }
-    booking.status = "ready_for_release";
+
+    if (!booking.payment?.pandascrowEscrowId) {
+      return res.status(400).json({
+        success: false,
+        message: "No Pandascrow escrow ID on this booking",
+      });
+    }
+
+    const { otp } = req.body || {};
+
+    // Step 1 — no OTP provided → trigger OTP send + tell client to check email
+    if (!otp) {
+      console.log("🔍 [confirm] No OTP — requesting OTP from Pandascrow...");
+      await pandascrowService.resendReleaseOtp(booking.payment.pandascrowEscrowId);
+      console.log("✅ [confirm] OTP sent to buyer's email");
+      return res.status(202).json({
+        success: false,
+        requires_otp: true,
+        message:
+          "Pandascrow sent a release OTP to the client's email. Enter the code to complete release.",
+      });
+    }
+
+    // Step 2 — OTP provided → complete the release
+    console.log("🔍 [confirm] OTP provided — attempting release...");
+    await pandascrowService.releaseEscrow(booking.payment.pandascrowEscrowId, otp);
+
+    booking.status = "released";
+    booking.payment.escrowStatus = "released";
+    booking.payment.releasedAt = new Date();
     await booking.save();
-    const releasedBooking = await releaseFundsToProvider(booking._id);
-    return res.json({
+    console.log("✅ [confirm] Booking released:", booking._id);
+
+    res.json({
       success: true,
-      message: "Job confirmed, funds released to provider's wallet",
-      data: releasedBooking,
+      message: "Funds released to provider.",
+      data: booking,
     });
   } catch (error) {
-    console.error("Confirmation error:", error.message);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    console.error("❌ [confirm] Release error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
-
 /**
  * WITHDRAW FUNDS
  */
@@ -493,75 +525,6 @@ const withdrawFunds = async (req, res) => {
   }
 };
 
-/**
- * VERIFY PAYMENT STATUS
- */
-const verifyPaymentStatus = async (req, res) => {
-  try {
-    const { reference } = req.params;
-    const paystackData = await paystackService.verifyPayment(reference);
-    if (!paystackData || paystackData.status !== "success") {
-      return res.status(400).json({
-        success: false,
-        message: "Payment not successful",
-      });
-    }
-    const booking = await Booking.findOne({
-      "payment.reference": reference,
-    });
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
-    }
-    if (booking.payment.status === "paid") {
-      return res.json({
-        success: true,
-        message: "Already verified",
-        data: booking,
-      });
-    }
-    booking.payment.status = "paid";
-    booking.payment.escrowStatus = "funded";
-    booking.payment.escrowHeld = true;
-    booking.payment.amountPaid = paystackData.amount / 100;
-    booking.payment.paidAt = new Date();
-    booking.status = "paid_in_escrow";
-    await booking.save();
-
-    // ===== NOTIFICATION FOR PROVIDER =====
-    try {
-      const provider = await User.findById(booking.provider);
-      if (provider) {
-        await notificationController.createNotification(
-          booking.provider,
-          "payment_received",
-          "Payment Received",
-          `Payment of ₦${booking.price} has been received for your service: ${booking.serviceTitle}`,
-          {
-            bookingId: booking._id,
-            clientId: booking.client,
-            providerId: booking.provider,
-          }
-        );
-      }
-    } catch (notifError) {
-      console.error("❌ Notification error (payment):", notifError.message);
-    }
-
-    return res.json({
-      success: true,
-      message: "Payment verified and escrow funded",
-      data: booking,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
 
 // ======================================================
 //  REVIEW BOOKING
@@ -656,6 +619,38 @@ const reviewBooking = async (req, res) => {
     });
   }
 };
+
+/**
+ * GET /bookings/by-escrow-id/:escrowId
+ * Find a booking by Pandascrow escrow ID (e.g. 4060).
+ * Used by PaymentReturnScreen after Pandascrow redirects the user back.
+ */
+const getBookingByEscrowId = async (req, res) => {
+  try {
+    const { escrowId } = req.params;
+    const booking = await Booking.findOne({
+      "payment.pandascrowEscrowId": String(escrowId),
+    })
+      .populate("client", "name profileImage")
+      .populate("provider", "name profileImage");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const isClient = String(booking.client?._id || booking.client) === String(req.user._id);
+    const isProvider = String(booking.provider?._id || booking.provider) === String(req.user._id);
+    if (!isClient && !isProvider) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    return res.json({ success: true, data: booking });
+  } catch (error) {
+    console.error("Get booking by escrow ID error:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // ======================================================
 //  EXPORTS
 // ======================================================
@@ -663,13 +658,13 @@ module.exports = {
   createBooking,
   getBookings,
   getBookingById,
+  getBookingByReference, 
+  getBookingByEscrowId,
   acceptBooking,
   rejectBooking,
   cancelBookingRequest,
-  verifyPaymentStatus,
   initializePayment,
   holdPayment,
-  releasePayment,
   markBookingCompleted,
   withdrawFunds,
   clientConfirmCompletion,

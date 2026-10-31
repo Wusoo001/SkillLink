@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
-import { getPosts, api, deletePost, savePost, likePost, unlikePost } from "../services/api";
+import { api, deletePost, savePost, likePost, unlikePost, getUserPosts } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
 import ReportModal from "./ReportModal";
@@ -272,26 +272,22 @@ export default function UserProfileScreen() {
   const userActive = isUserActive(userInfo?.lastActive);
 
   // ===== LOAD USER DATA =====
-  const loadUserData = async (id) => {
-    setLoading(true);
-    try {
-      const res = await api.get(`/users/${id}`);
-      setUserInfo(res.data);
-      const postsRes = await getPosts(1, 20);
-      if (postsRes?.success) {
-        const posts = postsRes.posts || [];
-        const filtered = posts.filter((post) => post?.user?._id === id);
-        setUserPosts(filtered);
-        setResetKey((prev) => prev + 1);
-      }
-    } catch (error) {
-      console.log("User profile load error:", error);
-      setUserInfo(null);
-      setUserPosts([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+ const loadUserData = async (id) => {
+  setLoading(true);
+  try {
+    const res = await api.get(`/users/${id}`);
+    setUserInfo(res.data);
+    const userPosts = await getUserPosts(id);
+    setUserPosts(userPosts || []);
+    setResetKey((prev) => prev + 1);
+  } catch (error) {
+    console.log("User profile load error:", error);
+    setUserInfo(null);
+    setUserPosts([]);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const onRefresh = useCallback(async () => {
     if (!resolvedUserId) return;
@@ -321,27 +317,53 @@ export default function UserProfileScreen() {
     setSelectedPost(null);
   };
 
-  const handleBookingConfirm = async ({ message, scheduledDate }) => {
-    if (!selectedPost) return;
+const handleBookingConfirm = async ({ message, scheduledDate }) => {
+  if (!selectedPost) return;
 
-    const provider = selectedPost.user;
-    const post = selectedPost;
+  const provider = selectedPost.user;
+  const post = selectedPost;
+  if (provider?._id === user?._id) {
+    throw new Error("You cannot book your own service.");
+  }
 
-    // Close sheet first
-    closeBookingSheet();
+  // Map prefilledDate option to actual scheduledDate
+  let scheduledDateObj = new Date();
+  if (scheduledDate === "tomorrow") {
+    scheduledDateObj = new Date();
+    scheduledDateObj.setDate(scheduledDateObj.getDate() + 1);
+  } else if (scheduledDate === "flexible") {
+    scheduledDateObj = new Date();
+    scheduledDateObj.setDate(scheduledDateObj.getDate() + 3);
+  }
 
-    // Navigate to BookingScreen with pre-filled data
-    navigation.navigate("BookingScreen", {
-      providerId: provider?._id || resolvedUserId,
-      providerName: provider?.name || "Provider",
+  // Create booking FIRST; close sheet + navigate ONLY on success
+  try {
+    const res = await api.post("/bookings", {
+      client: user?._id,
+      provider: provider?._id || resolvedUserId,
+      post: post._id,
       serviceTitle: post.description || post.skill || "Service",
-      price: post.price,
-      description: post.description,
-      postId: post._id,
-      prefilledMessage: message,
-      prefilledDate: scheduledDate,
+      scheduledDate: scheduledDateObj,
+      price: Number(post.price),
+      message: message,
+      status: "pending_acceptance",
     });
-  };
+
+    if (!res.data?.success) {
+      throw new Error(res.data?.message || "Failed to create booking");
+    }
+
+    // Success — close sheet, navigate to the existing booking
+    closeBookingSheet();
+    navigation.navigate("BookingScreen", {
+      bookingId: res.data.data._id,
+    });
+  } catch (error) {
+    const msg =
+      error.response?.data?.message || error.message || "Failed to create booking";
+    throw new Error(msg); // re-throw so BookingSheet shows the error inline
+  }
+};
 
   // ===== EDIT & DELETE =====
   const handleEditPost = (post) => {

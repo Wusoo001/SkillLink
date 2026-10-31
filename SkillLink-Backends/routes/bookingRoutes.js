@@ -23,11 +23,11 @@ router.put("/:id/accept", protect, bookingController.acceptBooking);
 router.put("/:id/reject", protect, bookingController.rejectBooking);
 router.put("/:id/cancel-request", protect, bookingController.cancelBookingRequest);
 router.post("/initialize-payment", protect, bookingController.initializePayment);
-router.get("/verify-payment/:reference", protect, bookingController.verifyPaymentStatus);
+router.get("/by-reference/:reference", protect, bookingController.getBookingByReference);
 router.put("/:id/complete", protect, bookingController.markBookingCompleted);
 router.put("/:id/confirm", protect, bookingController.clientConfirmCompletion);
-router.put("/:id/release", protect, bookingController.releasePayment);
 router.post("/withdraw", protect, bookingController.withdrawFunds);
 router.post("/:id/review", protect, bookingController.reviewBooking);
+router.get("/by-escrow-id/:escrowId", protect, bookingController.getBookingByEscrowId);
 
 module.exports = router;

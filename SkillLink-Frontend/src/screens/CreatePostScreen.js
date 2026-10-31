@@ -18,6 +18,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImageManipulator from "expo-image-manipulator";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthContext } from "../../context/AuthContext";
@@ -26,8 +27,24 @@ import { PostContext } from "../../context/PostContext";
 import { useTheme } from "../context/ThemeContext";
 import { nigeriaStates } from "../data/nigeriaStates";
 
+// ✅ Lazy-load the native video compressor — only on iOS/Android
+let VideoCompressor = null;
+if (Platform.OS !== "web") {
+  try {
+    VideoCompressor = require("react-native-compressor").Video;
+  } catch (err) {
+    console.log("Video compressor unavailable:", err.message);
+  }
+}
+
 const CLOUD_NAME = "dz2te6uth";
 const UPLOAD_PRESET = "SkillLink";
+
+// ===== Compression targets =====
+const IMAGE_MAX_WIDTH = 1920;
+const IMAGE_QUALITY = 0.8;
+const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const VIDEO_MAX_BYTES = 25 * 1024 * 1024;
 
 // ===== Custom Dropdown Component =====
 const CustomPicker = ({
@@ -155,6 +172,10 @@ export default function CreatePostScreen({ navigation, route }) {
   const [uploading, setUploading] = useState(false);
   const [existingMediaUrl, setExistingMediaUrl] = useState(null);
 
+  // ✅ Compression state
+  const [compressing, setCompressing] = useState(false);
+  const [compressionProgress, setCompressionProgress] = useState(0);
+
   // Animations
   const postScale = useRef(new Animated.Value(1)).current;
   const pickScale = useRef(new Animated.Value(1)).current;
@@ -191,25 +212,122 @@ export default function CreatePostScreen({ navigation, route }) {
     setAvailableCities(foundState ? foundState.cities : []);
   };
 
+  // ===== Get file size in bytes =====
+  const getFileSize = async (uri) => {
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      return info?.size || 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  // ===== Compress Image =====
+  const compressImage = async (uri) => {
+    try {
+      const { width, height } = await new Promise((resolve, reject) => {
+        Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
+      });
+
+      const actions = [];
+      if (width > IMAGE_MAX_WIDTH || height > IMAGE_MAX_WIDTH) {
+        if (width >= height) {
+          actions.push({ resize: { width: IMAGE_MAX_WIDTH } });
+        } else {
+          actions.push({ resize: { height: IMAGE_MAX_WIDTH } });
+        }
+      }
+
+      const result = await ImageManipulator.manipulateAsync(uri, actions, {
+        compress: IMAGE_QUALITY,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
+
+      return result.uri;
+    } catch (error) {
+      console.log("Image compression failed, using original:", error);
+      return uri;
+    }
+  };
+
+  // ===== Compress Video =====
+  const compressVideo = async (uri, onProgress) => {
+    if (!VideoCompressor) {
+      console.log("📼 Video compressor not available on this platform — using original");
+      return uri;
+    }
+
+    try {
+      const originalSize = await getFileSize(uri);
+      console.log("📼 Original video size:", (originalSize / 1024 / 1024).toFixed(1), "MB");
+
+      const compressedUri = await VideoCompressor.compress(
+        uri,
+        {
+          compressionMethod: "auto",
+          minimumFileSizeForCompress: 1,
+        },
+        (progress) => {
+          if (onProgress) onProgress(progress);
+        }
+      );
+
+      const compressedSize = await getFileSize(compressedUri);
+      console.log("📼 Compressed video size:", (compressedSize / 1024 / 1024).toFixed(1), "MB");
+
+      return compressedUri;
+    } catch (error) {
+      console.log("Video compression failed, using original:", error);
+      return uri;
+    }
+  };
+
+  // ===== Handle Picking (with auto-compression) =====
   const pickMedia = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsEditing: true,
-      quality: 0.7,
+      quality: 1,
       base64: false,
     });
-    if (!result.canceled) {
-      const asset = result.assets[0];
-      let type = asset.type;
-      if (!type) {
-        if (asset.mimeType?.startsWith("video/")) type = "video";
-        else if (asset.mimeType?.startsWith("image/")) type = "image";
-        else if (asset.uri.match(/\.(mp4|mov|avi|mkv)$/i)) type = "video";
-        else type = "image";
+
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    let type = asset.type;
+    if (!type) {
+      if (asset.mimeType?.startsWith("video/")) type = "video";
+      else if (asset.mimeType?.startsWith("image/")) type = "image";
+      else if (asset.uri.match(/\.(mp4|mov|avi|mkv)$/i)) type = "video";
+      else type = "image";
+    }
+
+    setCompressing(true);
+    setCompressionProgress(0);
+
+    try {
+      let finalUri = asset.uri;
+      if (type === "image") {
+        finalUri = await compressImage(asset.uri);
+      } else if (type === "video") {
+        if (Platform.OS !== "web") {
+          finalUri = await compressVideo(asset.uri, (p) => {
+            setCompressionProgress(p);
+          });
+        }
       }
+
+      setMediaUri(finalUri);
+      setMediaType(type);
+      setExistingMediaUrl(null);
+    } catch (error) {
+      console.log("Compression error:", error);
       setMediaUri(asset.uri);
       setMediaType(type);
       setExistingMediaUrl(null);
+    } finally {
+      setCompressing(false);
+      setCompressionProgress(0);
     }
   };
 
@@ -517,7 +635,34 @@ export default function CreatePostScreen({ navigation, route }) {
               </Text>
             </View>
 
-            {(mediaUri || existingMediaUrl) && (
+            {/* ✅ Compression overlay */}
+            {compressing && (
+              <View
+                style={[
+                  styles.compressingBox,
+                  {
+                    backgroundColor: colors.primaryLight,
+                    borderColor: colors.primary + "40",
+                  },
+                ]}
+              >
+                <ActivityIndicator size="small" color={colors.primary} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.compressingTitle, { color: colors.primary }]}>
+                    Optimizing your media...
+                  </Text>
+                  {compressionProgress > 0 && (
+                    <Text
+                      style={[styles.compressingText, { color: colors.textTertiary }]}
+                    >
+                      {Math.round(compressionProgress * 100)}% complete
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {(mediaUri || existingMediaUrl) && !compressing && (
               <View style={styles.mediaPreviewContainer}>
                 {mediaType === "image" ? (
                   <Image
@@ -537,7 +682,7 @@ export default function CreatePostScreen({ navigation, route }) {
                   >
                     <Ionicons name="videocam" size={36} color={colors.primary} />
                     <Text style={[styles.videoText, { color: colors.textTertiary }]}>
-                      Video selected
+                      Video ready to upload
                     </Text>
                   </View>
                 )}
@@ -564,12 +709,14 @@ export default function CreatePostScreen({ navigation, route }) {
                   {
                     backgroundColor: colors.primaryLight,
                     borderColor: colors.primary + "40",
+                    opacity: compressing ? 0.5 : 1,
                   },
                 ]}
                 onPress={pickMedia}
                 onPressIn={() => animatePressIn(pickScale)}
                 onPressOut={() => animatePressOut(pickScale)}
                 activeOpacity={0.85}
+                disabled={compressing}
               >
                 <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
                 <Text style={[styles.pickButtonText, { color: colors.primary }]}>
@@ -586,15 +733,16 @@ export default function CreatePostScreen({ navigation, route }) {
                 style={[
                   styles.postButton,
                   {
-                    backgroundColor: uploading ? colors.gray : colors.primary,
+                    backgroundColor:
+                      uploading || compressing ? colors.gray : colors.primary,
                     shadowColor: colors.primary,
-                    opacity: uploading ? 0.7 : 1,
+                    opacity: uploading || compressing ? 0.7 : 1,
                   },
                 ]}
                 onPress={handlePost}
                 onPressIn={() => animatePressIn(postScale)}
                 onPressOut={() => animatePressOut(postScale)}
-                disabled={uploading}
+                disabled={uploading || compressing}
                 activeOpacity={0.9}
               >
                 {uploading ? (
@@ -634,7 +782,6 @@ const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1 },
   container: { paddingHorizontal: 20 },
 
-  // ===== HEADER =====
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -658,7 +805,6 @@ const styles = StyleSheet.create({
   },
   placeholder: { width: 40 },
 
-  // ===== SECTION HEADERS =====
   sectionHeader: {
     marginBottom: 12,
     marginTop: 4,
@@ -673,7 +819,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
 
-  // ===== FIELDS =====
   fieldGroup: { marginBottom: 14 },
   label: {
     fontSize: 12.5,
@@ -696,7 +841,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
 
-  // ===== PICKER =====
   pickerWrapper: {
     borderRadius: 14,
     paddingHorizontal: 14,
@@ -713,7 +857,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  // ===== MODAL =====
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -755,7 +898,26 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
 
-  // ===== MEDIA =====
+  compressingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  compressingTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: -0.1,
+  },
+  compressingText: {
+    fontSize: 11.5,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+
   mediaPreviewContainer: {
     position: "relative",
     marginBottom: 12,
@@ -807,7 +969,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== SUBMIT CTA =====
   postWrap: { marginTop: 26 },
   postButton: {
     height: 54,
