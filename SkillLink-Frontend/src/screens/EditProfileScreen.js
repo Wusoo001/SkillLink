@@ -98,7 +98,7 @@ const CustomPicker = ({
               </TouchableOpacity>
             </View>
             <FlatList
-              data={items}
+              data={items || []}
               keyExtractor={(item) =>
                 typeof item === "string" ? item : item.name
               }
@@ -187,7 +187,7 @@ export default function EditProfileScreen({ navigation, route }) {
       setSelectedCity(userCity);
       const foundState = nigeriaStates.find((s) => s.name === userState);
       if (foundState) {
-        setAvailableCities(foundState.cities);
+        setAvailableCities(foundState.lgas);
       } else {
         setAvailableCities([]);
       }
@@ -201,7 +201,7 @@ export default function EditProfileScreen({ navigation, route }) {
     setSelectedCity("");
     const foundState = nigeriaStates.find((s) => s.name === stateName);
     if (foundState) {
-      setAvailableCities(foundState.cities);
+      setAvailableCities(foundState.lgas);
     } else {
       setAvailableCities([]);
     }
@@ -512,14 +512,14 @@ export default function EditProfileScreen({ navigation, route }) {
 
             {/* City */}
             <CustomPicker
-              label="City / LGA"
+              label="LGA"
               selectedValue={selectedCity}
               onValueChange={setSelectedCity}
               items={availableCities}
               placeholder={
                 availableCities.length === 0
                   ? "Select a state first"
-                  : "Select a city..."
+                  : "Select an LGA..."
               }
               colors={colors}
               disabled={availableCities.length === 0}

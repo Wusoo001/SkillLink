@@ -63,6 +63,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_accepted": return "checkmark-circle-outline";
       case "booking_rejected": return "close-circle-outline";
       case "booking_cancelled": return "ban-outline";
+      case "booking_completed": return "checkmark-done-outline";
       case "payment_received": return "cash-outline";
       case "funds_released": return "wallet-outline";
       case "chat_message": return "chatbubble-ellipses-outline";
@@ -76,6 +77,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_accepted": return colors.success;
       case "booking_rejected": return colors.danger;
       case "booking_cancelled": return colors.warning;
+      case "booking_completed": return colors.success; 
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
       case "chat_message": return colors.primary;
@@ -310,21 +312,50 @@ const BookingCard = ({
           </View>
         </View>
 
-        <Text
+       <Text
           style={[styles.serviceTitle, { color: colors.textPrimary }]}
           numberOfLines={2}
         >
           {booking.serviceTitle}
         </Text>
 
+        {/* ✅ NEW — Client's description of what they need */}
+        {booking.message && booking.message.trim() !== "" && (
+          <View
+            style={[
+              styles.requestMessageBox,
+              {
+                backgroundColor: colors.inputBackground,
+                borderLeftColor: colors.primary,
+              },
+            ]}
+          >
+            <Text
+              style={[styles.requestMessageText, { color: colors.textSecondary }]}
+              numberOfLines={3}
+            >
+              "{booking.message}"
+            </Text>
+          </View>
+        )}
+
         <View style={styles.metaRow}>
           <Text style={[styles.price, { color: colors.primary }]}>
             ₦{booking.price?.toLocaleString()}
           </Text>
           <View style={[styles.metaDot, { backgroundColor: colors.textTertiary }]} />
-          <Text style={[styles.date, { color: colors.textTertiary }]}>
-            {new Date(booking.createdAt).toLocaleDateString()}
-          </Text>
+
+          {/* ✅ NEW — Show scheduled date (falls back to created date) */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
+            <Text style={[styles.date, { color: colors.textTertiary }]}>
+              {new Date(booking.scheduledDate || booking.createdAt).toLocaleDateString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              })}
+            </Text>
+          </View>
         </View>
       </TouchableOpacity>
 
@@ -1436,4 +1467,16 @@ const styles = StyleSheet.create({
   },
   emptyNotificationsText: { fontSize: 14.5, marginTop: 12 },
   notificationLoader: { paddingVertical: 14 },
+  requestMessageBox: {
+  borderRadius: 10,
+  paddingVertical: 8,
+  paddingHorizontal: 10,
+  marginBottom: 10,
+  borderLeftWidth: 3,
+  },
+  requestMessageText: {
+    fontSize: 13,
+    fontStyle: "italic",
+    lineHeight: 18,
+  },
 });

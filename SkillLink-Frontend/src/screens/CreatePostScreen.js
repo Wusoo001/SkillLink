@@ -107,7 +107,7 @@ const CustomPicker = ({
               </TouchableOpacity>
             </View>
             <FlatList
-              data={items}
+              data={items || []}
               keyExtractor={(item) => (typeof item === "string" ? item : item.name)}
               renderItem={({ item }) => {
                 const displayValue = typeof item === "string" ? item : item.name;
@@ -192,7 +192,7 @@ export default function CreatePostScreen({ navigation, route }) {
       setSelectedState(stateName);
       setSelectedCity(cityName);
       const foundState = nigeriaStates.find((s) => s.name === stateName);
-      setAvailableCities(foundState ? foundState.cities : []);
+      setAvailableCities(foundState ? foundState.lgas : []);
       setExistingMediaUrl(editPost.media || null);
       setMediaType(editPost.mediaType || "image");
     } else {
@@ -201,7 +201,7 @@ export default function CreatePostScreen({ navigation, route }) {
       setSelectedState(userState);
       setSelectedCity(userCity);
       const foundState = nigeriaStates.find((s) => s.name === userState);
-      setAvailableCities(foundState ? foundState.cities : []);
+      setAvailableCities(foundState ? foundState.lgas : []);
     }
   }, [editPost, user]);
 
@@ -209,7 +209,7 @@ export default function CreatePostScreen({ navigation, route }) {
     setSelectedState(stateName);
     setSelectedCity("");
     const foundState = nigeriaStates.find((s) => s.name === stateName);
-    setAvailableCities(foundState ? foundState.cities : []);
+    setAvailableCities(foundState ? foundState.lgas : []);
   };
 
   // ===== Get file size in bytes =====
@@ -372,6 +372,13 @@ export default function CreatePostScreen({ navigation, route }) {
     const priceNum = parseFloat(price);
     if (!price || isNaN(priceNum) || priceNum <= 0) {
       return Alert.alert("Error", "Please enter a valid service fee (greater than 0)");
+    }
+    const MIN_PRICE = 5000;
+    if (priceNum < MIN_PRICE) {
+      return Alert.alert(
+        "Minimum Price Required",
+        `Service fee must be at least ₦${MIN_PRICE.toLocaleString()} so clients can book with escrow protection.`
+      );
     }
 
     const locationParts = [selectedCity, selectedState].filter(Boolean);
@@ -547,10 +554,13 @@ export default function CreatePostScreen({ navigation, route }) {
                 ]}
                 value={price}
                 onChangeText={setPrice}
-                placeholder="e.g., 5000"
+                placeholder="e.g., 5000 (minimum)"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="numeric"
               />
+              <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 4 }}>
+                Minimum ₦5,000 — required for escrow protection
+              </Text>
             </View>
 
             <View style={styles.fieldGroup}>
@@ -615,14 +625,14 @@ export default function CreatePostScreen({ navigation, route }) {
             />
 
             <CustomPicker
-              label="City / LGA"
+              label="LGA"
               selectedValue={selectedCity}
               onValueChange={setSelectedCity}
               items={availableCities}
               placeholder={
                 availableCities.length === 0
                   ? "Select a state first"
-                  : "Select a city..."
+                  : "Select an LGA..."
               }
               colors={colors}
               disabled={availableCities.length === 0}

@@ -863,15 +863,6 @@ export default function BookingScreen({ navigation, route }) {
                 </Text>
               </View>
 
-              <View style={styles.invoiceRow}>
-                <Text style={[styles.invoiceLabel, { color: colors.textTertiary }]}>
-                  Platform Fee
-                </Text>
-                <Text style={[styles.invoiceValue, { color: colors.textPrimary }]}>
-                  ₦{invoice.platformFee.toLocaleString()}
-                </Text>
-              </View>
-
               <View
                 style={[styles.dashedDivider, { borderColor: colors.inputBorder }]}
               />

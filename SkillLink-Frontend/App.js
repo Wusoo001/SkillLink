@@ -37,17 +37,17 @@ import PaymentReturnScreen from "./src/screens/PaymentReturnScreen";
 const linking = {
   prefixes: [
     Linking.createURL("/"),
+    "streetapp://",
     Platform.OS === "web" && typeof window !== "undefined"
       ? window.location.origin
-      : "streetapp://",
-  ],
+      : "",
+  ].filter(Boolean),
   config: {
     screens: {
       PaymentReturn: "payment-return",
-      MainTabs: "",
     },
   },
-}
+};
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -127,6 +127,7 @@ function AuthStack() {
       <Stack.Screen name="Register" component={Register} />
       <Stack.Screen name="VerificationPending" component={VerificationPendingScreen} />
       <Stack.Screen name="AccountRestricted" component={AccountRestrictedScreen} />
+      <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
     </Stack.Navigator>
   );
 }

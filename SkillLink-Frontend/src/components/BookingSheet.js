@@ -158,14 +158,6 @@ export default function BookingSheet({ visible, onClose, provider, service, pric
                   ₦{priceNum.toLocaleString()}
                 </Text>
               </View>
-              <View style={styles.priceRow}>
-                <Text style={[styles.priceLabel, { color: colors.textTertiary }]}>
-                  Platform Fee
-                </Text>
-                <Text style={[styles.priceValue, { color: colors.textPrimary }]}>
-                  ₦0
-                </Text>
-              </View>
               <View
                 style={[styles.dashedDivider, { borderColor: colors.inputBorder }]}
               />

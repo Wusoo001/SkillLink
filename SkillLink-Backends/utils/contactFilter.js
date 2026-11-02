@@ -17,7 +17,13 @@ const PHONE_REGEXES = [
 // Email addresses
 const EMAIL_REGEX = /\b[\w._%+-]+@[\w.-]+\.[a-zA-Z]{2,}\b/;
 
-// Off-platform keywords (lowercase match)
+// Off-platform keywords (matched with word boundaries — see KEYWORD_REGEXES below)
+//
+// ✅ B6 FIX:
+//   - Removed "outside" — blocked legitimate "I'll wait outside your gate"
+//   - Changed "ig " → "ig" — old version matched "big ", "dig ", "pig " as substrings
+//   - Word boundaries now prevent "ring me" matching "bring me"
+//     and "call me" matching "recall me"
 const KEYWORDS = [
   "whatsapp",
   "what's app",
@@ -29,7 +35,7 @@ const KEYWORDS = [
   "telegram",
   "snapchat",
   "instagram",
-  "ig ",
+  "ig",               // ← was "ig "
   "facebook",
   "messenger",
   "call me",
@@ -40,14 +46,13 @@ const KEYWORDS = [
   "hit me up on",
   "reach me on",
   "ring me",
-  "outside",
   "off the app",
   "off app",
   "direct transfer",
   "pay me direct",
   "pay direct",
   "send money direct",
-  "outside the app",
+  "outside the app",  // ← "outside" removed; "outside the app" kept
 ];
 
 // Spelled-out numbers (zero eight zero...)
@@ -58,6 +63,15 @@ const SPELLED_NUMBERS = [
   "one two three",
   "double zero",
 ];
+
+// Escape regex special chars (for keywords like "wa.me" and "what's app")
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Pre-compile keyword regexes with word boundaries (case-insensitive)
+const KEYWORD_REGEXES = KEYWORDS.map((kw) => ({
+  keyword: kw,
+  regex: new RegExp(`\\b${escapeRegex(kw)}\\b`, "i"),
+}));
 
 const checkContact = (text) => {
   if (!text || typeof text !== "string") {
@@ -87,9 +101,9 @@ const checkContact = (text) => {
     };
   }
 
-  // Check keywords
-  for (const kw of KEYWORDS) {
-    if (lower.includes(kw)) {
+  // Check keywords (word-boundary regex)
+  for (const { regex } of KEYWORD_REGEXES) {
+    if (regex.test(trimmed)) {
       return {
         blocked: true,
         reason: "Keep conversations on Street — no off-platform contact or payment.",
@@ -98,7 +112,7 @@ const checkContact = (text) => {
     }
   }
 
-  // Check spelled-out numbers
+  // Check spelled-out numbers (substring is fine here — phrases are specific)
   for (const sn of SPELLED_NUMBERS) {
     if (lower.includes(sn)) {
       return {

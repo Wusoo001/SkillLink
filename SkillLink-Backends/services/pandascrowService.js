@@ -1,7 +1,5 @@
 const crypto = require("crypto");
 const { Pandascrow } = require("pandascrow");
-const Booking = require("../models/Booking");
-const User = require("../models/User");
 
 // SDK defaults to sandbox when no { sandbox: false } option is passed.
 // Remove the option entirely for production later.
@@ -13,6 +11,9 @@ const ps = new Pandascrow(process.env.PANDASCROW_API_KEY);
  * Store it in .env as PANDASCROW_PLATFORM_UUID.
  */
 const PLATFORM_UUID = process.env.PANDASCROW_PLATFORM_UUID;
+
+const PLATFORM_COMMISSION_PERCENT =
+  Number(process.env.PLATFORM_COMMISSION_PERCENT) || 5;
 
 /**
  * Format a Date as YYYY-MM-DD for Pandascrow's delivery_date field.
@@ -69,7 +70,7 @@ const initiateEscrow = async (booking, options = {}) => {
     // --- Policy ---
     how_dispute_is_handled: "arbitration",
     who_pay_fees: "seller", // Pandascrow fee deducted from provider's side
-    partner_escrow_fee: Number((booking.price * 0.05).toFixed(2)),
+    partner_escrow_fee: PLATFORM_COMMISSION_PERCENT,
 
     // --- Parties ---
     buyer_details: {

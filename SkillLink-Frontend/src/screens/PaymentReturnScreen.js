@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
+import { useContext } from "react";
+import { AuthContext } from "../../context/AuthContext";
 
 // Read a query param from the browser URL (web only)
 const getQueryParam = (name) => {
@@ -28,6 +30,7 @@ export default function PaymentReturnScreen() {
   const navigation = useNavigation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { userToken } = useContext(AuthContext);
 
   // ref comes from route params (deep link) OR from window.location.search (web)
   const ref =
@@ -47,6 +50,11 @@ export default function PaymentReturnScreen() {
   const fetchBooking = async () => {
     if (!ref) {
       setError("No payment reference found in URL.");
+      setLoading(false);
+      return;
+    }
+    if (!userToken) {
+      setError("Please sign in to view this payment.");
       setLoading(false);
       return;
     }
@@ -123,13 +131,20 @@ export default function PaymentReturnScreen() {
           </View>
           <Text style={[styles.title, { color: colors.textPrimary }]}>Payment Issue</Text>
           <Text style={[styles.subtitle, { color: colors.textTertiary }]}>{error}</Text>
+          {/* ✅ FIX: route to Landing if not logged in, MainTabs otherwise */}
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.reset({ index: 0, routes: [{ name: "MainTabs" }] })}
+            onPress={() => {
+              if (!userToken) {
+                navigation.reset({ index: 0, routes: [{ name: "Landing" }] });
+              } else {
+                navigation.reset({ index: 0, routes: [{ name: "MainTabs" }] });
+              }
+            }}
             activeOpacity={0.9}
           >
             <Text style={[styles.primaryText, { color: colors.textInverse }]}>
-              Go to Dashboard
+              {!userToken ? "Sign In" : "Go to Dashboard"}
             </Text>
           </TouchableOpacity>
         </View>

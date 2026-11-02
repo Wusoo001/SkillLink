@@ -9,7 +9,21 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["booking_request", "booking_accepted", "booking_rejected", "booking_cancelled", "payment_received", "funds_released", "chat_message", "warning_received", "account_suspended", "account_banned", "appeal_accepted", "appeal_rejected"],
+      enum: [
+        "booking_request",
+        "booking_accepted",
+        "booking_rejected",
+        "booking_cancelled",
+        "booking_completed",        
+        "payment_received",
+        "funds_released",
+        "chat_message",
+        "warning_received",
+        "account_suspended",
+        "account_banned",
+        "appeal_accepted",
+        "appeal_rejected",
+      ],
       required: true,
     },
     title: {

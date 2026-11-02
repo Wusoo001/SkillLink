@@ -58,6 +58,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_accepted": return "checkmark-circle-outline";
       case "booking_rejected": return "close-circle-outline";
       case "booking_cancelled": return "ban-outline";
+      case "booking_completed": return "checkmark-done-outline"; 
       case "payment_received": return "cash-outline";
       case "funds_released": return "wallet-outline";
       case "chat_message": return "chatbubble-ellipses-outline";
@@ -71,6 +72,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_accepted": return colors.success;
       case "booking_rejected": return colors.danger;
       case "booking_cancelled": return colors.warning;
+      case "booking_completed": return colors.success; 
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
       case "chat_message": return colors.primary;

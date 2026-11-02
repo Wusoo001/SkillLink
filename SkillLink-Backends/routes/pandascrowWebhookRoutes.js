@@ -1,6 +1,7 @@
 const express = require("express");
 const Booking = require("../models/Booking");
 const pandascrowService = require("../services/pandascrowService");
+const notificationController = require("../controllers/notificationController");
 
 const router = express.Router();
 
@@ -56,6 +57,22 @@ router.post("/", express.raw({ type: "application/json" }), async (req, res) => 
             booking.payment.paidAt = new Date();
             await booking.save();
             console.log("✅ Booking → paid_in_escrow:", booking._id);
+            try {
+                await notificationController.createNotification(
+                booking.provider,
+                "payment_received",
+                "Payment Received",
+                `₦${Number(booking.price).toLocaleString()} has been received and is held in escrow for: ${booking.serviceTitle}`,
+                {
+                    bookingId: booking._id,
+                    clientId: booking.client,
+                    providerId: booking.provider,
+                }
+                );
+                console.log("✅ Provider notified of payment");
+            } catch (notifError) {
+                console.error("❌ Notification error (paid webhook):", notifError.message);
+            }
         }
 
         if (eventName === "escrow.completed" && booking.status !== "released") {

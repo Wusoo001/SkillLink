@@ -23,6 +23,14 @@ const createBooking = async (req, res) => {
         message: "You cannot book your own service.",
       });
     }
+    const MIN_BOOKING_PRICE = Number(process.env.MIN_BOOKING_PRICE) || 5000;
+    const price = Number(req.body.price);
+    if (!price || isNaN(price) || price < MIN_BOOKING_PRICE) {
+      return res.status(400).json({
+        success: false,
+        message: `Booking price must be at least ₦${MIN_BOOKING_PRICE.toLocaleString()}.`,
+      });
+    }
     const booking = await Booking.create(req.body);
 
     // ===== CREATE NOTIFICATION FOR PROVIDER =====
@@ -428,6 +436,25 @@ const markBookingCompleted = async (req, res) => {
     // We just record the provider's completion on our side.
     booking.status = "completed";
     await booking.save();
+    try {
+      const client = await User.findById(booking.client);
+      const provider = await User.findById(booking.provider);
+      if (client) {
+        await notificationController.createNotification(
+          booking.client,
+          "booking_completed",
+          "Job Marked Complete",
+          `${provider?.name || "Your provider"} marked "${booking.serviceTitle}" as completed. Review and confirm to release funds.`,
+          {
+            bookingId: booking._id,
+            clientId: booking.client,
+            providerId: booking.provider,
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("❌ Notification error (complete):", notifError.message);
+    }
 
     res.json({
       success: true,
@@ -489,6 +516,25 @@ const clientConfirmCompletion = async (req, res) => {
     booking.payment.releasedAt = new Date();
     await booking.save();
     console.log("✅ [confirm] Booking released:", booking._id);
+    try {
+      const provider = await User.findById(booking.provider);
+      if (provider) {
+        await notificationController.createNotification(
+          booking.provider,
+          "funds_released",
+          "Funds Released",
+          `₦${Number(booking.price).toLocaleString()} has been released to your bank account for: ${booking.serviceTitle}`,
+          {
+            bookingId: booking._id,
+            clientId: booking.client,
+            providerId: booking.provider,
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("❌ Notification error (release):", notifError.message);
+    }
+
 
     res.json({
       success: true,
