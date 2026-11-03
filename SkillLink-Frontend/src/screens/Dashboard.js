@@ -137,6 +137,32 @@ const BookingCard = ({
   const otherPartyName = otherParty?.name || "User";
   const [actionLoading, setActionLoading] = useState(false);
   const statusColor = colors.status?.[booking.status] || "#64748B";
+  // ✅ Compute provider's net payout (uses actual data when available, else estimates)
+  const getProviderEarnings = () => {
+    const price = Number(booking.price) || 0;
+
+    // Prefer actual numbers from Pandascrow webhook
+    if (booking.payment?.pandascrowNetAmount != null) {
+      return {
+        exact: true,
+        net: booking.payment.pandascrowNetAmount,
+        platformFee: booking.payment.pandascrowPartnerFee ?? Math.round(price * 0.05),
+        escrowFee: price - (booking.payment.pandascrowNetAmount + (booking.payment.pandascrowPartnerFee ?? 0)),
+      };
+    }
+
+    // Fallback: estimate using known commission + estimated escrow fee
+    const PLATFORM_FEE_PCT = 5;
+    const ESCROW_FEE_PCT = 3;   // approximate — will be exact once paid
+    const platformFee = Math.round(price * (PLATFORM_FEE_PCT / 100));
+    const escrowFee = Math.round(price * (ESCROW_FEE_PCT / 100));
+    return {
+      exact: false,
+      net: price - platformFee - escrowFee,
+      platformFee,
+      escrowFee,
+    };
+  };
 
   const handleMarkCompleted = async () => {
     setActionLoading(true);
@@ -358,6 +384,64 @@ const BookingCard = ({
           </View>
         </View>
       </TouchableOpacity>
+      {!isClient && (
+        <View
+          style={[
+            styles.earningsBox,
+            {
+              backgroundColor: colors.inputBackground,
+              borderColor: colors.inputBorder,
+            },
+          ]}
+        >
+          <Text
+            style={[styles.earningsHeader, { color: colors.textTertiary }]}
+          >
+            YOUR EARNINGS
+          </Text>
+
+          <View style={styles.earningsRow}>
+            <Text style={[styles.earningsLabel, { color: colors.textSecondary }]}>
+              Client Pays
+            </Text>
+            <Text style={[styles.earningsValue, { color: colors.textPrimary }]}>
+              ₦{Number(booking.price).toLocaleString()}
+            </Text>
+          </View>
+
+          <View style={styles.earningsRow}>
+            <Text style={[styles.earningsLabel, { color: colors.textSecondary }]}>
+              Platform Fee
+            </Text>
+            <Text style={[styles.earningsValue, { color: colors.danger }]}>
+              -₦{Math.round(getProviderEarnings().platformFee).toLocaleString()}
+            </Text>
+          </View>
+
+          <View style={styles.earningsRow}>
+            <Text style={[styles.earningsLabel, { color: colors.textSecondary }]}>
+              Escrow Fee {!getProviderEarnings().exact && "(est.)"}
+            </Text>
+            <Text style={[styles.earningsValue, { color: colors.danger }]}>
+              -₦{Math.round(getProviderEarnings().escrowFee).toLocaleString()}
+            </Text>
+          </View>
+
+          <View
+            style={[styles.earningsDivider, { backgroundColor: colors.inputBorder }]}
+          />
+
+          <View style={styles.earningsRow}>
+            <Text style={[styles.earningsNetLabel, { color: colors.textPrimary }]}>
+              You Receive
+            </Text>
+            <Text style={[styles.earningsNetValue, { color: colors.success }]}>
+              {getProviderEarnings().exact ? "" : "~"}
+              ₦{Math.round(getProviderEarnings().net).toLocaleString()}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Action area */}
       {!isClient && booking.status === "pending_acceptance" && !isExpired && (
@@ -1478,5 +1562,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: "italic",
     lineHeight: 18,
+  },
+    // ✅ Provider earnings box
+  earningsBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  earningsHeader: {
+    fontSize: 10.5,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  earningsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 3,
+  },
+  earningsLabel: {
+    fontSize: 12.5,
+    fontWeight: "500",
+  },
+  earningsValue: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  earningsDivider: {
+    height: 1,
+    marginVertical: 6,
+  },
+  earningsNetLabel: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  earningsNetValue: {
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
 });

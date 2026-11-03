@@ -31,7 +31,7 @@ app.use(express.json({
 app.get("/payment-return", (req, res) => {
   const ref = req.query.ref || "";
   const frontendUrl =
-    process.env.FRONTEND_RETURN_URL || "http://192.168.1.233:8081/payment-return";
+    process.env.FRONTEND_RETURN_URL || "http://192.168.1.215:8081/payment-return";
   const target = `${frontendUrl}${frontendUrl.includes("?") ? "&" : "?"}ref=${encodeURIComponent(ref)}`;
 
   res.send(`

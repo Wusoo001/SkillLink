@@ -211,7 +211,7 @@ router.post("/login", async (req, res) => {
 
 
     // 4. All good – generate token
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
 
     const userResponse = {
       _id: user._id,
@@ -257,7 +257,7 @@ router.post("/check-restriction", async (req, res) => {
     const isSuspended = user.suspendedUntil && new Date(user.suspendedUntil) > new Date();
 
     if (!isBanned && !isSuspended) {
-      return res.json({ success: true, restricted: false, token: jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" }), user: { _id: user._id, name: user.name, email: user.email, profileImage: user.profileImage } });
+      return res.json({ success: true, restricted: false, token: jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" }), user: { _id: user._id, name: user.name, email: user.email, profileImage: user.profileImage } });
     }
 
     const Appeal = require("../models/Appeal");

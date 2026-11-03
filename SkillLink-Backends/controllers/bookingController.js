@@ -516,24 +516,31 @@ const clientConfirmCompletion = async (req, res) => {
     booking.payment.releasedAt = new Date();
     await booking.save();
     console.log("✅ [confirm] Booking released:", booking._id);
-    try {
-      const provider = await User.findById(booking.provider);
-      if (provider) {
-        await notificationController.createNotification(
-          booking.provider,
-          "funds_released",
-          "Funds Released",
-          `₦${Number(booking.price).toLocaleString()} has been released to your bank account for: ${booking.serviceTitle}`,
-          {
-            bookingId: booking._id,
-            clientId: booking.client,
-            providerId: booking.provider,
-          }
-        );
+    // ✅ NEW — Notify provider with NET amount (after fees), not gross
+      try {
+        const provider = await User.findById(booking.provider);
+        if (provider) {
+          // Use actual net amount from Pandascrow if available; fall back to gross for old bookings
+          const netAmount =
+            booking.payment?.pandascrowNetAmount != null
+              ? Number(booking.payment.pandascrowNetAmount)
+              : Number(booking.price);
+
+          await notificationController.createNotification(
+            booking.provider,
+            "funds_released",
+            "Funds Released",
+            `₦${netAmount.toLocaleString()} has been released to your bank account for: ${booking.serviceTitle}`,
+            {
+              bookingId: booking._id,
+              clientId: booking.client,
+              providerId: booking.provider,
+            }
+          );
+        }
+      } catch (notifError) {
+        console.error("❌ Notification error (release):", notifError.message);
       }
-    } catch (notifError) {
-      console.error("❌ Notification error (release):", notifError.message);
-    }
 
 
     res.json({

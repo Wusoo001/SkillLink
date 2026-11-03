@@ -55,23 +55,39 @@ router.post("/", express.raw({ type: "application/json" }), async (req, res) => 
             booking.payment.status = "paid";
             booking.payment.escrowStatus = "funded";
             booking.payment.paidAt = new Date();
+            const escrowData = data?.escrow_data || {};
+                if (escrowData.amount_receive !== undefined) {
+                    booking.payment.pandascrowNetAmount = Number(escrowData.amount_receive);
+                }
+                if (escrowData.partner_escrow_fee !== undefined) {
+                    booking.payment.pandascrowPartnerFee = Number(escrowData.partner_escrow_fee);
+                }
             await booking.save();
             console.log("✅ Booking → paid_in_escrow:", booking._id);
+            // ✅ NEW — Show both gross and net so provider knows what to expect
             try {
-                await notificationController.createNotification(
+            const price = Number(booking.price);
+            const netAmount = booking.payment?.pandascrowNetAmount;
+
+            const message =
+                netAmount != null && Number(netAmount) < price
+                ? `₦${price.toLocaleString()} has been received for "${booking.serviceTitle}". You'll receive ₦${Number(netAmount).toLocaleString()} after fees.`
+                : `₦${price.toLocaleString()} has been received and is held in escrow for: ${booking.serviceTitle}`;
+
+            await notificationController.createNotification(
                 booking.provider,
                 "payment_received",
                 "Payment Received",
-                `₦${Number(booking.price).toLocaleString()} has been received and is held in escrow for: ${booking.serviceTitle}`,
+                message,
                 {
-                    bookingId: booking._id,
-                    clientId: booking.client,
-                    providerId: booking.provider,
+                bookingId: booking._id,
+                clientId: booking.client,
+                providerId: booking.provider,
                 }
-                );
-                console.log("✅ Provider notified of payment");
+            );
+            console.log("✅ Provider notified of payment");
             } catch (notifError) {
-                console.error("❌ Notification error (paid webhook):", notifError.message);
+            console.error("❌ Notification error (paid webhook):", notifError.message);
             }
         }
 

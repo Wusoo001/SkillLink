@@ -142,7 +142,6 @@ function AppStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="BookingScreen" component={BookingScreen} />
       <Stack.Screen name="PaymentScreen" component={PaymentScreen} />
-      <Stack.Screen name="PaymentDashboard" component={Dashboard} />
       <Stack.Screen name="BankSetup" component={BankSetupScreen} />
       <Stack.Screen name="ReviewsScreen" component={ReviewsScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />

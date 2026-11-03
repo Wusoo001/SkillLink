@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { triggerLogout } from "./logout";
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.233:5000/api";
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000/api";
 
 // ================================
 // AXIOS INSTANCE

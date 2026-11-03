@@ -70,7 +70,7 @@ const bookingSchema = new mongoose.Schema(
 
     payment: {
       reference: { type: String },
-      provider: { type: String, default: "paystack" },
+      provider: { type: String, default: "pandascrow" },
       status: {
         type: String,
         enum: ["pending", "paid", "failed"],
@@ -89,6 +89,9 @@ const bookingSchema = new mongoose.Schema(
       pandascrowEscrowId: { type: String, default: null },
       pandascrowPaymentUrl: { type: String, default: null },
       pandascrowReference: { type: String, default: null },
+
+      pandascrowNetAmount: { type: Number, default: null },      // What provider actually receives
+      pandascrowPartnerFee: { type: Number, default: null },
     },
   },
   { timestamps: true }
