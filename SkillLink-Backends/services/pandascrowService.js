@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { Pandascrow } = require("pandascrow");
+const { v4: uuidv4 } = require('uuid');
 
 // SDK defaults to sandbox when no { sandbox: false } option is passed.
 // Remove the option entirely for production later.
@@ -110,7 +111,7 @@ const initiateEscrow = async (booking, options = {}) => {
 
   // ✅ Idempotency key must be passed as the second argument, NOT in the payload.
   const escrow = await ps.escrow.createOnetime(payload, {
-    idempotencyKey: `skilllink_${booking._id}_${Date.now()}`,
+    idempotencyKey: uuidv4(),
   });
   return escrow;
 };
