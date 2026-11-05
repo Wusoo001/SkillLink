@@ -100,6 +100,7 @@ const initiateEscrow = async (booking, options = {}) => {
     // --- Your own IDs (returned in webhooks) ---
     metadata: {
       bookingId: booking._id.toString(),
+      attemptAt: Date.now(),
     },
   };
 
