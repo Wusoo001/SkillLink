@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/street_logo.png",
-    "scheme": "skilllinkapp",
+    "scheme": "streetapp",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
@@ -13,12 +13,18 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/street_logo.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.SkillLinkApp"
+      "package": "com.anonymous.SkillLinkApp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [{ "scheme": "streetapp" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "output": "single",
@@ -42,11 +48,11 @@
         }
       ],
       [
-    "expo-location",
-    {
-      "locationAlwaysAndWhenInUsePermission": "Street uses your location to help you share where the work should be done and to let providers navigate to you."
-    }
-    ],
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Street uses your location to help you share where the work should be done and to let providers navigate to you."
+        }
+      ],
       "react-native-compressor",
       "expo-video",
       "expo-font",
