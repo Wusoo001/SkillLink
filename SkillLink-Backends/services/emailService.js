@@ -1,21 +1,13 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-   host: 'smtp.gmail.com',
-   port: 465,
-   secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendVerificationEmail = async (to, token) => {
   const verifyUrl = `${process.env.BASE_URL}/api/auth/verify/${token}`;
-  const mailOptions = {
-    from: `Street <${process.env.EMAIL_USER}>`,
-    to,
+
+  const { error } = await resend.emails.send({
+    from: 'Street <onboarding@resend.dev>',
+    to: [to],
     subject: 'Verify your email – Street',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -29,9 +21,12 @@ const sendVerificationEmail = async (to, token) => {
         <p style="color: #6B7280; font-size: 12px;">If you didn't create an account, ignore this email.</p>
       </div>
     `,
-  };
+  });
 
-  await transporter.sendMail(mailOptions);
+  if (error) {
+    console.error("Email send error:", error);
+    throw new Error("Failed to send verification email");
+  }
 };
 
 module.exports = { sendVerificationEmail };
