@@ -42,6 +42,7 @@ const initiateEscrow = async (booking, options = {}) => {
 
   const reference = `skilllink_${booking._id}`;
 
+  const shortId = booking._id.toString().slice(-6);
   const payload = {
     // --- Identity ---
     uuid: PLATFORM_UUID,
@@ -55,8 +56,9 @@ const initiateEscrow = async (booking, options = {}) => {
     receiver_id: booking.provider._id.toString(),
 
     // --- Service details ---
-    title: booking.serviceTitle,
-    description: booking.description || booking.serviceTitle,
+
+    title: `${booking.serviceTitle} #${shortId}`,
+    description: `${booking.description || booking.serviceTitle} (ref: ${shortId})`,
     acceptance_criteria:
       "Client confirms the service was delivered as described in the booking.",
     currency: "NGN",

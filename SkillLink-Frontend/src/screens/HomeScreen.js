@@ -129,7 +129,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
 
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const { logout, userToken } = useContext(AuthContext);
+  const { logout, userToken, user } = useContext(AuthContext);
   const { refreshFlag, newPost, clearNewPost } = useContext(PostContext);
   const { colors, toggleTheme, theme } = useTheme();
 
@@ -241,6 +241,7 @@ export default function HomeScreen() {
       );
     }
 
+    // Chat notifications → still go to Chat screen (unchanged)
     if (notification.type === "chat_message" && notification.data?.bookingId) {
       setNotificationModalVisible(false);
       navigation.navigate("Chat", {
@@ -251,12 +252,21 @@ export default function HomeScreen() {
       return;
     }
 
+    // Booking notifications → navigate to Dashboard, switch to correct tab
     if (notification.data?.bookingId) {
       setNotificationModalVisible(false);
-      navigation.navigate("BookingScreen", {
-        bookingId: notification.data.bookingId,
-        mode: "existing",
-      });
+
+      const clientId = notification.data?.clientId;
+      const providerId = notification.data?.providerId;
+      const targetTab =
+        String(clientId) === String(user?._id)
+          ? "client"
+          : String(providerId) === String(user?._id)
+          ? "worker"
+          : "client"; // safe fallback
+
+      // Navigate to Dashboard tab with the target tab param
+      navigation.navigate("Dashboard", { initialTab: targetTab });
     }
   };
 

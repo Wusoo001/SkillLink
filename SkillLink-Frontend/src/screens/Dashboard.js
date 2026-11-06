@@ -13,7 +13,7 @@ import {
   Modal,
   Platform,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect,useRoute } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -77,7 +77,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_accepted": return colors.success;
       case "booking_rejected": return colors.danger;
       case "booking_cancelled": return colors.warning;
-      case "booking_completed": return colors.success; 
+      case "booking_completed": return colors.success;
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
       case "chat_message": return colors.primary;
@@ -131,6 +131,7 @@ const BookingCard = ({
   onCancel,
   onPayPress,
   onChatPress,
+  onRequireOtp,
 }) => {
   const isClient = role === "client";
   const otherParty = isClient ? booking.provider : booking.client;
@@ -146,8 +147,8 @@ const BookingCard = ({
       return {
         exact: true,
         net: booking.payment.pandascrowNetAmount,
-        platformFee: booking.payment.pandascrowPartnerFee ?? Math.round(price * 0.05),
-        escrowFee: price - (booking.payment.pandascrowNetAmount + (booking.payment.pandascrowPartnerFee ?? 0)),
+        platformFee: booking.payment.pandascrowPlatformFee ?? Math.round(price * 0.05),
+        escrowFee: price - (booking.payment.pandascrowNetAmount + (booking.payment.pandascrowPlatformFee ?? 0)),
       };
     }
 
@@ -177,53 +178,20 @@ const BookingCard = ({
     }
   };
 
+  // ✅ Simplified — delegates OTP prompt to parent Dashboard modal (works on Android/iOS/web)
   const handleConfirmCompletion = async () => {
     setActionLoading(true);
     try {
-      // Step 1 — request OTP
       const res = await confirmBookingCompletion(booking._id);
 
       if (res?.requires_otp) {
-        // Step 2 — prompt for OTP
-        const promptForOtp = async (otpValue) => {
-          if (!otpValue) return;
-          try {
-            const final = await confirmBookingCompletion(booking._id, otpValue);
-            if (final?.success) {
-              Alert.alert("Success", "Funds released to provider.");
-              onStatusChange();
-            } else {
-              Alert.alert("Error", final?.message || "Release failed");
-            }
-          } catch (err) {
-            Alert.alert("Error", err.response?.data?.message || "Release failed");
-          }
-        };
-
-        if (Platform.OS === "web") {
-          const otp = window.prompt("Enter OTP sent to your email:");
-          await promptForOtp(otp);
-        } else if (Alert.prompt) {
-          Alert.prompt(
-            "Enter OTP",
-            "Pandascrow sent a code to your email.",
-            async (otp) => {
-              await promptForOtp(otp);
-            },
-            "plain-text",
-            "",
-            "numeric"
-          );
-        } else {
-          Alert.alert(
-            "Check your email",
-            "Enter the OTP via the confirm button — OTP input modal not implemented on this platform yet."
-          );
-        }
+        // Backend wants OTP — open the modal (parent handles prompt + submit)
+        setActionLoading(false);
+        onRequireOtp(booking._id);
         return;
       }
 
-      // Direct success path
+      // Direct success path (no OTP needed)
       Alert.alert("Success", "Job confirmed.");
       onStatusChange();
     } catch (error) {
@@ -338,14 +306,13 @@ const BookingCard = ({
           </View>
         </View>
 
-       <Text
+        <Text
           style={[styles.serviceTitle, { color: colors.textPrimary }]}
           numberOfLines={2}
         >
           {booking.serviceTitle}
         </Text>
 
-        {/* ✅ NEW — Client's description of what they need */}
         {booking.message && booking.message.trim() !== "" && (
           <View
             style={[
@@ -371,7 +338,6 @@ const BookingCard = ({
           </Text>
           <View style={[styles.metaDot, { backgroundColor: colors.textTertiary }]} />
 
-          {/* ✅ NEW — Show scheduled date (falls back to created date) */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
             <Text style={[styles.date, { color: colors.textTertiary }]}>
@@ -384,6 +350,7 @@ const BookingCard = ({
           </View>
         </View>
       </TouchableOpacity>
+
       {!isClient && (
         <View
           style={[
@@ -558,6 +525,7 @@ export default function Dashboard({ navigation }) {
   const { user } = useContext(AuthContext);
   const { colors, toggleTheme, theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const route = useRoute();
 
   const [activeTab, setActiveTab] = useState("client");
   const [bookings, setBookings] = useState([]);
@@ -577,6 +545,21 @@ export default function Dashboard({ navigation }) {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
+  // ✅ OTP modal state — works on Android, iOS, and web
+  const [otpModalVisible, setOtpModalVisible] = useState(false);
+  const [otpBookingId, setOtpBookingId] = useState(null);
+  const [otpValue, setOtpValue] = useState("");
+  const [otpSubmitting, setOtpSubmitting] = useState(false);
+  const [otpError, setOtpError] = useState("");
+
+  useEffect(() => {
+    if (route.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+      // Clear param so it can trigger again next time
+      navigation.setParams({ initialTab: undefined });
+    }
+  }, [route.params?.initialTab]);
 
   // ===== Notifications =====
   const fetchNotifications = async (page = 1, append = false) => {
@@ -605,31 +588,46 @@ export default function Dashboard({ navigation }) {
     }
   };
 
-  const handleNotificationPress = async (notification) => {
-    if (!notification.read) {
-      await markNotificationRead(notification._id);
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-      setNotifications((prev) =>
-        prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n))
-      );
-    }
-    if (notification.type === "chat_message" && notification.data?.bookingId) {
-      setNotificationModalVisible(false);
-      navigation.navigate("Chat", {
-        bookingId: notification.data.bookingId,
-        otherPartyName: notification.title.replace("New message from ", ""),
-        otherPartyImage: null,
-      });
-      return;
-    }
-    if (notification.data?.bookingId) {
-      setNotificationModalVisible(false);
-      navigation.navigate("BookingScreen", {
-        bookingId: notification.data.bookingId,
-        mode: "existing",
-      });
-    }
-  };
+ const handleNotificationPress = async (notification) => {
+  if (!notification.read) {
+    await markNotificationRead(notification._id);
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+    setNotifications((prev) =>
+      prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n))
+    );
+  }
+
+  // Chat notifications → still go to Chat screen (unchanged)
+  if (notification.type === "chat_message" && notification.data?.bookingId) {
+    setNotificationModalVisible(false);
+    navigation.navigate("Chat", {
+      bookingId: notification.data.bookingId,
+      otherPartyName: notification.title.replace("New message from ", ""),
+      otherPartyImage: null,
+    });
+    return;
+  }
+
+  // Booking notifications → stay on Dashboard, switch to the correct tab
+  if (notification.data?.bookingId) {
+    setNotificationModalVisible(false);
+
+    // Determine which tab this booking belongs to:
+    // - If we're the client → "client" tab (Bookings I made)
+    // - If we're the provider → "worker" tab (Bookings with me)
+    const clientId = notification.data?.clientId;
+    const providerId = notification.data?.providerId;
+    const targetTab =
+      String(clientId) === String(user?._id)
+        ? "client"
+        : String(providerId) === String(user?._id)
+        ? "worker"
+        : "client"; // safe fallback
+
+    // We're already on Dashboard — just switch the tab (no navigation needed)
+    setActiveTab(targetTab);
+  }
+};
 
   const handleMarkAllRead = async () => {
     try {
@@ -731,6 +729,46 @@ export default function Dashboard({ navigation }) {
       amount: booking.price,
       serviceTitle: booking.serviceTitle,
     });
+  };
+
+  // ✅ Open OTP modal when backend signals it's required
+  const handleRequireOtp = (bookingId) => {
+    setOtpBookingId(bookingId);
+    setOtpValue("");
+    setOtpError("");
+    setOtpSubmitting(false);
+    setOtpModalVisible(true);
+  };
+
+  // ✅ Submit OTP to release funds
+  const handleSubmitOtp = async () => {
+    const trimmed = otpValue.trim();
+    if (!trimmed) {
+      setOtpError("Please enter the OTP from your email.");
+      return;
+    }
+
+    setOtpSubmitting(true);
+    setOtpError("");
+
+    try {
+      const result = await confirmBookingCompletion(otpBookingId, trimmed);
+      if (result?.success) {
+        setOtpModalVisible(false);
+        setOtpBookingId(null);
+        setOtpValue("");
+        Alert.alert("Success", "Funds released to provider.");
+        fetchBookings();
+      } else {
+        setOtpError(result?.message || "OTP verification failed. Try again.");
+      }
+    } catch (err) {
+      setOtpError(
+        err.response?.data?.message || "OTP verification failed. Try again."
+      );
+    } finally {
+      setOtpSubmitting(false);
+    }
   };
 
   const handleChatPress = (booking, otherRole) => {
@@ -1027,6 +1065,7 @@ export default function Dashboard({ navigation }) {
                 onPress={handleBookingPress}
                 onPayPress={handlePayNow}
                 onChatPress={handleChatPress}
+                onRequireOtp={handleRequireOtp}
                 onStatusChange={() => {
                   fetchBookings();
                 }}
@@ -1050,6 +1089,117 @@ export default function Dashboard({ navigation }) {
           />
         )}
       </View>
+
+      {/* ===== OTP MODAL ===== */}
+      <Modal
+        visible={otpModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!otpSubmitting) {
+            setOtpModalVisible(false);
+            setOtpBookingId(null);
+            setOtpValue("");
+            setOtpError("");
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
+            <View
+              style={[
+                styles.otpIconWrap,
+                { backgroundColor: colors.primaryLight },
+              ]}
+            >
+              <Ionicons name="shield-checkmark" size={24} color={colors.primary} />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Enter Release OTP
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
+              Pandascrow sent a 6-digit code to your email. Enter it to release
+              funds to the provider.
+            </Text>
+
+            <TextInput
+              style={[
+                styles.otpInput,
+                {
+                  backgroundColor: colors.inputBackground,
+                  borderColor: otpError ? colors.danger : colors.inputBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
+              value={otpValue}
+              onChangeText={(t) => {
+                setOtpValue(t);
+                if (otpError) setOtpError("");
+              }}
+              placeholder="Enter OTP"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="number-pad"
+              autoFocus
+              editable={!otpSubmitting}
+              maxLength={10}
+            />
+
+            {otpError ? (
+              <View
+                style={[
+                  styles.otpErrorBox,
+                  {
+                    backgroundColor: colors.danger + "12",
+                    borderColor: colors.danger + "40",
+                  },
+                ]}
+              >
+                <Ionicons name="alert-circle" size={14} color={colors.danger} />
+                <Text style={[styles.otpErrorText, { color: colors.danger }]}>
+                  {otpError}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
+                onPress={() => {
+                  setOtpModalVisible(false);
+                  setOtpBookingId(null);
+                  setOtpValue("");
+                  setOtpError("");
+                }}
+                disabled={otpSubmitting}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  {
+                    backgroundColor: colors.primary,
+                    opacity: otpSubmitting ? 0.7 : 1,
+                  },
+                ]}
+                onPress={handleSubmitOtp}
+                disabled={otpSubmitting}
+              >
+                {otpSubmitting ? (
+                  <ActivityIndicator size="small" color={colors.textInverse} />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
+                    Verify & Release
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ===== NOTIFICATION MODAL ===== */}
       <Modal
@@ -1552,18 +1702,18 @@ const styles = StyleSheet.create({
   emptyNotificationsText: { fontSize: 14.5, marginTop: 12 },
   notificationLoader: { paddingVertical: 14 },
   requestMessageBox: {
-  borderRadius: 10,
-  paddingVertical: 8,
-  paddingHorizontal: 10,
-  marginBottom: 10,
-  borderLeftWidth: 3,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    borderLeftWidth: 3,
   },
   requestMessageText: {
     fontSize: 13,
     fontStyle: "italic",
     lineHeight: 18,
   },
-    // ✅ Provider earnings box
+  // ✅ Provider earnings box
   earningsBox: {
     borderRadius: 12,
     borderWidth: 1,
@@ -1604,5 +1754,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     letterSpacing: -0.3,
+  },
+
+  // ✅ OTP modal styles
+  otpIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  otpInput: {
+    width: "100%",
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    letterSpacing: 4,
+    marginBottom: 12,
+  },
+  otpErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    width: "100%",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  otpErrorText: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    flex: 1,
   },
 });
