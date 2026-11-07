@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { AuthContext } from "../../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { getMessages, sendMessage } from "../services/api";
+import { getMessages, sendMessage, markChatAsRead } from "../services/api";
 
 export default function ChatScreen() {
   const navigation = useNavigation();
@@ -77,6 +77,15 @@ export default function ChatScreen() {
           setMessages(msgs);
           setChatOpen(res.chatOpen !== false);
           if (res.booking) setBookingMeta(res.booking);
+          // Auto-mark messages from the other party as read (only when chat is open)
+          if (res.chatOpen !== false) {
+            const hasUnread = msgs.some(
+              (m) => m.sender?._id && m.sender._id !== user._id && !m.readAt
+            );
+            if (hasUnread) {
+              markChatAsRead(bookingId).catch(() => {});
+            }
+          }
 
           if (!otherPartyImage && msgs.length > 0) {
             const otherMsg = msgs.find(
@@ -237,6 +246,32 @@ export default function ChatScreen() {
     });
   };
 
+  // ✅ Delivery status tick — only shown on own messages
+  const renderTick = (msg) => {
+    if (!msg || msg.pending) return null;
+    if (msg.sender?._id !== user._id) return null;
+
+    if (msg.readAt) {
+      // Read = double blue check
+      return (
+        <Ionicons
+          name="checkmark-done"
+          size={14}
+          color="#60A5FA"
+          style={{ marginLeft: 4 }}
+        />
+      );
+    }
+    // Sent = single white check
+    return (
+      <Ionicons
+        name="checkmark"
+        size={14}
+        color="rgba(255,255,255,0.75)"
+        style={{ marginLeft: 4 }}
+      />
+    );
+  };
   // ===== RENDER MESSAGE =====
   const renderMessage = ({ item }) => {
     const isMe = item.sender?._id === user._id;
@@ -328,12 +363,15 @@ export default function ChatScreen() {
               </Text>
             </TouchableOpacity>
 
-            <Text style={[styles.msgTime, { color: colors.textTertiary }]}>
-              {new Date(item.createdAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-end" }}>
+              <Text style={[styles.msgTime, { color: colors.textTertiary }]}>
+                {new Date(item.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Text>
+              {renderTick(item)}
+            </View>
           </View>
         ) : (
           <View
@@ -353,19 +391,22 @@ export default function ChatScreen() {
             >
               {item.text}
             </Text>
-            <Text
-              style={[
-                styles.msgTime,
-                {
-                  color: isMe ? "rgba(255,255,255,0.7)" : colors.textTertiary,
-                },
-              ]}
-            >
-              {new Date(item.createdAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-end" }}>
+              <Text
+                style={[
+                  styles.msgTime,
+                  {
+                    color: isMe ? "rgba(255,255,255,0.7)" : colors.textTertiary,
+                  },
+                ]}
+              >
+                {new Date(item.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Text>
+              {renderTick(item)}
+            </View>
           </View>
         )}
       </View>
@@ -376,7 +417,8 @@ export default function ChatScreen() {
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
       >
         {/* HEADER */}
         <View
@@ -444,6 +486,7 @@ export default function ChatScreen() {
             keyExtractor={(item) => item._id}
             renderItem={renderMessage}
             contentContainerStyle={[styles.listContent, { paddingBottom: 16 }]}
+            keyboardShouldPersistTaps="handled"
             onContentSizeChange={() =>
               listRef.current?.scrollToEnd({ animated: true })
             }

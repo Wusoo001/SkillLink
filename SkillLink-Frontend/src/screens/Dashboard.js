@@ -552,6 +552,7 @@ export default function Dashboard({ navigation }) {
   const [otpValue, setOtpValue] = useState("");
   const [otpSubmitting, setOtpSubmitting] = useState(false);
   const [otpError, setOtpError] = useState("");
+  const [bankRequiredModalVisible, setBankRequiredModalVisible] = useState(false);
 
   useEffect(() => {
     if (route.params?.initialTab) {
@@ -677,7 +678,7 @@ export default function Dashboard({ navigation }) {
     fetchUnreadCount();
   };
 
-  const handleAccept = async (bookingId) => {
+    const handleAccept = async (bookingId) => {
     setBookings((prev) =>
       prev.map((b) => (b._id === bookingId ? { ...b, status: "accepted" } : b))
     );
@@ -689,6 +690,13 @@ export default function Dashboard({ navigation }) {
       fetchUnreadCount();
     } catch (error) {
       await fetchBookings();
+
+      // ✅ Detect bank setup requirement — show modal instead of generic alert
+      if (error.response?.data?.code === "BANK_REQUIRED") {
+        setBankRequiredModalVisible(true);
+        return;
+      }
+
       Alert.alert("Error", "Could not accept booking.");
     }
   };
@@ -823,19 +831,36 @@ export default function Dashboard({ navigation }) {
   });
 
   // ✅ Earnings — computed from provider-side released bookings
+  // ✅ Compute provider's NET payout from a booking
+// Uses actual pandascrowNetAmount when available (post-webhook), otherwise estimates
+  const getNetPayout = (b) => {
+    if (b.payment?.pandascrowNetAmount != null) {
+      return Number(b.payment.pandascrowNetAmount);
+    }
+    // Fallback: estimate using same percentages as BookingCard
+    const price = Number(b.price) || 0;
+    const PLATFORM_FEE_PCT = 5;
+    const ESCROW_FEE_PCT = 3;
+    return Math.round(
+      price * (1 - PLATFORM_FEE_PCT / 100 - ESCROW_FEE_PCT / 100)
+    );
+  };
+
+  // ✅ Total Earnings = sum of NET payouts from released bookings
   const totalEarnings = bookings
     .filter(
       (b) => b.provider?._id === user?._id && b.status === "released"
     )
-    .reduce((sum, b) => sum + (Number(b.price) || 0), 0);
+    .reduce((sum, b) => sum + getNetPayout(b), 0);
 
+  // ✅ Pending = sum of NET payouts still in escrow (what will arrive)
   const pendingEarnings = bookings
     .filter(
       (b) =>
         b.provider?._id === user?._id &&
         ["paid_in_escrow", "completed"].includes(b.status)
     )
-    .reduce((sum, b) => sum + (Number(b.price) || 0), 0);
+    .reduce((sum, b) => sum + getNetPayout(b), 0);
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -965,7 +990,7 @@ export default function Dashboard({ navigation }) {
               </Text>
               {pendingEarnings > 0 && (
                 <Text style={[styles.walletPending, { color: colors.textTertiary }]}>
-                  ₦{pendingEarnings.toLocaleString()} in escrow
+                  ₦{pendingEarnings.toLocaleString()} pending release
                 </Text>
               )}
             </View>
@@ -1195,6 +1220,56 @@ export default function Dashboard({ navigation }) {
                     Verify & Release
                   </Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+            {/* ===== BANK REQUIRED MODAL ===== */}
+      <Modal
+        visible={bankRequiredModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setBankRequiredModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
+            <View
+              style={[
+                styles.otpIconWrap,
+                { backgroundColor: colors.warning + "20" },
+              ]}
+            >
+              <Ionicons name="card-outline" size={24} color={colors.warning} />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Bank Account Required
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
+              You need to set up your bank account before accepting bookings.
+              This is how you'll receive payments from clients.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
+                onPress={() => setBankRequiredModalVisible(false)}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setBankRequiredModalVisible(false);
+                  navigation.navigate("BankSetup");
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
+                  Set Up Bank
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

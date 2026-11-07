@@ -226,5 +226,45 @@ const getMessages = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to load messages" });
   }
 };
+/**
+ * PUT /api/chat/:bookingId/read
+ * Mark all messages from the OTHER party as read.
+ * Called by the recipient's chat screen when they open/view the chat.
+ */
+const markChatAsRead = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const userId = req.user._id;
 
-module.exports = { sendMessage, getMessages, isChatOpen };
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const isClient = booking.client.toString() === userId.toString();
+    const isProvider = booking.provider.toString() === userId.toString();
+    if (!isClient && !isProvider) {
+      return res.status(403).json({ success: false, message: "Not a participant" });
+    }
+
+    // Set readAt on all messages sent BY the other party that haven't been read yet
+    const result = await Message.updateMany(
+      {
+        booking: bookingId,
+        sender: { $ne: userId },
+        readAt: null,
+      },
+      { $set: { readAt: new Date() } }
+    );
+
+    return res.json({
+      success: true,
+      updated: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Mark as read error:", error.message);
+    return res.status(500).json({ success: false, message: "Failed to mark as read" });
+  }
+};
+
+module.exports = { sendMessage, getMessages, markChatAsRead, isChatOpen };

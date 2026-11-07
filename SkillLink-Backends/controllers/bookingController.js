@@ -172,6 +172,32 @@ const acceptBooking = async (req, res) => {
         message: "Request has expired",
       });
     }
+    if (booking.expiresAt && booking.expiresAt < new Date()) {
+      booking.status = "cancelled";
+      await booking.save();
+      return res.status(400).json({
+        success: false,
+        message: "Request has expired",
+      });
+    }
+
+    // ✅ NEW — Provider must have bank details set up before accepting
+    const provider = await User.findById(booking.provider);
+    if (
+      !provider?.bankDetails?.accountNumber ||
+      !provider?.bankDetails?.bankCode
+    ) {
+      return res.status(400).json({
+        success: false,
+        code: "BANK_REQUIRED",
+        message:
+          "Set up your bank account before accepting bookings. This is how you'll receive payments.",
+      });
+    }
+
+    booking.status = "accepted";
+    booking.acceptedAt = new Date();
+    await booking.save();
     booking.status = "accepted";
     booking.acceptedAt = new Date();
     await booking.save();

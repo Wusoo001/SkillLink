@@ -589,6 +589,21 @@ export const sendMessage = async (bookingId, text, location = null) => {
     throw error;
   }
 };
+export const markChatAsRead = async (bookingId) => {
+  try {
+    const token = await AsyncStorage.getItem("userToken");
+    if (!token) throw new Error("No token found");
+    const response = await api.put(
+      `/chat/${bookingId}/read`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    console.log("Mark chat as read error:", error);
+    return { success: false };
+  }
+};
 
 export const checkRestriction = async ({ email, password }) => {
   try {

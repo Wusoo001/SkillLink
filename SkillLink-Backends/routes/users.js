@@ -38,11 +38,27 @@ setTimeout(cleanupExpiredDeletions, 10000);
 // ========================================
 router.get("/me", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password -verificationToken -verificationTokenExpires");
+    const user = await User.findById(req.user._id).select("-password");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.json(user);
+
+    // ✅ Recount jobsCompleted from released bookings
+    const actualJobsCompleted = await Booking.countDocuments({
+      provider: user._id,
+      status: "released",
+    });
+
+    if (user.jobsCompleted !== actualJobsCompleted) {
+      await User.findByIdAndUpdate(user._id, {
+        jobsCompleted: actualJobsCompleted,
+      });
+    }
+
+    const response = user.toObject();
+    response.jobsCompleted = actualJobsCompleted;
+
+    res.json(response);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -173,11 +189,31 @@ const permanentlyDeleteUser = async (userId) => {
 // ========================================
 router.get("/:id", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("-password -verificationToken -verificationTokenExpires -bankDetails -deleteRequestedAt -scheduledDeletionAt -email -phone");
+    const user = await User.findById(req.params.id).select(
+      "-password -verificationToken -verificationTokenExpires -bankDetails -deleteRequestedAt -scheduledDeletionAt -email -phone"
+    );
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.json(user);
+
+    // ✅ Recount jobsCompleted from released bookings (source of truth)
+    const actualJobsCompleted = await Booking.countDocuments({
+      provider: user._id,
+      status: "released",
+    });
+
+    // If it drifted, update the User doc too (so other reads see correct value)
+    if (user.jobsCompleted !== actualJobsCompleted) {
+      await User.findByIdAndUpdate(user._id, {
+        jobsCompleted: actualJobsCompleted,
+      });
+    }
+
+    // Override the value in the response (in-memory user object still has old value)
+    const response = user.toObject();
+    response.jobsCompleted = actualJobsCompleted;
+
+    res.json(response);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });

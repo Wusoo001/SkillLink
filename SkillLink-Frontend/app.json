@@ -17,6 +17,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.SkillLinkApp",
+      "softwareKeyboardLayoutMode": "resize",
       "intentFilters": [
         {
           "action": "VIEW",
