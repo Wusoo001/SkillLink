@@ -608,6 +608,18 @@ export default function Dashboard({ navigation }) {
     });
     return;
   }
+    // ✅ Product chat notifications → go to Chat screen with productId
+  if (notification.type === "chat_message" && notification.data?.extra?.productId) {
+    setNotificationModalVisible(false);
+    // The recipient is `user`, so the other party is the sender (clientId)
+    navigation.navigate("Chat", {
+      productId: notification.data.extra.productId,
+      recipientId: notification.data.clientId, // who sent it
+      otherPartyName: notification.title.replace("New message from ", ""),
+      otherPartyImage: null,
+    });
+    return;
+  }
 
   // Booking notifications → stay on Dashboard, switch to the correct tab
   if (notification.data?.bookingId) {

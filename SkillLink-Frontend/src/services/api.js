@@ -656,6 +656,23 @@ export const sendProductMessage = async (productId, text, recipientId) => {
   const res = await api.post(`/chat/product/${productId}/messages`, { text, recipientId });
   return res.data;
 };
+export const updateProduct = async (id, postData) => {
+  try {
+    const res = await api.put(`/products/${id}`, postData);
+    return res.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || "Failed to update product" };
+  }
+};
+
+export const deleteProduct = async (id) => {
+  try {
+    const res = await api.delete(`/products/${id}`);
+    return res.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || "Failed to delete product" };
+  }
+};
 // ================================
 // EXPORT API INSTANCE (if needed)
 // ================================

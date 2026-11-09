@@ -294,7 +294,7 @@ const sendProductMessage = async (req, res) => {
       return res.status(400).json({ success: false, blocked: true, message: reason });
     }
 
-    const message = await Message.create({
+      const message = await Message.create({
       product: productId,
       sender: userId,
       recipient: recipientId,
@@ -302,6 +302,26 @@ const sendProductMessage = async (req, res) => {
     });
 
     const populated = await Message.findById(message._id).populate("sender", "name profileImage");
+
+    // ✅ Notify the recipient (seller if buyer sent, buyer if seller replied)
+    try {
+      const senderName = req.user?.name || "Someone";
+      const preview = cleaned.length > 60 ? cleaned.substring(0, 60) + "…" : cleaned;
+
+      await notificationController.createNotification(
+        recipientId,
+        "chat_message",
+        `New message from ${senderName}`,
+        preview,
+        {
+          clientId: userId,       // sender
+          providerId: recipientId, // receiver
+          extra: { productId: productId },
+        }
+      );
+    } catch (notifError) {
+      console.error("❌ Product chat notification error:", notifError.message);
+    }
 
     return res.status(201).json({ success: true, data: populated });
   } catch (error) {

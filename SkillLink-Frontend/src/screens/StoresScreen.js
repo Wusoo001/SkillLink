@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useCallback, useContext } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, ActivityIndicator, RefreshControl } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -10,14 +10,14 @@ export default function StoresScreen() {
   const navigation = useNavigation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  
+
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchProducts = async () => {
     try {
-      const res = await getProducts(1, 50); // Fetch first 50 for now
+      const res = await getProducts(1, 50);
       if (res.success) setProducts(res.data);
     } catch (error) {
       console.log("Store fetch error", error);
@@ -27,9 +27,12 @@ export default function StoresScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchProducts();
-  }, []);
+  // ✅ Runs every time this screen comes into focus (including when returning from CreateProductScreen)
+  useFocusEffect(
+    useCallback(() => {
+      fetchProducts();
+    }, [])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -42,9 +45,9 @@ export default function StoresScreen() {
       onPress={() => navigation.navigate("ProductDetailScreen", { productId: item._id })}
       activeOpacity={0.8}
     >
-      <Image 
-        source={{ uri: item.images?.[0] || "https://via.placeholder.com/150" }} 
-        style={styles.productImage} 
+      <Image
+        source={{ uri: item.images?.[0] || "https://via.placeholder.com/150" }}
+        style={styles.productImage}
       />
       <View style={styles.productInfo}>
         <Text style={[styles.productTitle, { color: colors.textPrimary }]} numberOfLines={1}>
@@ -63,17 +66,25 @@ export default function StoresScreen() {
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
       <View style={styles.header}>
-        <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+          onPress={() => navigation.goBack()}
+        >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Street Stores</Text>
-        <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.primary }]} onPress={() => navigation.navigate("CreateProductScreen")}>
+        <TouchableOpacity
+          style={[styles.backButton, { backgroundColor: colors.primary }]}
+          onPress={() => navigation.navigate("CreateProductScreen")}
+        >
           <Ionicons name="add" size={20} color={colors.textInverse} />
         </TouchableOpacity>
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       ) : (
         <FlatList
           data={products}
@@ -87,7 +98,9 @@ export default function StoresScreen() {
             <View style={styles.center}>
               <Ionicons name="storefront-outline" size={48} color={colors.textTertiary} />
               <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No products yet</Text>
-              <Text style={[styles.emptySub, { color: colors.textTertiary }]}>Be the first to list a product in your area.</Text>
+              <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
+                Be the first to list a product in your area.
+              </Text>
             </View>
           }
         />
