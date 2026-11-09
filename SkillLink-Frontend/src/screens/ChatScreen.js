@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { AuthContext } from "../../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { getMessages, sendMessage, markChatAsRead } from "../services/api";
+import { getMessages, sendMessage, markChatAsRead, getProductMessages, sendProductMessage  } from "../services/api";
 
 export default function ChatScreen() {
   const navigation = useNavigation();
@@ -30,6 +30,8 @@ export default function ChatScreen() {
 
   const {
     bookingId,
+    productId,
+    recipientId,
     otherPartyName = "User",
     otherPartyImage = null,
   } = route.params || {};
@@ -67,33 +69,32 @@ export default function ChatScreen() {
         : null
       : null;
   // ===== LOAD =====
-  const loadMessages = useCallback(
+    const loadMessages = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const res = await getMessages(bookingId);
+        let res;
+        if (productId && recipientId) {
+          res = await getProductMessages(productId, recipientId);
+        } else {
+          res = await getMessages(bookingId);
+        }
+
         if (res.success) {
           const msgs = res.data || [];
           setMessages(msgs);
           setChatOpen(res.chatOpen !== false);
           if (res.booking) setBookingMeta(res.booking);
-          // Auto-mark messages from the other party as read (only when chat is open)
-          if (res.chatOpen !== false) {
-            const hasUnread = msgs.some(
-              (m) => m.sender?._id && m.sender._id !== user._id && !m.readAt
-            );
-            if (hasUnread) {
-              markChatAsRead(bookingId).catch(() => {});
-            }
+
+          // Auto-mark as read
+          if (!productId && res.chatOpen !== false) {
+            const hasUnread = msgs.some((m) => m.sender?._id && m.sender._id !== user._id && !m.readAt);
+            if (hasUnread) markChatAsRead(bookingId).catch(() => {});
           }
 
           if (!otherPartyImage && msgs.length > 0) {
-            const otherMsg = msgs.find(
-              (m) => m.sender?._id && m.sender._id !== user._id
-            );
-            if (otherMsg?.sender?.profileImage) {
-              setOtherPartyAvatar(otherMsg.sender.profileImage);
-            }
+            const otherMsg = msgs.find((m) => m.sender?._id && m.sender._id !== user._id);
+            if (otherMsg?.sender?.profileImage) setOtherPartyAvatar(otherMsg.sender.profileImage);
           }
         }
       } catch (error) {
@@ -102,7 +103,7 @@ export default function ChatScreen() {
         if (!silent) setLoading(false);
       }
     },
-    [bookingId, otherPartyImage, user._id]
+    [bookingId, productId, recipientId, otherPartyImage, user._id]
   );
 
   useEffect(() => {
@@ -142,7 +143,13 @@ export default function ChatScreen() {
     setText("");
 
     try {
-      const res = await sendMessage(bookingId, trimmed);
+      let res;
+      if (productId && recipientId) {
+        res = await sendProductMessage(productId, trimmed, recipientId);
+      } else {
+        res = await sendMessage(bookingId, trimmed);
+      }
+      
       if (res.success) {
         setMessages((prev) =>
           prev.map((m) => (m._id === tempMsg._id ? res.data : m))

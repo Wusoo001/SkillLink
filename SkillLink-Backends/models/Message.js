@@ -2,10 +2,21 @@ const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema(
   {
+    // Can be a booking chat OR a product chat
     booking: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Booking",
-      required: true,
+      required: false, // Changed from true
+    },
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: false,
+    },
+    recipient: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false, // Needed for product chats
     },
     sender: {
       type: mongoose.Schema.Types.ObjectId,
@@ -26,8 +37,7 @@ const messageSchema = new mongoose.Schema(
         type: String,
         enum: ["work_location", "in_transit", "arrived"],
       },
-      },
-    // Set if the message was blocked by the contact filter
+    },
     blocked: {
       type: Boolean,
       default: false,
@@ -45,5 +55,6 @@ const messageSchema = new mongoose.Schema(
 );
 
 messageSchema.index({ booking: 1, createdAt: 1 });
+messageSchema.index({ product: 1, sender: 1, recipient: 1, createdAt: 1 });
 
 module.exports = mongoose.model("Message", messageSchema);

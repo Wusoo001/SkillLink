@@ -948,6 +948,70 @@ export default function HomeScreen() {
             />
           </View>
         )}
+                {/* ===== NEW: DISCOVERY CARDS ===== */}
+        {!isSearching && (
+          <View style={styles.discoveryRow}>
+            {/* Radar Card */}
+            <TouchableOpacity
+              style={[styles.discoveryCard, { backgroundColor: colors.primaryLight }]}
+              onPress={() => navigation.navigate("RadarScreen")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.discoveryHeader}>
+                <Ionicons name="radio-outline" size={24} color={colors.primary} />
+                <View style={styles.liveBadge}>
+                  <Text style={styles.liveText}>LIVE</Text>
+                </View>
+              </View>
+              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Radar</Text>
+              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
+                Watch live or start a session
+              </Text>
+              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
+                <Text style={styles.discoveryBtnText}>Go Live</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Circles Card */}
+            <TouchableOpacity
+              style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
+              onPress={() => navigation.navigate("CirclesScreen")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.discoveryHeader}>
+                <Ionicons name="people-outline" size={24} color={colors.primary} />
+              </View>
+              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Circles</Text>
+              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
+                Join local community
+              </Text>
+              <View style={[styles.discoveryBtnOutline, { borderColor: colors.primary }]}>
+                <Text style={[styles.discoveryBtnTextOutline, { color: colors.primary }]}>Explore</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Stores Card */}
+            <TouchableOpacity
+              style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
+              onPress={() => navigation.navigate("StoresScreen")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.discoveryHeader}>
+                <Ionicons name="storefront-outline" size={24} color={colors.primary} />
+              </View>
+              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Stores</Text>
+              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
+                Discover & buy nearby
+              </Text>
+              <View style={[styles.discoveryBtnOutline, { borderColor: colors.primary }]}>
+                <Text style={[styles.discoveryBtnTextOutline, { color: colors.primary }]}>Shop Now</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ===== LIST ===== */}
         {isListLoading ? (
@@ -1439,4 +1503,73 @@ const styles = StyleSheet.create({
   },
   emptyNotificationsText: { fontSize: 15, marginTop: 10 },
   notificationLoader: { paddingVertical: 14 },
+
+    // ✅ NEW DISCOVERY CARDS
+  discoveryRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+  },
+  discoveryCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 12,
+    justifyContent: "space-between",
+    minHeight: 140,
+  },
+  discoveryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  liveBadge: {
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  liveText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  discoveryTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  discoverySub: {
+    fontSize: 10.5,
+    lineHeight: 14,
+    marginBottom: 10,
+  },
+  discoveryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  discoveryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  discoveryBtnOutline: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    backgroundColor: "transparent",
+  },
+  discoveryBtnTextOutline: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
 });

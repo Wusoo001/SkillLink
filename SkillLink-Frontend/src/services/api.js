@@ -617,6 +617,46 @@ export const checkRestriction = async ({ email, password }) => {
   }
 };
 // ================================
+// PRODUCTS / STORES
+// ================================
+export const getProducts = async (page = 1, limit = 20, filters = {}) => {
+  try {
+    let url = `/products?page=${page}&limit=${limit}`;
+    if (filters.q) url += `&q=${encodeURIComponent(filters.q)}`;
+    if (filters.city) url += `&city=${encodeURIComponent(filters.city)}`;
+    if (filters.category && filters.category !== "All") url += `&category=${encodeURIComponent(filters.category)}`;
+    
+    const res = await api.get(url);
+    return res.data;
+  } catch (error) {
+    return { success: false, data: [] };
+  }
+};
+
+export const getProductById = async (id) => {
+  const res = await api.get(`/products/${id}`);
+  return res.data;
+};
+
+export const createProduct = async (postData) => {
+  try {
+    const res = await api.post("/products", postData);
+    return res.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || "Failed to create product" };
+  }
+};
+
+export const getProductMessages = async (productId, otherUserId) => {
+  const res = await api.get(`/chat/product/${productId}/messages/${otherUserId}`);
+  return res.data;
+};
+
+export const sendProductMessage = async (productId, text, recipientId) => {
+  const res = await api.post(`/chat/product/${productId}/messages`, { text, recipientId });
+  return res.data;
+};
+// ================================
 // EXPORT API INSTANCE (if needed)
 // ================================
 export { api };

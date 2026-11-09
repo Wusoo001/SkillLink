@@ -3,6 +3,7 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { checkContact } = require("../utils/contactFilter");
 const notificationController = require("./notificationController");
+const Product = require("../models/Product"); 
 
 // Statuses that allow chatting
 const CHAT_ACTIVE_STATUSES = [
@@ -267,4 +268,78 @@ const markChatAsRead = async (req, res) => {
   }
 };
 
-module.exports = { sendMessage, getMessages, markChatAsRead, isChatOpen };
+const sendProductMessage = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { text, recipientId } = req.body; // recipientId is the seller's ID
+    const userId = req.user._id;
+
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ success: false, message: "Message cannot be empty" });
+    }
+
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    // Ensure the sender and recipient are valid participants
+    if (String(product.user) !== String(recipientId) && String(userId) !== String(recipientId)) {
+      return res.status(403).json({ success: false, message: "Invalid recipient for this product" });
+    }
+
+    // Contact filter
+    const { blocked, reason, cleaned } = checkContact(text);
+    if (blocked) {
+      return res.status(400).json({ success: false, blocked: true, message: reason });
+    }
+
+    const message = await Message.create({
+      product: productId,
+      sender: userId,
+      recipient: recipientId,
+      text: cleaned,
+    });
+
+    const populated = await Message.findById(message._id).populate("sender", "name profileImage");
+
+    return res.status(201).json({ success: true, data: populated });
+  } catch (error) {
+    console.error("Send product message error:", error.message);
+    return res.status(500).json({ success: false, message: "Failed to send message" });
+  }
+};
+
+/**
+ * GET /api/chat/product/:productId/messages/:otherUserId
+ * Get messages between the current user and the other user regarding a product
+ */
+const getProductMessages = async (req, res) => {
+  try {
+    const { productId, otherUserId } = req.params;
+    const userId = req.user._id;
+
+    const messages = await Message.find({
+      product: productId,
+      $or: [
+        { sender: userId, recipient: otherUserId },
+        { sender: otherUserId, recipient: userId },
+      ],
+    })
+      .populate("sender", "name profileImage")
+      .sort({ createdAt: 1 });
+
+    // Mark incoming messages as read
+    await Message.updateMany(
+      { product: productId, sender: otherUserId, recipient: userId, readAt: null },
+      { $set: { readAt: new Date() } }
+    );
+
+    return res.json({ success: true, data: messages, chatOpen: true });
+  } catch (error) {
+    console.error("Get product messages error:", error.message);
+    return res.status(500).json({ success: false, message: "Failed to load messages" });
+  }
+};
+
+module.exports = { sendMessage, getMessages, markChatAsRead, isChatOpen, sendProductMessage, getProductMessages };
