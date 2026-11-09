@@ -278,14 +278,26 @@ const sendProductMessage = async (req, res) => {
       return res.status(400).json({ success: false, message: "Message cannot be empty" });
     }
 
-    const product = await Product.findById(productId);
+        const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    // Ensure the sender and recipient are valid participants
-    if (String(product.user) !== String(recipientId) && String(userId) !== String(recipientId)) {
-      return res.status(403).json({ success: false, message: "Invalid recipient for this product" });
+    // ✅ FIX — Allow both directions:
+    //   - Buyer → Seller (recipient is owner)
+    //   - Seller → Buyer (sender is owner)
+    if (String(userId) === String(recipientId)) {
+      return res.status(400).json({ success: false, message: "You cannot message yourself" });
+    }
+
+    const senderIsOwner = String(product.user) === String(userId);
+    const recipientIsOwner = String(product.user) === String(recipientId);
+
+    if (!senderIsOwner && !recipientIsOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only chat about this product with the seller or a buyer",
+      });
     }
 
     // Contact filter
