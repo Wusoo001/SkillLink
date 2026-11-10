@@ -1,10 +1,13 @@
-import React, { useState, useCallback, useContext } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, ActivityIndicator, RefreshControl } from "react-native";
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, ActivityIndicator, RefreshControl, TextInput } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { getProducts } from "../services/api";
+
+const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 350;
 
 export default function StoresScreen() {
   const navigation = useNavigation();
@@ -14,29 +17,75 @@ export default function StoresScreen() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
 
-  const fetchProducts = async () => {
+  // ===== SEARCH STATE =====
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchTimeout = useRef(null);
+
+  const fetchProducts = async (pageNum = 1, append = false, isRefresh = false, query = searchQuery) => {
     try {
-      const res = await getProducts(1, 50);
-      if (res.success) setProducts(res.data);
+      if (pageNum === 1 && !isRefresh) setLoading(true);
+      else if (pageNum > 1) setLoadingMore(true);
+
+      const filters = {};
+      if (query && query.trim()) filters.q = query.trim();
+
+      const res = await getProducts(pageNum, PAGE_SIZE, filters);
+
+      if (res.success) {
+        if (append) {
+          setProducts((prev) => [...prev, ...res.data]);
+        } else {
+          setProducts(res.data);
+        }
+        setPage(pageNum);
+        setHasMore(res.hasMore !== false);
+      }
     } catch (error) {
       console.log("Store fetch error", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
   };
 
-  // ✅ Runs every time this screen comes into focus (including when returning from CreateProductScreen)
+  // Reset & reload when the screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      fetchProducts();
+      setHasMore(true);
+      fetchProducts(1, false, false, searchQuery);
     }, [])
   );
 
+  // Debounced search — resets to page 1 on each new query
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      setHasMore(true);
+      fetchProducts(1, false, false, searchQuery);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    };
+  }, [searchQuery]);
+
   const onRefresh = () => {
     setRefreshing(true);
-    fetchProducts();
+    setHasMore(true);
+    fetchProducts(1, false, true, searchQuery);
+  };
+
+  const loadMore = () => {
+    if (loading || loadingMore || refreshing || !hasMore) return;
+    fetchProducts(page + 1, true, false, searchQuery);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery("");
   };
 
   const renderProduct = ({ item }) => (
@@ -81,6 +130,32 @@ export default function StoresScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ===== SEARCH BAR ===== */}
+      <View style={styles.searchSection}>
+        <View
+          style={[
+            styles.searchBar,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
+        >
+          <Ionicons name="search-outline" size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search products, categories..."
+            placeholderTextColor={colors.textTertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={clearSearch} style={{ padding: 4 }}>
+              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -94,12 +169,29 @@ export default function StoresScreen() {
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: 20 }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.center}>
-              <Ionicons name="storefront-outline" size={48} color={colors.textTertiary} />
-              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No products yet</Text>
+              <Ionicons
+                name={searchQuery.trim() ? "search-outline" : "storefront-outline"}
+                size={48}
+                color={colors.textTertiary}
+              />
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+                {searchQuery.trim() ? "No matching products" : "No products yet"}
+              </Text>
               <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
-                Be the first to list a product in your area.
+                {searchQuery.trim()
+                  ? "Try a different keyword."
+                  : "Be the first to list a product in your area."}
               </Text>
             </View>
           }
@@ -111,9 +203,19 @@ export default function StoresScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, marginBottom: 20 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, marginBottom: 12 },
   backButton: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   headerTitle: { fontSize: 20, fontWeight: "800" },
+  searchSection: { paddingHorizontal: 16, marginBottom: 14 },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    height: 46,
+  },
+  searchInput: { flex: 1, fontSize: 14.5, fontWeight: "500", paddingVertical: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 100 },
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },
   row: { justifyContent: "space-between", marginBottom: 16 },

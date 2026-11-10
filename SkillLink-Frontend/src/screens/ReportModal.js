@@ -25,56 +25,56 @@ const REASONS = [
   { key: "other", label: "Other" },
 ];
 
-export default function ReportModal({ visible, onClose, type, targetId }) {
+export default function ReportModal({ visible, onClose, type, targetId, label }) {
   const { colors } = useTheme();
   const [selectedReason, setSelectedReason] = useState(null);
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-  if (!selectedReason) {
-    if (Platform.OS === "web") {
-      window.alert("Please choose why you're reporting this.");
-    } else {
-      Alert.alert("Select a reason", "Please choose why you're reporting this.");
-    }
-    return;
-  }
-
-  setSubmitting(true);
-  try {
-    const payload = {
-      type,
-      reason: selectedReason,
-      description: description.trim(),
-    };
-    if (type === "user") payload.reportedUserId = targetId;
-    if (type === "post") payload.reportedPostId = targetId;
-
-    const res = await submitReport(payload);
-
-    if (res.success) {
+    if (!selectedReason) {
       if (Platform.OS === "web") {
-        window.alert(res.message);
+        window.alert("Please choose why you're reporting this.");
       } else {
-        Alert.alert("Report Submitted", res.message);
+        Alert.alert("Select a reason", "Please choose why you're reporting this.");
       }
-      setSelectedReason(null);
-      setDescription("");
-      onClose();
-    } else {
-      const msg = res.message || "Failed to submit report";
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        type,
+        reason: selectedReason,
+        description: description.trim(),
+      };
+      if (type === "user") payload.reportedUserId = targetId;
+      if (type === "post") payload.reportedPostId = targetId;
+
+      const res = await submitReport(payload);
+
+      if (res.success) {
+        if (Platform.OS === "web") {
+          window.alert(res.message);
+        } else {
+          Alert.alert("Report Submitted", res.message);
+        }
+        setSelectedReason(null);
+        setDescription("");
+        onClose();
+      } else {
+        const msg = res.message || "Failed to submit report";
+        if (Platform.OS === "web") window.alert(msg);
+        else Alert.alert("Error", msg);
+      }
+    } catch (error) {
+      const msg = error.response?.data?.message || "Network error";
       if (Platform.OS === "web") window.alert(msg);
       else Alert.alert("Error", msg);
+    } finally {
+      setSubmitting(false);
     }
-  } catch (error) {
-    const msg = error.response?.data?.message || "Network error";
-    if (Platform.OS === "web") window.alert(msg);
-    else Alert.alert("Error", msg);
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -83,7 +83,7 @@ export default function ReportModal({ visible, onClose, type, targetId }) {
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.inputBorder }]}>
             <Text style={[styles.title, { color: colors.textPrimary }]}>
-              Report {type === "user" ? "User" : "Post"}
+              {label || `Report ${type === "user" ? "User" : "Post"}`}
             </Text>
             <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
               <Ionicons name="close" size={22} color={colors.textPrimary} />

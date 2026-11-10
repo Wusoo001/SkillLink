@@ -4,6 +4,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system/legacy";
 import { AuthContext } from "../../context/AuthContext";
 import { createProduct, updateProduct } from "../services/api";
@@ -12,9 +13,36 @@ import { useTheme } from "../context/ThemeContext";
 const CLOUD_NAME = "dz2te6uth";
 const UPLOAD_PRESET = "SkillLink";
 
+// ===== Compression targets (mirrors CreatePostScreen) =====
+const IMAGE_MAX_WIDTH = 1920;
+const IMAGE_QUALITY = 0.8;
+
 const showAlert = (title, message) => {
   if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
   else Alert.alert(title, message || "");
+};
+
+const compressImage = async (uri) => {
+  try {
+    const { width, height } = await new Promise((resolve, reject) => {
+      Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
+    });
+
+    const actions = [];
+    if (width > IMAGE_MAX_WIDTH || height > IMAGE_MAX_WIDTH) {
+      if (width >= height) actions.push({ resize: { width: IMAGE_MAX_WIDTH } });
+      else actions.push({ resize: { height: IMAGE_MAX_WIDTH } });
+    }
+
+    const result = await ImageManipulator.manipulateAsync(uri, actions, {
+      compress: IMAGE_QUALITY,
+      format: ImageManipulator.SaveFormat.JPEG,
+    });
+    return result.uri;
+  } catch (error) {
+    console.log("Image compression failed, using original:", error);
+    return uri;
+  }
 };
 
 export default function CreateProductScreen() {
@@ -54,7 +82,11 @@ export default function CreateProductScreen() {
         allowsEditing: true,
         quality: 0.7,
       });
-      if (!result.canceled) setImages([...images, result.assets[0].uri]);
+      if (!result.canceled) {
+        // ✅ Compress before adding to state so uploads stay small
+        const compressed = await compressImage(result.assets[0].uri);
+        setImages([...images, compressed]);
+      }
     } catch (err) {
       showAlert("Error", "Could not pick image: " + err.message);
     }

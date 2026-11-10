@@ -1,11 +1,23 @@
 import React, { useState, useEffect, useContext } from "react";
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator, FlatList, Alert, Platform } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Image,
+  TouchableOpacity,
+  ActivityIndicator,
+  FlatList,
+  Alert,
+  Platform,
+} from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
-import { getProductById, deleteProduct } from "../services/api";
+import { getProductById, deleteProduct, updateProduct } from "../services/api";
 import { AuthContext } from "../../context/AuthContext";
+import ReportModal from "./ReportModal";
 
 export default function ProductDetailScreen() {
   const route = useRoute();
@@ -17,6 +29,8 @@ export default function ProductDetailScreen() {
 
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
 
   const loadProduct = () => {
     getProductById(productId).then((res) => {
@@ -50,6 +64,23 @@ export default function ProductDetailScreen() {
     }
   };
 
+  const handleToggleSold = async () => {
+    if (!product || toggling) return;
+    setToggling(true);
+    try {
+      const res = await updateProduct(product._id, { isSold: !product.isSold });
+      if (res.success) {
+        setProduct({ ...product, isSold: !product.isSold });
+      } else {
+        Alert.alert("Error", res.message || "Could not update product");
+      }
+    } catch (e) {
+      Alert.alert("Error", "Could not update product");
+    } finally {
+      setToggling(false);
+    }
+  };
+
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!product) return <View style={styles.center}><Text style={{ color: colors.textPrimary }}>Product not found</Text></View>;
 
@@ -66,7 +97,6 @@ export default function ProductDetailScreen() {
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      
       {/* ✅ FLOATING BACK BUTTON */}
       <TouchableOpacity
         style={[styles.floatingBack, { backgroundColor: colors.card, borderColor: colors.inputBorder, top: insets.top + 10 }]}
@@ -75,6 +105,17 @@ export default function ProductDetailScreen() {
       >
         <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
       </TouchableOpacity>
+
+      {/* ✅ FLOATING REPORT BUTTON — non-owners only */}
+      {!isOwner && (
+        <TouchableOpacity
+          style={[styles.floatingReport, { backgroundColor: colors.card, borderColor: colors.inputBorder, top: insets.top + 10 }]}
+          onPress={() => setReportModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="flag-outline" size={18} color={colors.danger} />
+        </TouchableOpacity>
+      )}
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
         {/* Images */}
@@ -88,9 +129,16 @@ export default function ProductDetailScreen() {
         />
 
         <View style={styles.content}>
-          <Text style={[styles.title, { color: colors.textPrimary }]}>{product.title}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Text style={[styles.title, { color: colors.textPrimary, flex: 1 }]}>{product.title}</Text>
+            {product.isSold && (
+              <View style={[styles.soldBadge, { backgroundColor: colors.danger + "15", borderColor: colors.danger + "40" }]}>
+                <Text style={[styles.soldBadgeText, { color: colors.danger }]}>SOLD</Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.price, { color: colors.primary }]}>₦{product.price?.toLocaleString()}</Text>
-          
+
           <View style={[styles.sellerCard, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}>
             {product.user.profileImage ? (
               <Image source={{ uri: product.user.profileImage }} style={styles.avatar} />
@@ -111,26 +159,66 @@ export default function ProductDetailScreen() {
       {/* Action Bar */}
       <View style={[styles.actionBar, { backgroundColor: colors.card, borderTopColor: colors.inputBorder, paddingBottom: Math.max(insets.bottom, 16) }]}>
         {!isOwner ? (
-          <TouchableOpacity style={[styles.chatBtn, { backgroundColor: colors.primary }]} onPress={handleChat}>
+          <TouchableOpacity
+            style={[styles.chatBtn, { backgroundColor: product.isSold ? colors.textTertiary : colors.primary }]}
+            onPress={handleChat}
+            disabled={product.isSold}
+          >
             <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
-            <Text style={[styles.chatText, { color: "#FFF" }]}>Message Seller</Text>
+            <Text style={[styles.chatText, { color: "#FFF" }]}>
+              {product.isSold ? "Item Sold" : "Message Seller"}
+            </Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.ownerActions}>
-            <TouchableOpacity 
-              style={[styles.editBtn, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]} 
+            <TouchableOpacity
+              style={[styles.editBtn, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }]}
               onPress={() => navigation.navigate("CreateProductScreen", { editProduct: product })}
             >
-              <Ionicons name="pencil" size={18} color={colors.textPrimary} />
+              <Ionicons name="pencil" size={16} color={colors.textPrimary} />
               <Text style={[styles.editText, { color: colors.textPrimary }]}>Edit</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.deleteBtn, { borderColor: colors.danger }]} onPress={handleDelete}>
-              <Ionicons name="trash" size={18} color={colors.danger} />
+
+            <TouchableOpacity
+              style={[styles.soldToggleBtn, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, opacity: toggling ? 0.6 : 1 }]}
+              onPress={handleToggleSold}
+              disabled={toggling}
+            >
+              {toggling ? (
+                <ActivityIndicator size="small" color={colors.textPrimary} />
+              ) : (
+                <>
+                  <Ionicons
+                    name={product.isSold ? "refresh" : "checkmark-circle"}
+                    size={16}
+                    color={colors.success}
+                  />
+                  <Text style={[styles.editText, { color: colors.textPrimary }]}>
+                    {product.isSold ? "Available" : "Sold"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.deleteBtn, { borderColor: colors.danger }]}
+              onPress={handleDelete}
+            >
+              <Ionicons name="trash" size={16} color={colors.danger} />
               <Text style={[styles.deleteText, { color: colors.danger }]}>Delete</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
+
+      {/* ✅ REPORT MODAL — reports the seller (see tradeoff note) */}
+      <ReportModal
+        visible={reportModalVisible}
+        onClose={() => setReportModalVisible(false)}
+        type="user"
+        targetId={product.user._id}
+        label="Report Seller"
+      />
     </View>
   );
 }
@@ -138,9 +226,12 @@ export default function ProductDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  floatingBack: { position: "absolute", left: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", borderWidth: 1, shadowColor: "#000", shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  floatingBack: { position: "absolute", left: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", borderWidth: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  floatingReport: { position: "absolute", right: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", borderWidth: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
   content: { padding: 20 },
   title: { fontSize: 24, fontWeight: "800", marginBottom: 8 },
+  soldBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
+  soldBadgeText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
   price: { fontSize: 22, fontWeight: "800", marginBottom: 20 },
   sellerCard: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 14, borderWidth: 1, marginBottom: 20, gap: 12 },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
@@ -151,9 +242,10 @@ const styles = StyleSheet.create({
   actionBar: { position: "absolute", bottom: 0, width: "100%", padding: 16, borderTopWidth: 1 },
   chatBtn: { flexDirection: "row", height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 8 },
   chatText: { fontSize: 16, fontWeight: "700" },
-  ownerActions: { flexDirection: "row", gap: 10 },
-  editBtn: { flex: 1, flexDirection: "row", height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1 },
-  editText: { fontSize: 16, fontWeight: "700" },
-  deleteBtn: { flex: 1, flexDirection: "row", height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1 },
-  deleteText: { fontSize: 16, fontWeight: "700" },
+  ownerActions: { flexDirection: "row", gap: 8 },
+  editBtn: { flex: 1, flexDirection: "row", height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1 },
+  soldToggleBtn: { flex: 1, flexDirection: "row", height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1 },
+  editText: { fontSize: 13.5, fontWeight: "700" },
+  deleteBtn: { flex: 1, flexDirection: "row", height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1 },
+  deleteText: { fontSize: 13.5, fontWeight: "700" },
 });
