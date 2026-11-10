@@ -3,7 +3,7 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { checkContact } = require("../utils/contactFilter");
 const notificationController = require("./notificationController");
-const Product = require("../models/Product"); 
+const Product = require("../models/Product");
 
 // Statuses that allow chatting
 const CHAT_ACTIVE_STATUSES = [
@@ -31,6 +31,46 @@ const isChatOpen = (booking) => {
   }
 
   return true;
+};
+
+// ===== HELPER: catch phone numbers split across multiple messages =====
+// e.g. "0810" + "0012" + "1234" → "081000121234" → blocked on the 3rd message.
+const checkAccumulatedDigits = async (bookingId, senderId, newText) => {
+  const WINDOW_MINUTES = 30;
+  const MAX_MESSAGES = 10;
+  const since = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000);
+
+  let recent = [];
+  try {
+    recent = await Message.find({
+      booking: bookingId,
+      sender: senderId,
+      createdAt: { $gte: since },
+    })
+      .sort({ createdAt: -1 })
+      .limit(MAX_MESSAGES)
+      .select("text")
+      .lean();
+  } catch (e) {
+    // Fail-open: never block a legitimate user because of a DB hiccup
+    console.error("Accumulated digit lookup error:", e.message);
+    return { blocked: false };
+  }
+
+  // Chronological order (oldest → newest) + current message
+  const combined = [...recent.reverse().map((m) => m.text || ""), newText]
+    .join(" ")
+    .replace(/[\s\-\.\(\)]/g, "");
+
+  const runs = combined.match(/\d+/g) || [];
+  if (runs.some((r) => r.length >= 10)) {
+    return {
+      blocked: true,
+      reason:
+        "Sharing phone numbers is not allowed. Keep conversations on Street.",
+    };
+  }
+  return { blocked: false };
 };
 
 /**
@@ -91,6 +131,17 @@ const sendMessage = async (req, res) => {
           ? "I'm on my way"
           : "I've arrived";
 
+      // ✅ Filter the label so users can't smuggle contact info via location labels
+      const labelCheck = checkContact(location.label || "");
+      if (labelCheck.blocked) {
+        console.log(`🚫 Blocked location label from ${userId}: ${labelCheck.reason}`);
+        return res.status(400).json({
+          success: false,
+          blocked: true,
+          message: labelCheck.reason,
+        });
+      }
+
       const message = await Message.create({
         booking: bookingId,
         sender: userId,
@@ -145,6 +196,18 @@ const sendMessage = async (req, res) => {
         success: false,
         blocked: true,
         message: reason,
+      });
+    }
+
+    // ✅ Catch phone numbers split across multiple messages
+    // e.g. "0810" + "0012" + "1234" → blocked on the 3rd message
+    const accumulated = await checkAccumulatedDigits(bookingId, userId, text);
+    if (accumulated.blocked) {
+      console.log(`🚫 Blocked split-digit message from ${userId}`);
+      return res.status(400).json({
+        success: false,
+        blocked: true,
+        message: accumulated.reason,
       });
     }
 
@@ -216,10 +279,10 @@ const getMessages = async (req, res) => {
       chatOpen: isChatOpen(booking),
       bookingStatus: booking.status,
       booking: {
-      _id: booking._id,
-      client: booking.client,
-      provider: booking.provider,
-      status: booking.status,
+        _id: booking._id,
+        client: booking.client,
+        provider: booking.provider,
+        status: booking.status,
       },
     });
   } catch (error) {
@@ -227,6 +290,7 @@ const getMessages = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to load messages" });
   }
 };
+
 /**
  * PUT /api/chat/:bookingId/read
  * Mark all messages from the OTHER party as read.
@@ -278,12 +342,12 @@ const sendProductMessage = async (req, res) => {
       return res.status(400).json({ success: false, message: "Message cannot be empty" });
     }
 
-        const product = await Product.findById(productId);
+    const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    // ✅ FIX — Allow both directions:
+    // ✅ Allow both directions:
     //   - Buyer → Seller (recipient is owner)
     //   - Seller → Buyer (sender is owner)
     if (String(userId) === String(recipientId)) {
@@ -300,17 +364,15 @@ const sendProductMessage = async (req, res) => {
       });
     }
 
-    // Contact filter
-    const { blocked, reason, cleaned } = checkContact(text);
-    if (blocked) {
-      return res.status(400).json({ success: false, blocked: true, message: reason });
-    }
-
-      const message = await Message.create({
+    // Product chats have no escrow and no on-platform payment, so blocking
+    // contact exchange only pushes deals off-platform where we lose the
+    // evidence trail. Booking chat (sendMessage) still enforces the filter
+    // because of escrow protection.
+    const message = await Message.create({
       product: productId,
       sender: userId,
       recipient: recipientId,
-      text: cleaned,
+      text: text.trim(),
     });
 
     const populated = await Message.findById(message._id).populate("sender", "name profileImage");
@@ -318,7 +380,7 @@ const sendProductMessage = async (req, res) => {
     // ✅ Notify the recipient (seller if buyer sent, buyer if seller replied)
     try {
       const senderName = req.user?.name || "Someone";
-      const preview = cleaned.length > 60 ? cleaned.substring(0, 60) + "…" : cleaned;
+      const preview = text.length > 60 ? text.substring(0, 60) + "…" : text;
 
       await notificationController.createNotification(
         recipientId,
