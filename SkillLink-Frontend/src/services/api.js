@@ -673,6 +673,15 @@ export const deleteProduct = async (id) => {
     return { success: false, message: error.response?.data?.message || "Failed to delete product" };
   }
 };
+
+export const getUserProducts = async (userId, page = 1, limit = 20) => {
+  try {
+    const res = await api.get(`/products/user/${userId}?page=${page}&limit=${limit}`);
+    return res.data;
+  } catch (error) {
+    return { success: false, data: [] };
+  }
+};
 // ================================
 // EXPORT API INSTANCE (if needed)
 // ================================

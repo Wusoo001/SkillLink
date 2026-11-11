@@ -33,11 +33,11 @@ import AccountRestrictedScreen from "./src/screens/AccountRestrictedScreen";
 import * as Linking from "expo-linking";
 import { Platform } from "react-native";
 import PaymentReturnScreen from "./src/screens/PaymentReturnScreen";
-import RadarScreen from "./src/screens/RadarScreen";
 import CirclesScreen from "./src/screens/CirclesScreen";
 import StoresScreen from "./src/screens/StoresScreen";
 import CreateProductScreen from "./src/screens/CreateProductScreen";
 import ProductDetailScreen from "./src/screens/ProductDetailScreen";
+import MyProductsScreen from "./src/screens/MyProductsScreen";
 
 
 
@@ -156,9 +156,9 @@ function AppStack() {
       <Stack.Screen name="Terms" component={TermsScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="PaymentReturn" component={PaymentReturnScreen} />
-      <Stack.Screen name="RadarScreen" component={RadarScreen} />
       <Stack.Screen name="CirclesScreen" component={CirclesScreen} />
       <Stack.Screen name="StoresScreen" component={StoresScreen} />
+      <Stack.Screen name="MyProductsScreen" component={MyProductsScreen} />
       <Stack.Screen name="CreateProductScreen" component={CreateProductScreen} />
       <Stack.Screen name="ProductDetailScreen" component={ProductDetailScreen} />
     </Stack.Navigator>

@@ -122,12 +122,20 @@ export default function StoresScreen() {
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Street Stores</Text>
-        <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.primary }]}
-          onPress={() => navigation.navigate("CreateProductScreen")}
-        >
-          <Ionicons name="add" size={20} color={colors.textInverse} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+            onPress={() => navigation.navigate("MyProductsScreen")}
+          >
+            <Ionicons name="cube-outline" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("CreateProductScreen")}
+          >
+            <Ionicons name="add" size={20} color={colors.textInverse} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ===== SEARCH BAR ===== */}

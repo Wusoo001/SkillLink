@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -8,11 +8,24 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [sessionNotice, setSessionNotice] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Read the "session expired" notice set by the axios interceptor
+  useEffect(() => {
+    const notice = sessionStorage.getItem("authNotice");
+    if (notice) {
+      sessionStorage.removeItem("authNotice");
+      if (notice === "expired") {
+        setSessionNotice("Your session has expired. Please log in again.");
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setSessionNotice(""); // clear expired-notice when user retries
     setLoading(true);
     try {
       await login(email.trim(), password);
@@ -63,6 +76,14 @@ export default function Login() {
             />
           </div>
 
+          {/* Session expired notice — informational, amber */}
+          {sessionNotice && (
+            <div className="text-sm text-warning bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
+              {sessionNotice}
+            </div>
+          )}
+
+          {/* Login error — red, for wrong credentials etc. */}
           {error && (
             <div className="text-sm text-danger bg-red-50 border border-red-100 px-3 py-2 rounded-lg">
               {error}

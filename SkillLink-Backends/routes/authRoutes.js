@@ -1,11 +1,24 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
 const User = require("../models/User");
 const crypto = require('crypto');
 const { sendVerificationEmail } = require('../services/emailService');
 
 const router = express.Router();
+
+// Rate limiter for credential endpoints — slows brute-force attacks
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per IP per window
+  message: {
+    success: false,
+    message: "Too many login attempts. Please try again in 15 minutes.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // REGISTER
 router.post("/register", async (req, res) => {
@@ -104,7 +117,7 @@ router.post("/resend-verification", async (req, res) => {
 });
 
 // LOGIN
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   try {
@@ -241,6 +254,64 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+router.post("/admin-login", loginLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // 1. Validate presence
+    if (!email || !password) {
+      return res.status(401).json({ success: false, message: "Invalid credentials." });
+    }
+
+    // 2. Same generic error for missing user OR wrong password OR non-admin
+    //    → no enumeration of admin email addresses
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Invalid credentials." });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: "Invalid credentials." });
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail) {
+      console.error("❌ ADMIN_EMAIL is not set in .env");
+      return res.status(500).json({ success: false, message: "Server misconfiguration." });
+    }
+
+    if (user.email !== adminEmail) {
+      return res.status(401).json({ success: false, message: "Invalid credentials." });
+    }
+
+    // 3. Defensive — even admins shouldn't be banned
+    if (user.isBanned === true) {
+      return res.status(403).json({ success: false, message: "Account restricted." });
+    }
+
+    // 4. Short-lived token — 8 hours, not 30 days
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "8h" });
+
+    console.log(`🔐 Admin login: ${user.email}`);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("Admin login error:", error);
+    res.status(500).json({ success: false, message: "Server error." });
+  }
+});
+
+
 router.post("/check-restriction", async (req, res) => {
   const { email, password } = req.body;
   try {

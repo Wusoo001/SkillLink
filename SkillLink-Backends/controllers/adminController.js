@@ -44,8 +44,8 @@ const getStats = async (req, res) => {
       pendingReports,
       recentUsers,
       recentBookings,
-      escrowBookings,
-      releasedBookings,
+      escrowAgg,
+      releasedAgg,
     ] = await Promise.all([
       User.countDocuments(),
       Post.countDocuments(),
@@ -54,12 +54,18 @@ const getStats = async (req, res) => {
       Report.countDocuments({ status: "pending" }),
       User.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
       Booking.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
-      Booking.find({ status: { $in: ["paid_in_escrow", "completed", "ready_for_release"] } }).select("price"),
-      Booking.find({ status: "released" }).select("price"),
+      Booking.aggregate([
+        { $match: { status: { $in: ["paid_in_escrow", "completed", "ready_for_release"] } } },
+        { $group: { _id: null, total: { $sum: "$price" } } },
+      ]),
+      Booking.aggregate([
+        { $match: { status: "released" } },
+        { $group: { _id: null, total: { $sum: "$price" } } },
+      ]),
     ]);
 
-    const escrowHeld = escrowBookings.reduce((sum, b) => sum + (Number(b.price) || 0), 0);
-    const totalReleased = releasedBookings.reduce((sum, b) => sum + (Number(b.price) || 0), 0);
+    const escrowHeld = escrowAgg[0]?.total || 0;
+    const totalReleased = releasedAgg[0]?.total || 0;
 
     res.json({
       success: true,
@@ -158,7 +164,7 @@ const listUsers = async (req, res) => {
 const getUserDetail = async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select(
-      "-password -verificationToken -verificationTokenExpires"
+      "-password -verificationToken -verificationTokenExpires -bankDetails"
     );
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
@@ -420,29 +426,46 @@ const listTransactions = async (req, res) => {
   try {
     const { page, limit, skip } = pagination(req.query);
 
-    const wallets = await Wallet.find().populate("provider", "name email profileImage");
+    // Fast count — doesn't unwind the array, just sums its length per wallet
+    const totalAgg = await Wallet.aggregate([
+      { $project: { count: { $size: "$transactions" } } },
+      { $group: { _id: null, total: { $sum: "$count" } } },
+    ]);
+    const total = totalAgg[0]?.total || 0;
 
-    const allTx = [];
-    for (const w of wallets) {
-      for (const tx of w.transactions || []) {
-        allTx.push({
-          _id: tx._id,
-          provider: w.provider,
-          type: tx.type,
-          amount: tx.amount,
-          description: tx.description,
-          reference: tx.reference,
-          bookingId: tx.bookingId,
-          createdAt: tx.createdAt,
-        });
-      }
-    }
-    allTx.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Paged list — unwinds transactions, sorts globally, skips + limits, then joins provider
+    const transactions = await Wallet.aggregate(
+      [
+        { $unwind: "$transactions" },
+        { $sort: { "transactions.createdAt": -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        {
+          $lookup: {
+            from: "users",
+            localField: "provider",
+            foreignField: "_id",
+            as: "providerDoc",
+            pipeline: [{ $project: { name: 1, email: 1, profileImage: 1 } }],
+          },
+        },
+        {
+          $project: {
+            _id: "$transactions._id",
+            provider: { $arrayElemAt: ["$providerDoc", 0] },
+            type: "$transactions.type",
+            amount: "$transactions.amount",
+            description: "$transactions.description",
+            reference: "$transactions.reference",
+            bookingId: "$transactions.bookingId",
+            createdAt: "$transactions.createdAt",
+          },
+        },
+      ],
+      { allowDiskUse: true }
+    );
 
-    const total = allTx.length;
-    const paged = allTx.slice(skip, skip + limit);
-
-    respondList(res, paged, page, limit, total);
+    respondList(res, transactions, page, limit, total);
   } catch (error) {
     console.error("Admin list transactions error:", error);
     res.status(500).json({ success: false, message: "Failed to load transactions" });

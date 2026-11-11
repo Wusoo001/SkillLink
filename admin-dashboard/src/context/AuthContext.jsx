@@ -19,28 +19,31 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const res = await api.post("/auth/login", { email, password });
-    if (!res.data?.token || !res.data?.user) {
-      throw new Error(res.data?.message || "Invalid credentials");
-    }
-
-    // Verify admin access
-    const token = res.data.token;
     try {
-      await api.get("/admin/stats", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch (error) {
-      if (error.response?.status === 403) {
-        throw new Error("This account does not have admin access.");
-      }
-      throw new Error(error.response?.data?.message || "Admin verification failed");
-    }
+      const res = await api.post("/auth/admin-login", { email, password });
 
-    localStorage.setItem("adminToken", token);
-    localStorage.setItem("adminUser", JSON.stringify(res.data.user));
-    setUser(res.data.user);
-    return res.data.user;
+      if (!res.data?.token || !res.data?.user) {
+        throw new Error("Invalid credentials.");
+      }
+
+      localStorage.setItem("adminToken", res.data.token);
+      localStorage.setItem("adminUser", JSON.stringify(res.data.user));
+      setUser(res.data.user);
+      return res.data.user;
+    } catch (error) {
+      if (error.response?.status === 401) {
+        throw new Error("Invalid credentials.");
+      }
+      if (error.response?.status === 403) {
+        throw new Error("This account cannot access the admin panel.");
+      }
+      if (error.response?.status === 429) {
+        throw new Error("Too many login attempts. Please try again in 15 minutes.");
+      }
+      throw new Error(
+        error.response?.data?.message || error.message || "Login failed."
+      );
+    }
   };
 
   const logout = () => {

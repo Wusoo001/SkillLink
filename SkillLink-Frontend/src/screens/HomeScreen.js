@@ -962,28 +962,6 @@ export default function HomeScreen() {
                 {/* ===== NEW: DISCOVERY CARDS ===== */}
         {!isSearching && (
           <View style={styles.discoveryRow}>
-            {/* Radar Card */}
-            <TouchableOpacity
-              style={[styles.discoveryCard, { backgroundColor: colors.primaryLight }]}
-              onPress={() => navigation.navigate("RadarScreen")}
-              activeOpacity={0.8}
-            >
-              <View style={styles.discoveryHeader}>
-                <Ionicons name="radio-outline" size={24} color={colors.primary} />
-                <View style={styles.liveBadge}>
-                  <Text style={styles.liveText}>LIVE</Text>
-                </View>
-              </View>
-              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Radar</Text>
-              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
-                Watch live or start a session
-              </Text>
-              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
-                <Text style={styles.discoveryBtnText}>Go Live</Text>
-                <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
-              </View>
-            </TouchableOpacity>
-
             {/* Circles Card */}
             <TouchableOpacity
               style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
@@ -991,15 +969,17 @@ export default function HomeScreen() {
               activeOpacity={0.8}
             >
               <View style={styles.discoveryHeader}>
-                <Ionicons name="people-outline" size={24} color={colors.primary} />
+                <View style={[styles.discoveryIconWrap, { backgroundColor: colors.primaryLight }]}>
+                  <Ionicons name="people" size={22} color={colors.primary} />
+                </View>
               </View>
               <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Circles</Text>
               <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
-                Join local community
+                Get recommendations from neighbors in your area
               </Text>
-              <View style={[styles.discoveryBtnOutline, { borderColor: colors.primary }]}>
-                <Text style={[styles.discoveryBtnTextOutline, { color: colors.primary }]}>Explore</Text>
-                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>Explore</Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.textInverse} />
               </View>
             </TouchableOpacity>
 
@@ -1010,15 +990,17 @@ export default function HomeScreen() {
               activeOpacity={0.8}
             >
               <View style={styles.discoveryHeader}>
-                <Ionicons name="storefront-outline" size={24} color={colors.primary} />
+                <View style={[styles.discoveryIconWrap, { backgroundColor: colors.primaryLight }]}>
+                  <Ionicons name="storefront" size={22} color={colors.primary} />
+                </View>
               </View>
               <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Stores</Text>
               <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
-                Discover & buy nearby
+                Buy and sell products near you
               </Text>
-              <View style={[styles.discoveryBtnOutline, { borderColor: colors.primary }]}>
-                <Text style={[styles.discoveryBtnTextOutline, { color: colors.primary }]}>Shop Now</Text>
-                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>Shop Now</Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.textInverse} />
               </View>
             </TouchableOpacity>
           </View>
@@ -1518,69 +1500,51 @@ const styles = StyleSheet.create({
     // ✅ NEW DISCOVERY CARDS
   discoveryRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 12,
     marginBottom: 16,
     paddingHorizontal: 2,
   },
   discoveryCard: {
     flex: 1,
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 18,
+    padding: 14,
     justifyContent: "space-between",
-    minHeight: 140,
+    minHeight: 172,
   },
   discoveryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  liveBadge: {
-    backgroundColor: "#EF4444",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  liveText: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "800",
+  discoveryIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
   },
   discoveryTitle: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "800",
-    marginBottom: 2,
+    letterSpacing: -0.2,
+    marginBottom: 4,
   },
   discoverySub: {
-    fontSize: 10.5,
-    lineHeight: 14,
-    marginBottom: 10,
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 14,
   },
   discoveryBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 9,
+    borderRadius: 10,
     gap: 4,
   },
   discoveryBtnText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  discoveryBtnOutline: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 4,
-    backgroundColor: "transparent",
-  },
-  discoveryBtnTextOutline: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
   },
 });
