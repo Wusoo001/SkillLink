@@ -213,7 +213,6 @@ export default function Appeals() {
               </label>
               <textarea
                 value={adminNote}
-                onChangeText={setAdminNote}
                 onChange={(e) => setAdminNote(e.target.value)}
                 rows={3}
                 placeholder="Explain your decision…"

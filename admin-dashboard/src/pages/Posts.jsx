@@ -7,6 +7,19 @@ import Pagination from "../components/Pagination";
 import Loading from "../components/Loading";
 import Modal from "../components/Modal";
 
+// Only allow media URLs from known-safe hosts (Cloudinary in this app)
+const isSafeMediaUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    if (u.hostname !== "res.cloudinary.com") return false;
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export default function Posts() {
   const [posts, setPosts] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1 });
@@ -195,11 +208,16 @@ export default function Posts() {
                 </div>
               </div>
             )}
-            {viewPost.media && viewPost.mediaType === "image" && (
+            {viewPost.media && viewPost.mediaType === "image" && isSafeMediaUrl(viewPost.media) && (
               <img src={viewPost.media} alt="" className="w-full rounded-xl" />
             )}
-            {viewPost.media && viewPost.mediaType === "video" && (
+            {viewPost.media && viewPost.mediaType === "video" && isSafeMediaUrl(viewPost.media) && (
               <video src={viewPost.media} controls className="w-full rounded-xl" />
+            )}
+            {viewPost.media && !isSafeMediaUrl(viewPost.media) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-warning">
+                Media URL is from an unrecognized source and was not rendered for safety.
+              </div>
             )}
           </div>
         )}

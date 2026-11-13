@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, AlertTriangle, ShieldOff, ShieldCheck } from "lucide-react";
 import { api } from "../api/client";
@@ -13,22 +13,31 @@ export default function UserDetail() {
   const [actionOpen, setActionOpen] = useState(false);
   const [actionDefault, setActionDefault] = useState("warning");
 
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get(`/admin/users/${id}`);
+      setData(res.data.data);
+    } catch (err) {
+      console.error("Load user detail failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
   const handleLift = async (action) => {
-    if (!window.confirm(`Are you sure you want to ${action} this user?`)) return;
+    const verb = action === "unban" ? "unban" : "lift the suspension on";
+    if (!window.confirm(`Are you sure you want to ${verb} this user?`)) return;
     try {
       await api.post(`/admin/users/${id}/action`, { action });
-      window.location.reload();
+      await load();
     } catch (err) {
       window.alert(err.response?.data?.message || "Failed to apply action");
     }
   };
 
   useEffect(() => {
-    api
-      .get(`/admin/users/${id}`)
-      .then((res) => setData(res.data.data))
-      .finally(() => setLoading(false));
-  }, [id]);
+    load();
+  }, [load]);
 
   if (loading) return <Loading />;
   if (!data) return <p className="text-inkMuted">User not found.</p>;
@@ -49,7 +58,6 @@ export default function UserDetail() {
         <ArrowLeft size={16} /> Back to Users
       </Link>
 
-      {/* ==================== BANNED BANNER ==================== */}
       {user.isBanned && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center gap-3">
           <ShieldOff size={22} className="text-danger" />
@@ -74,7 +82,6 @@ export default function UserDetail() {
         </div>
       )}
 
-      {/* ==================== SUSPENDED BANNER ==================== */}
       {isSuspended && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
           <AlertTriangle size={22} className="text-warning" />
@@ -96,7 +103,6 @@ export default function UserDetail() {
         </div>
       )}
 
-      {/* ==================== PROFILE HEADER ==================== */}
       <div className="bg-white rounded-2xl border border-border p-6 flex items-center gap-5">
         <div className="w-20 h-20 rounded-2xl bg-primaryLight flex items-center justify-center overflow-hidden">
           {user.profileImage ? (
@@ -134,7 +140,6 @@ export default function UserDetail() {
         </div>
       </div>
 
-      {/* ==================== ACTION BUTTONS ==================== */}
       {!user.isBanned && (
         <div className="flex flex-wrap gap-2">
           <button
@@ -158,7 +163,6 @@ export default function UserDetail() {
         </div>
       )}
 
-      {/* ==================== BIO ==================== */}
       {user.bio && (
         <div className="bg-white rounded-2xl border border-border p-5">
           <p className="text-xs font-bold uppercase text-inkMuted mb-2">Bio</p>
@@ -166,7 +170,6 @@ export default function UserDetail() {
         </div>
       )}
 
-      {/* ==================== WARNINGS ==================== */}
       {user.warnings?.length > 0 && (
         <Section title={`Warnings (${user.warnings.length})`}>
           {user.warnings
@@ -185,7 +188,6 @@ export default function UserDetail() {
         </Section>
       )}
 
-      {/* ==================== POSTS ==================== */}
       <Section title={`Posts (${posts.length})`}>
         {posts.length === 0 ? (
           <Empty>No posts</Empty>
@@ -200,7 +202,6 @@ export default function UserDetail() {
         )}
       </Section>
 
-      {/* ==================== BOOKINGS AS CLIENT ==================== */}
       <Section title={`Bookings as Client (${bookingsAsClient.length})`}>
         {bookingsAsClient.length === 0 ? (
           <Empty>No bookings</Empty>
@@ -220,7 +221,6 @@ export default function UserDetail() {
         )}
       </Section>
 
-      {/* ==================== BOOKINGS AS PROVIDER ==================== */}
       <Section title={`Bookings as Provider (${bookingsAsProvider.length})`}>
         {bookingsAsProvider.length === 0 ? (
           <Empty>No bookings</Empty>
@@ -240,7 +240,6 @@ export default function UserDetail() {
         )}
       </Section>
 
-      {/* ==================== REVIEWS RECEIVED ==================== */}
       <Section title={`Reviews Received (${reviewsReceived.length})`}>
         {reviewsReceived.length === 0 ? (
           <Empty>No reviews</Empty>
@@ -257,7 +256,6 @@ export default function UserDetail() {
         )}
       </Section>
 
-      {/* ==================== REVIEWS WRITTEN ==================== */}
       <Section title={`Reviews Written (${reviewsWritten.length})`}>
         {reviewsWritten.length === 0 ? (
           <Empty>No reviews</Empty>
@@ -274,14 +272,13 @@ export default function UserDetail() {
         )}
       </Section>
 
-      {/* ==================== ACTION MODAL ==================== */}
       <ActionModal
         open={actionOpen}
         onClose={() => setActionOpen(false)}
         target={user}
         targetType="user"
         defaultAction={actionDefault}
-        onSuccess={() => window.location.reload()}
+        onSuccess={load}
       />
     </div>
   );

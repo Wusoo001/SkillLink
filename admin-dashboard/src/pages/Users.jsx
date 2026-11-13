@@ -7,6 +7,7 @@ import {
   XCircle,
   AlertTriangle,
   ShieldOff,
+  ShieldCheck,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "../api/client";
@@ -59,6 +60,26 @@ export default function Users() {
     load(pagination.page, search);
   };
 
+  const handleUnban = async (user) => {
+    if (!window.confirm(`Unban ${user.name}? They will be able to log in again.`)) return;
+    try {
+      await api.post(`/admin/users/${user._id}/action`, { action: "unban" });
+      load(pagination.page, search);
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Failed to unban");
+    }
+  };
+
+  const handleUnsuspend = async (user) => {
+    if (!window.confirm(`Lift suspension for ${user.name}?`)) return;
+    try {
+      await api.post(`/admin/users/${user._id}/action`, { action: "unsuspend" });
+      load(pagination.page, search);
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Failed to unsuspend");
+    }
+  };
+
   const openAction = (user, defaultAction) => {
     setActionUser(user);
     setActionDefault(defaultAction);
@@ -71,7 +92,6 @@ export default function Users() {
         <p className="text-sm text-inkMuted mt-1">Manage all registered users</p>
       </div>
 
-      {/* ===== SEARCH ===== */}
       <form onSubmit={handleSearch} className="flex gap-2">
         <div className="relative flex-1 max-w-md">
           <Search
@@ -93,7 +113,6 @@ export default function Users() {
         </button>
       </form>
 
-      {/* ===== USERS TABLE ===== */}
       <div className="bg-white rounded-2xl border border-border overflow-hidden">
         {loading ? (
           <Loading />
@@ -102,24 +121,12 @@ export default function Users() {
             <table className="w-full text-sm">
               <thead className="bg-background border-b border-border">
                 <tr className="text-left">
-                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">
-                    User
-                  </th>
-                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">
-                    Contact
-                  </th>
-                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">
-                    Rating
-                  </th>
-                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">
-                    Jobs
-                  </th>
-                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">
-                    Joined
-                  </th>
+                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">User</th>
+                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">Contact</th>
+                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">Status</th>
+                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">Rating</th>
+                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">Jobs</th>
+                  <th className="px-4 py-3 font-bold text-inkMuted uppercase text-xs">Joined</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -194,7 +201,6 @@ export default function Users() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
-                          {/* Verify toggle */}
                           <button
                             onClick={() => toggleVerify(u._id)}
                             className="p-2 rounded-lg hover:bg-primaryLight text-inkSoft"
@@ -207,7 +213,6 @@ export default function Users() {
                             )}
                           </button>
 
-                          {/* Warn */}
                           <button
                             onClick={() => openAction(u, "warning")}
                             className="p-2 rounded-lg hover:bg-amber-50 text-warning"
@@ -216,14 +221,22 @@ export default function Users() {
                             <AlertTriangle size={16} />
                           </button>
 
-                          {/* Ban (or Unban shortcut if banned) */}
+                          {/* Ban / Unban — context-sensitive */}
                           {u.isBanned ? (
                             <button
-                              onClick={() => openAction(u, "ban")}
-                              className="p-2 rounded-lg hover:bg-red-50 text-danger"
-                              title="Open actions (banned)"
+                              onClick={() => handleUnban(u)}
+                              className="p-2 rounded-lg hover:bg-green-50 text-success"
+                              title="Unban"
                             >
-                              <ShieldOff size={16} />
+                              <ShieldCheck size={16} />
+                            </button>
+                          ) : isSuspended ? (
+                            <button
+                              onClick={() => handleUnsuspend(u)}
+                              className="p-2 rounded-lg hover:bg-green-50 text-success"
+                              title="Lift Suspension"
+                            >
+                              <ShieldCheck size={16} />
                             </button>
                           ) : (
                             <button
@@ -235,7 +248,6 @@ export default function Users() {
                             </button>
                           )}
 
-                          {/* Delete */}
                           <button
                             onClick={() => setConfirmDelete(u)}
                             className="p-2 rounded-lg hover:bg-red-50 text-danger"
@@ -250,10 +262,7 @@ export default function Users() {
                 })}
                 {users.length === 0 && (
                   <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-12 text-center text-inkMuted"
-                    >
+                    <td colSpan={7} className="px-4 py-12 text-center text-inkMuted">
                       No users found.
                     </td>
                   </tr>
@@ -270,7 +279,6 @@ export default function Users() {
         onPageChange={(p) => load(p, search)}
       />
 
-      {/* ===== DELETE MODAL ===== */}
       <Modal
         open={!!confirmDelete}
         onClose={() => setConfirmDelete(null)}
@@ -297,7 +305,6 @@ export default function Users() {
         </div>
       </Modal>
 
-      {/* ===== ACTION MODAL (Warn / Suspend / Ban) ===== */}
       <ActionModal
         open={!!actionUser}
         onClose={() => setActionUser(null)}
