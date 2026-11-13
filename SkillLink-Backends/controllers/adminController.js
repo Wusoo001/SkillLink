@@ -6,6 +6,8 @@ const Report = require("../models/Report");
 const Notification = require("../models/Notification");
 const Wallet = require("../models/Wallet");
 const notificationController = require("./notificationController");
+const AdminAuditLog = require("../models/AdminAuditLog");
+const { logAdminAction } = require("../utils/adminAudit");
 
 // ======================================================
 // HELPERS
@@ -213,6 +215,13 @@ const toggleUserVerification = async (req, res) => {
 
     user.isVerified = !user.isVerified;
     await user.save();
+      await logAdminAction({
+      req,
+      action: user.isVerified ? "verify_user" : "unverify_user",
+      targetType: "user",
+      targetId: user._id,
+      targetLabel: `${user.name} (${user.email})`,
+    });
 
     res.json({ success: true, data: { isVerified: user.isVerified } });
   } catch (error) {
@@ -224,7 +233,17 @@ const toggleUserVerification = async (req, res) => {
 const deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
+    const deletedLabel = user ? `${user.name} (${user.email})` : String(userId);
     const user = await User.findById(userId);
+     await logAdminAction({
+      req,
+      action: "delete_user",
+      targetType: "user",
+      targetId: userId,
+      targetLabel: deletedLabel,
+    });
+
+    res.json({ success: true, message: "User permanently deleted" });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
     // Same cleanup as permanentlyDeleteUser in routes/users.js
@@ -280,10 +299,20 @@ const listPosts = async (req, res) => {
 
 const deletePost = async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, message: "Post not found" });
-    await post.deleteOne();
-    res.json({ success: true, message: "Post deleted" });
+      const post = await Post.findById(req.params.id);
+      if (!post) return res.status(404).json({ success: false, message: "Post not found" });
+      const postLabel = post.skill || String(post._id);
+      await post.deleteOne();
+
+      await logAdminAction({
+        req,
+        action: "delete_post",
+        targetType: "post",
+        targetId: post._id,
+        targetLabel: postLabel,
+      });
+
+      res.json({ success: true, message: "Post deleted" });
   } catch (error) {
     console.error("Admin delete post error:", error);
     res.status(500).json({ success: false, message: "Failed to delete post" });
@@ -411,6 +440,15 @@ const deleteReview = async (req, res) => {
     } else {
       await User.findByIdAndUpdate(review.provider, { rating: 0 });
     }
+
+    await logAdminAction({
+      req,
+      action: "delete_review",
+      targetType: "review",
+      targetId: review._id,
+      targetLabel: `Rating ${review.rating}★ on provider ${review.provider}`,
+      metadata: { rating: review.rating, provider: String(review.provider) },
+    });
 
     res.json({ success: true, message: "Review deleted" });
   } catch (error) {
@@ -572,6 +610,16 @@ const takeReportAction = async (req, res) => {
         actedAt: new Date(),
       };
       await report.save();
+
+      await logAdminAction({
+        req,
+        action: "dismiss_report",
+        targetType: "report",
+        targetId: report._id,
+        targetLabel: `Report: ${report.reason} (${report.type})`,
+        reason: reason || "",
+      });
+
       return res.json({ success: true, message: "Report dismissed" });
     }
 
@@ -605,6 +653,16 @@ const takeReportAction = async (req, res) => {
       actedAt: new Date(),
     };
     await report.save();
+
+    await logAdminAction({
+      req,
+      action: "action_report",
+      targetType: "report",
+      targetId: report._id,
+      targetLabel: `Report: ${report.reason} (${report.type})`,
+      reason: reason || "",
+      metadata: { appliedAction: action, targetUserId: String(targetUserId) },
+    });
 
     res.json({
       success: true,
@@ -647,6 +705,15 @@ const takeUserAction = async (req, res) => {
       targetUser.banReason = "";
       targetUser.bannedBy = null;
       await targetUser.save();
+
+      await logAdminAction({
+        req,
+        action: "unban_user",
+        targetType: "user",
+        targetId: targetUser._id,
+        targetLabel: `${targetUser.name} (${targetUser.email})`,
+      });
+
       return res.json({ success: true, message: "User unbanned" });
     }
 
@@ -655,6 +722,15 @@ const takeUserAction = async (req, res) => {
       targetUser.suspendReason = "";
       targetUser.suspendedBy = null;
       await targetUser.save();
+
+      await logAdminAction({
+        req,
+        action: "unsuspend_user",
+        targetType: "user",
+        targetId: targetUser._id,
+        targetLabel: `${targetUser.name} (${targetUser.email})`,
+      });
+
       return res.json({ success: true, message: "Suspension lifted" });
     }
 
@@ -666,6 +742,23 @@ const takeUserAction = async (req, res) => {
       actedBy: req.user._id,
       reportId: null,
     });
+
+    const auditAction =
+      action === "warning" ? "warn_user" :
+      action === "suspension" ? "suspend_user" :
+      action === "ban" ? "ban_user" : null;
+
+    if (auditAction) {
+      await logAdminAction({
+        req,
+        action: auditAction,
+        targetType: "user",
+        targetId: updated._id,
+        targetLabel: `${updated.name} (${updated.email})`,
+        reason: reason || "",
+        metadata: action === "suspension" ? { durationDays } : {},
+      });
+    }
 
     res.json({
       success: true,
