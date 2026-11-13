@@ -8,9 +8,8 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
     const savedUser = localStorage.getItem("adminUser");
-    if (token && savedUser) {
+    if (savedUser) {
       try {
         setUser(JSON.parse(savedUser));
       } catch {}
@@ -22,11 +21,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.post("/auth/admin-login", { email, password });
 
-      if (!res.data?.token || !res.data?.user) {
+      if (!res.data?.user) {
         throw new Error("Invalid credentials.");
       }
 
-      localStorage.setItem("adminToken", res.data.token);
+      // Token is now httpOnly — not accessible from JS. Only user data is stored.
       localStorage.setItem("adminUser", JSON.stringify(res.data.user));
       setUser(res.data.user);
       return res.data.user;
@@ -46,8 +45,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem("adminToken");
+  const logout = async () => {
+    try {
+      await api.post("/auth/admin-logout");
+    } catch {
+      // Even if server call fails, clear local state
+    }
     localStorage.removeItem("adminUser");
     setUser(null);
   };

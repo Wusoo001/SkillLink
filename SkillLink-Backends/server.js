@@ -13,10 +13,28 @@ const notificationRoutes = require("./routes/notificationRoutes");
 
 
 const app = express();
+const cookieParser = require("cookie-parser");
 
 app.set("trust proxy", 1);
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Mobile apps, curl, Postman → no Origin header → allow
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
+
+// Cookie parser — must be before routes
+app.use(cookieParser());
 app.use("/api/webhooks/pandascrow", require("./routes/pandascrowWebhookRoutes"));
 app.use(express.json({
   verify: (req, res, buf) => {

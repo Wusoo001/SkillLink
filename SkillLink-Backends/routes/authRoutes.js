@@ -292,13 +292,23 @@ router.post("/admin-login", loginLimiter, async (req, res) => {
     }
 
     // 4. Short-lived token — 8 hours, not 30 days
+       // 4. Short-lived token — 8 hours, not 30 days
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "8h" });
 
     console.log(`🔐 Admin login: ${user.email}`);
 
+    // 5. Set as httpOnly cookie — JS can never read this
+    res.cookie("adminToken", token, {
+      httpOnly: true,
+      secure: true, // required for SameSite=None; works because Render is HTTPS
+      sameSite: "none", // required for cross-site (localhost:5173 → Render)
+      maxAge: 8 * 60 * 60 * 1000, // 8 hours in ms
+      path: "/",
+    });
+
+    // 6. Return user data only — token never travels in JSON
     res.json({
       success: true,
-      token,
       user: {
         _id: user._id,
         name: user.name,
@@ -311,6 +321,16 @@ router.post("/admin-login", loginLimiter, async (req, res) => {
   }
 });
 
+// ADMIN LOGOUT — clear the httpOnly cookie server-side
+router.post("/admin-logout", (req, res) => {
+  res.clearCookie("adminToken", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: "/",
+  });
+  res.json({ success: true, message: "Logged out" });
+});
 
 router.post("/check-restriction", async (req, res) => {
   const { email, password } = req.body;
