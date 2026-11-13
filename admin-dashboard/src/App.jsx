@@ -12,6 +12,7 @@ import Reports from "./pages/Reports";
 import Reviews from "./pages/Reviews";
 import Transactions from "./pages/Transactions";
 import Appeals from "./pages/Appeals";
+import AuditLogs from "./pages/AuditLogs";
 
 export default function App() {
   const { user } = useAuth();
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="reviews" element={<Reviews />} />
         <Route path="transactions" element={<Transactions />} />
         <Route path="appeals" element={<Appeals />} />
+        <Route path="audit-logs" element={<AuditLogs />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

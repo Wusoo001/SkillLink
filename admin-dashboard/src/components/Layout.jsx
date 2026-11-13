@@ -9,6 +9,7 @@ import {
   Wallet,
   LogOut,
   MessageSquare,
+  ScrollText,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -21,6 +22,7 @@ const NAV = [
   { to: "/appeals", label: "Appeals", icon: MessageSquare },
   { to: "/reviews", label: "Reviews", icon: Star },
   { to: "/transactions", label: "Transactions", icon: Wallet },
+  { to: "/audit-logs", label: "Audit Log", icon: ScrollText },
 ];
 
 export default function Layout() {
