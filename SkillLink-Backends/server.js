@@ -93,6 +93,7 @@ app.get("/payment-return", (req, res) => {
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/posts", require("./routes/postRoutes"));
 app.use("/api/products", require("./routes/productRoutes"));
+app.use("/api/circles", require("./routes/circleRoutes"));
 app.use("/api/users", userRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/bookings", bookingRoutes);

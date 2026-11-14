@@ -23,6 +23,7 @@ const notificationSchema = new mongoose.Schema(
         "account_banned",
         "appeal_accepted",
         "appeal_rejected",
+        "circle_reply", 
       ],
       required: true,
     },
