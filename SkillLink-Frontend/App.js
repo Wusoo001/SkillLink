@@ -38,7 +38,10 @@ import StoresScreen from "./src/screens/StoresScreen";
 import CreateProductScreen from "./src/screens/CreateProductScreen";
 import ProductDetailScreen from "./src/screens/ProductDetailScreen";
 import MyProductsScreen from "./src/screens/MyProductsScreen";
-
+import CirclesScreen from "./src/screens/CirclesScreen";
+import CircleDetailScreen from "./src/screens/CircleDetailScreen";
+import CreateRequestScreen from "./src/screens/CreateRequestScreen";
+import RequestDetailScreen from "./src/screens/RequestDetailScreen";
 
 
 const linking = {
@@ -161,6 +164,10 @@ function AppStack() {
       <Stack.Screen name="MyProductsScreen" component={MyProductsScreen} />
       <Stack.Screen name="CreateProductScreen" component={CreateProductScreen} />
       <Stack.Screen name="ProductDetailScreen" component={ProductDetailScreen} />
+      <Stack.Screen name="CirclesScreen" component={CirclesScreen} />
+      <Stack.Screen name="CircleDetail" component={CircleDetailScreen} />
+      <Stack.Screen name="CreateRequest" component={CreateRequestScreen} />
+      <Stack.Screen name="RequestDetail" component={RequestDetailScreen} />
     </Stack.Navigator>
   );
 }

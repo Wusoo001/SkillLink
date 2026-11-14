@@ -185,6 +185,34 @@ const permanentlyDeleteUser = async (userId) => {
 };
 
 // ========================================
+// SEARCH USERS (for reply recommendations)
+// GET /api/users/search?q=name&limit=10
+// ========================================
+router.get("/search", protect, async (req, res) => {
+  try {
+    const { q } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 20);
+
+    if (!q || q.trim().length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const regex = { $regex: q.trim(), $options: "i" };
+    const users = await User.find({
+      _id: { $ne: req.user._id },
+      name: regex,
+    })
+      .select("name profileImage rating isVerified")
+      .limit(limit)
+      .lean();
+
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error("Search users error:", error.message);
+    res.status(500).json({ success: false, message: "Search failed" });
+  }
+});
+// ========================================
 // GET USER PROFILE
 // ========================================
 router.get("/:id", protect, async (req, res) => {

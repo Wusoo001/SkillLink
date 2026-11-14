@@ -682,6 +682,149 @@ export const getUserProducts = async (userId, page = 1, limit = 20) => {
     return { success: false, data: [] };
   }
 };
+
+// ================================
+// STREET CIRCLES
+// ================================
+
+export const getCircles = async (page = 1, limit = 20) => {
+  try {
+    const res = await api.get(`/circles?page=${page}&limit=${limit}`);
+    return res.data;
+  } catch (error) {
+    console.log("Get circles error:", error);
+    return { success: false, data: [] };
+  }
+};
+
+export const getMyCircle = async () => {
+  try {
+    const res = await api.get("/circles/mine");
+    return res.data;
+  } catch (error) {
+    console.log("Get my circle error:", error);
+    return { success: false, data: null };
+  }
+};
+
+export const getCircleById = async (circleId) => {
+  try {
+    const res = await api.get(`/circles/${circleId}`);
+    return res.data;
+  } catch (error) {
+    console.log("Get circle error:", error);
+    return { success: false };
+  }
+};
+
+export const joinCircle = async (circleId) => {
+  try {
+    const res = await api.post(`/circles/${circleId}/join`);
+    return res.data;
+  } catch (error) {
+    console.log("Join circle error:", error);
+    throw error;
+  }
+};
+
+export const leaveCircle = async (circleId) => {
+  try {
+    const res = await api.post(`/circles/${circleId}/leave`);
+    return res.data;
+  } catch (error) {
+    console.log("Leave circle error:", error);
+    throw error;
+  }
+};
+
+export const getCircleRequests = async (circleId, resolved = false, page = 1, limit = 20) => {
+  try {
+    const res = await api.get(
+      `/circles/${circleId}/requests?resolved=${resolved}&page=${page}&limit=${limit}`
+    );
+    return res.data;
+  } catch (error) {
+    console.log("Get circle requests error:", error);
+    return { success: false, data: [] };
+  }
+};
+
+export const createCircleRequest = async (circleId, payload) => {
+  try {
+    const res = await api.post(`/circles/${circleId}/requests`, payload);
+    return res.data;
+  } catch (error) {
+    console.log("Create circle request error:", error);
+    throw error;
+  }
+};
+
+export const getCircleRequest = async (circleId, requestId) => {
+  try {
+    const res = await api.get(`/circles/${circleId}/requests/${requestId}`);
+    return res.data;
+  } catch (error) {
+    console.log("Get circle request error:", error);
+    return { success: false };
+  }
+};
+
+export const resolveCircleRequest = async (circleId, requestId) => {
+  try {
+    const res = await api.patch(`/circles/${circleId}/requests/${requestId}/resolve`);
+    return res.data;
+  } catch (error) {
+    console.log("Resolve circle request error:", error);
+    throw error;
+  }
+};
+
+export const deleteCircleRequest = async (circleId, requestId) => {
+  try {
+    const res = await api.delete(`/circles/${circleId}/requests/${requestId}`);
+    return res.data;
+  } catch (error) {
+    console.log("Delete circle request error:", error);
+    throw error;
+  }
+};
+
+export const createCircleReply = async (circleId, requestId, payload) => {
+  try {
+    const res = await api.post(
+      `/circles/${circleId}/requests/${requestId}/replies`,
+      payload
+    );
+    return res.data;
+  } catch (error) {
+    console.log("Create circle reply error:", error);
+    throw error;
+  }
+};
+
+export const deleteCircleReply = async (circleId, requestId, replyId) => {
+  try {
+    const res = await api.delete(
+      `/circles/${circleId}/requests/${requestId}/replies/${replyId}`
+    );
+    return res.data;
+  } catch (error) {
+    console.log("Delete circle reply error:", error);
+    throw error;
+  }
+};
+
+export const searchUsers = async (query, limit = 10) => {
+  try {
+    const res = await api.get(
+      `/users/search?q=${encodeURIComponent(query)}&limit=${limit}`
+    );
+    return res.data;
+  } catch (error) {
+    console.log("Search users error:", error);
+    return { success: false, data: [] };
+  }
+};
 // ================================
 // EXPORT API INSTANCE (if needed)
 // ================================
