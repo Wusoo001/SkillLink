@@ -962,6 +962,27 @@ export default function HomeScreen() {
                 {/* ===== NEW: DISCOVERY CARDS ===== */}
         {!isSearching && (
           <View style={styles.discoveryRow}>
+            {/* Stores Card */}
+            <TouchableOpacity
+              style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
+              onPress={() => navigation.navigate("StoresScreen")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.discoveryHeader}>
+                <View style={[styles.discoveryIconWrap, { backgroundColor: colors.primaryLight }]}>
+                  <Ionicons name="storefront" size={22} color={colors.primary} />
+                </View>
+              </View>
+              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Stores</Text>
+              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
+                Buy and sell products near you
+              </Text>
+              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>Shop Now</Text>
+                <Ionicons name="chevron-forward" size={13} color={colors.textInverse} />
+              </View>
+            </TouchableOpacity>
+            
             {/* Circles Card */}
             <TouchableOpacity
               style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
@@ -983,26 +1004,7 @@ export default function HomeScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Stores Card */}
-            <TouchableOpacity
-              style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
-              onPress={() => navigation.navigate("StoresScreen")}
-              activeOpacity={0.8}
-            >
-              <View style={styles.discoveryHeader}>
-                <View style={[styles.discoveryIconWrap, { backgroundColor: colors.primaryLight }]}>
-                  <Ionicons name="storefront" size={22} color={colors.primary} />
-                </View>
-              </View>
-              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Stores</Text>
-              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
-                Buy and sell products near you
-              </Text>
-              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>Shop Now</Text>
-                <Ionicons name="chevron-forward" size={13} color={colors.textInverse} />
-              </View>
-            </TouchableOpacity>
+            
           </View>
         )}
 
