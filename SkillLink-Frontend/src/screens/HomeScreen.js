@@ -42,7 +42,12 @@ const VideoItem = ({ uri, style }) => {
   });
 
   return (
-    <VideoView player={player} style={style} contentFit="cover" nativeControls />
+    <VideoView
+      player={player}
+      style={style}
+      contentFit="cover"
+      nativeControls
+    />
   );
 };
 
@@ -137,7 +142,6 @@ const PostCard = ({
   onOpenReviews,
   colors,
 }) => {
-  // Animated values created ONCE per mount — not per render
   const translateY = useRef(new Animated.Value(24)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -496,7 +500,6 @@ export default function HomeScreen() {
   };
 
   const handleNotificationPress = async (notification) => {
-    // Mark read — never block navigation on failure
     if (!notification.read) {
       try {
         await markNotificationRead(notification._id);
@@ -577,7 +580,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Poll notifications — pauses when app backgrounds
   useFocusEffect(
     useCallback(() => {
       let intervalId = null;
@@ -694,7 +696,7 @@ export default function HomeScreen() {
     }
   };
 
-  // LIKE / SAVE — updates ALL views (posts, allPosts, searchResults)
+  // LIKE / SAVE
   const toggleSave = async (id) => {
     try {
       await savePost(id);
@@ -770,16 +772,13 @@ export default function HomeScreen() {
       }),
     ]).start();
 
-    // Safe scroll — will retry via onScrollToIndexFailed if item not rendered
     try {
       categoryListRef.current?.scrollToIndex({
         animated: true,
         index,
         viewPosition: 0.5,
       });
-    } catch (e) {
-      // fallback — no crash
-    }
+    } catch (e) {}
 
     if (category === "All") setPosts(allPosts);
     else {
@@ -790,7 +789,7 @@ export default function HomeScreen() {
     }
   };
 
-  // EFFECTS — initial load (user change only, once)
+  // EFFECTS
   useEffect(() => {
     setAllPosts([]);
     setPosts([]);
@@ -799,7 +798,6 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userToken]);
 
-  // EFFECTS — refresh on post creation (skips the initial mount double-fire)
   useEffect(() => {
     if (isFirstRefresh.current) {
       isFirstRefresh.current = false;
@@ -826,7 +824,7 @@ export default function HomeScreen() {
     (!isSearching && loading && posts.length === 0);
   const isEmpty = displayData.length === 0 && !isListLoading && !loadError;
 
-  // SKELETON
+  // ===== SKELETON =====
   const renderSkeleton = () => (
     <View style={styles.skeletonContainer}>
       {[1, 2, 3].map((_, idx) => (
@@ -870,10 +868,291 @@ export default function HomeScreen() {
     </View>
   );
 
+  // ===== SCROLLABLE LIST HEADER (search + categories + discovery + feed label) =====
+  const renderListHeader = () => (
+    <View>
+      {/* SEARCH AREA — always visible */}
+      <View style={styles.searchSection}>
+        <View
+          style={[
+            styles.searchBar,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
+        >
+          <Ionicons
+            name="search-outline"
+            size={19}
+            color={colors.primary}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            placeholder="Search skills, professionals..."
+            placeholderTextColor={colors.textTertiary}
+            value={searchQuery}
+            onChangeText={handleSearch}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+              <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View
+          style={[
+            styles.cityBar,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
+        >
+          <Ionicons
+            name="location-outline"
+            size={14}
+            color={colors.primary}
+            style={styles.cityIcon}
+          />
+          <TextInput
+            style={[styles.cityInput, { color: colors.textPrimary }]}
+            placeholder="Filter by city"
+            placeholderTextColor={colors.textTertiary}
+            value={locationFilter}
+            onChangeText={handleLocationFilter}
+            returnKeyType="search"
+          />
+          {locationFilter.length > 0 ? (
+            <TouchableOpacity onPress={clearLocationFilter} style={styles.clearCity}>
+              <Ionicons name="close-circle" size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+          )}
+        </View>
+      </View>
+
+      {/* CATEGORIES — hidden while searching */}
+      {!isSearching && (
+        <View style={styles.categorySection}>
+          <FlatList
+            ref={categoryListRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={categories}
+            keyExtractor={(item) => item}
+            contentContainerStyle={styles.categoryList}
+            onScrollToIndexFailed={(info) => {
+              setTimeout(() => {
+                try {
+                  categoryListRef.current?.scrollToIndex({
+                    animated: true,
+                    index: info.index,
+                    viewPosition: 0.5,
+                  });
+                } catch {}
+              }, 100);
+            }}
+            renderItem={({ item, index }) => (
+              <Animated.View style={{ transform: [{ scale: scaleAnim[index] }] }}>
+                <TouchableOpacity
+                  style={[
+                    styles.categoryChip,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.inputBorder,
+                    },
+                    selectedCategory === item && {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                  onPress={() => handleCategoryPress(item, index)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.categoryText,
+                      {
+                        color:
+                          selectedCategory === item
+                            ? colors.textInverse
+                            : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          />
+        </View>
+      )}
+
+      {/* DISCOVERY CARDS — hidden while searching */}
+      {!isSearching && (
+        <View style={styles.discoveryRow}>
+          <TouchableOpacity
+            style={[
+              styles.discoveryCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.inputBorder,
+                borderWidth: 1,
+              },
+            ]}
+            onPress={() => navigation.navigate("StoresScreen")}
+            activeOpacity={0.8}
+          >
+            <View style={styles.discoveryHeader}>
+              <View
+                style={[
+                  styles.discoveryIconWrap,
+                  { backgroundColor: colors.primaryLight },
+                ]}
+              >
+                <Ionicons name="storefront" size={18} color={colors.primary} />
+              </View>
+            </View>
+            <Text
+              style={[styles.discoveryTitle, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              Street Stores
+            </Text>
+            <Text
+              style={[styles.discoverySub, { color: colors.textSecondary }]}
+              numberOfLines={2}
+            >
+              Buy and sell products near you
+            </Text>
+            <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>
+                Shop Now
+              </Text>
+              <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.discoveryCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.inputBorder,
+                borderWidth: 1,
+              },
+            ]}
+            onPress={() => navigation.navigate("CirclesScreen")}
+            activeOpacity={0.8}
+          >
+            <View style={styles.discoveryHeader}>
+              <View
+                style={[
+                  styles.discoveryIconWrap,
+                  { backgroundColor: colors.primaryLight },
+                ]}
+              >
+                <Ionicons name="people" size={18} color={colors.primary} />
+              </View>
+            </View>
+            <Text
+              style={[styles.discoveryTitle, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              Street Circles
+            </Text>
+            <Text
+              style={[styles.discoverySub, { color: colors.textSecondary }]}
+              numberOfLines={2}
+            >
+              Recommendations from neighbors
+            </Text>
+            <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>
+                Explore
+              </Text>
+              <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* FEED LABEL — hidden while searching */}
+      {!isSearching && (
+        <View style={styles.feedLabel}>
+          <Text style={[styles.feedLabelText, { color: colors.textPrimary }]}>
+            Discover Professionals
+          </Text>
+          <View
+            style={[styles.feedLabelLine, { backgroundColor: colors.inputBorder }]}
+          />
+        </View>
+      )}
+    </View>
+  );
+
+  // ===== EMPTY / ERROR STATE (below header) =====
+  const renderListEmpty = () => {
+    if (isListLoading) return renderSkeleton();
+
+    if (loadError && !isSearching && posts.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View
+            style={[styles.emptyIconWrap, { backgroundColor: colors.danger + "15" }]}
+          >
+            <Ionicons name="cloud-offline-outline" size={28} color={colors.danger} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+            Couldn't load feed
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setLoadError(false);
+              refreshPosts();
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={16} color={colors.textInverse} />
+            <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+              Retry
+            </Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <View
+          style={[styles.emptyIconWrap, { backgroundColor: colors.inputBackground }]}
+        >
+          <Ionicons
+            name={isSearching ? "search-outline" : "cube-outline"}
+            size={28}
+            color={colors.textTertiary}
+          />
+        </View>
+        <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+          {isSearching ? "No results found" : "No posts yet"}
+        </Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+          {isSearching
+            ? "Try adjusting your search terms or location filter"
+            : "Be the first to create a service post!"}
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* HEADER */}
+        {/* ===== STATIC BRAND HEADER (pinned — never scrolls) ===== */}
         <View style={styles.topRow}>
           <View style={styles.brandBlock}>
             <View style={styles.brandRow}>
@@ -935,325 +1214,52 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* SEARCH */}
-        <View style={styles.searchSection}>
-          <View
-            style={[
-              styles.searchBar,
-              { backgroundColor: colors.card, borderColor: colors.inputBorder },
-            ]}
-          >
-            <Ionicons
-              name="search-outline"
-              size={19}
-              color={colors.primary}
-              style={styles.searchIcon}
+        {/* ===== SCROLLABLE CONTENT (search + categories + cards + feed) ===== */}
+        <FlatList
+          data={displayData}
+          keyExtractor={(item, index) => item._id || index.toString()}
+          renderItem={({ item, index }) => (
+            <PostCard
+              item={item}
+              index={index}
+              isLiked={likedPosts.includes(item._id)}
+              isSaved={savedPosts.includes(item._id)}
+              onLike={toggleLike}
+              onSave={toggleSave}
+              onOpenProfile={goToUserProfile}
+              onOpenReviews={goToAllReviews}
+              colors={colors}
             />
-            <TextInput
-              placeholder="Search skills, professionals..."
-              placeholderTextColor={colors.textTertiary}
-              value={searchQuery}
-              onChangeText={handleSearch}
-              style={[styles.searchInput, { color: colors.textPrimary }]}
-              returnKeyType="search"
+          )}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={5}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          onEndReached={!isSearching ? loadMorePosts : null}
+          onEndReachedThreshold={0.3}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View
-            style={[
-              styles.cityBar,
-              { backgroundColor: colors.card, borderColor: colors.inputBorder },
-            ]}
-          >
-            <Ionicons
-              name="location-outline"
-              size={14}
-              color={colors.primary}
-              style={styles.cityIcon}
-            />
-            <TextInput
-              style={[styles.cityInput, { color: colors.textPrimary }]}
-              placeholder="Filter by city"
-              placeholderTextColor={colors.textTertiary}
-              value={locationFilter}
-              onChangeText={handleLocationFilter}
-              returnKeyType="search"
-            />
-            {locationFilter.length > 0 ? (
-              <TouchableOpacity onPress={clearLocationFilter} style={styles.clearCity}>
-                <Ionicons name="close-circle" size={16} color={colors.textTertiary} />
-              </TouchableOpacity>
-            ) : (
-              <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
-            )}
-          </View>
-        </View>
-
-        {/* CATEGORIES */}
-        {!isSearching && (
-          <View style={styles.categorySection}>
-            <FlatList
-              ref={categoryListRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              data={categories}
-              keyExtractor={(item) => item}
-              contentContainerStyle={styles.categoryList}
-              onScrollToIndexFailed={(info) => {
-                setTimeout(() => {
-                  try {
-                    categoryListRef.current?.scrollToIndex({
-                      animated: true,
-                      index: info.index,
-                      viewPosition: 0.5,
-                    });
-                  } catch {}
-                }, 100);
-              }}
-              renderItem={({ item, index }) => (
-                <Animated.View style={{ transform: [{ scale: scaleAnim[index] }] }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.categoryChip,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: colors.inputBorder,
-                      },
-                      selectedCategory === item && {
-                        backgroundColor: colors.primary,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                    onPress={() => handleCategoryPress(item, index)}
-                    activeOpacity={0.85}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        {
-                          color:
-                            selectedCategory === item
-                              ? colors.textInverse
-                              : colors.textSecondary,
-                        },
-                      ]}
-                    >
-                      {item}
-                    </Text>
-                  </TouchableOpacity>
-                </Animated.View>
-              )}
-            />
-          </View>
-        )}
-
-        {/* DISCOVERY CARDS */}
-        {!isSearching && (
-          <View style={styles.discoveryRow}>
-            <TouchableOpacity
-              style={[
-                styles.discoveryCard,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.inputBorder,
-                  borderWidth: 1,
-                },
-              ]}
-              onPress={() => navigation.navigate("StoresScreen")}
-              activeOpacity={0.8}
-            >
-              <View style={styles.discoveryHeader}>
-                <View
-                  style={[
-                    styles.discoveryIconWrap,
-                    { backgroundColor: colors.primaryLight },
-                  ]}
-                >
-                  <Ionicons name="storefront" size={18} color={colors.primary} />
-                </View>
-              </View>
-              <Text
-                style={[styles.discoveryTitle, { color: colors.textPrimary }]}
-                numberOfLines={1}
-              >
-                Street Stores
-              </Text>
-              <Text
-                style={[styles.discoverySub, { color: colors.textSecondary }]}
-                numberOfLines={2}
-              >
-                Buy and sell products near you
-              </Text>
-              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>
-                  Shop Now
-                </Text>
-                <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.discoveryCard,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.inputBorder,
-                  borderWidth: 1,
-                },
-              ]}
-              onPress={() => navigation.navigate("CirclesScreen")}
-              activeOpacity={0.8}
-            >
-              <View style={styles.discoveryHeader}>
-                <View
-                  style={[
-                    styles.discoveryIconWrap,
-                    { backgroundColor: colors.primaryLight },
-                  ]}
-                >
-                  <Ionicons name="people" size={18} color={colors.primary} />
-                </View>
-              </View>
-              <Text
-                style={[styles.discoveryTitle, { color: colors.textPrimary }]}
-                numberOfLines={1}
-              >
-                Street Circles
-              </Text>
-              <Text
-                style={[styles.discoverySub, { color: colors.textSecondary }]}
-                numberOfLines={2}
-              >
-                Recommendations from neighbors
-              </Text>
-              <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>
-                  Explore
-                </Text>
-                <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* FEED LABEL */}
-        {!isSearching && (
-          <View style={styles.feedLabel}>
-            <Text style={[styles.feedLabelText, { color: colors.textPrimary }]}>
-              Discover Professionals
-            </Text>
-            <View
-              style={[styles.feedLabelLine, { backgroundColor: colors.inputBorder }]}
-            />
-          </View>
-        )}
-
-        {/* LIST */}
-        {isListLoading ? (
-          renderSkeleton()
-        ) : loadError && !isSearching && posts.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <View
-              style={[styles.emptyIconWrap, { backgroundColor: colors.danger + "15" }]}
-            >
-              <Ionicons name="cloud-offline-outline" size={28} color={colors.danger} />
-            </View>
-            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-              Couldn't load feed
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-              Check your connection and try again.
-            </Text>
-            <TouchableOpacity
-              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-              onPress={() => {
-                setLoadError(false);
-                refreshPosts();
-              }}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="refresh" size={16} color={colors.textInverse} />
-              <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
-                Retry
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <FlatList
-            data={displayData}
-            keyExtractor={(item, index) => item._id || index.toString()}
-            renderItem={({ item, index }) => (
-              <PostCard
-                item={item}
-                index={index}
-                isLiked={likedPosts.includes(item._id)}
-                isSaved={savedPosts.includes(item._id)}
-                onLike={toggleLike}
-                onSave={toggleSave}
-                onOpenProfile={goToUserProfile}
-                onOpenReviews={goToAllReviews}
-                colors={colors}
+          }
+          ListHeaderComponent={renderListHeader}
+          ListEmptyComponent={renderListEmpty}
+          ListFooterComponent={
+            !isSearching && loading && posts.length > 0 ? (
+              <ActivityIndicator
+                size="small"
+                color={colors.primary}
+                style={styles.footerLoader}
               />
-            )}
-            showsVerticalScrollIndicator={false}
-            initialNumToRender={5}
-            maxToRenderPerBatch={5}
-            windowSize={5}
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="handled"
-            onEndReached={!isSearching ? loadMorePosts : null}
-            onEndReachedThreshold={0.3}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.primary}
-                colors={[colors.primary]}
-              />
-            }
-            ListEmptyComponent={
-              isEmpty ? (
-                <View style={styles.emptyContainer}>
-                  <View
-                    style={[
-                      styles.emptyIconWrap,
-                      { backgroundColor: colors.inputBackground },
-                    ]}
-                  >
-                    <Ionicons
-                      name={isSearching ? "search-outline" : "cube-outline"}
-                      size={28}
-                      color={colors.textTertiary}
-                    />
-                  </View>
-                  <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-                    {isSearching ? "No results found" : "No posts yet"}
-                  </Text>
-                  <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-                    {isSearching
-                      ? "Try adjusting your search terms or location filter"
-                      : "Be the first to create a service post!"}
-                  </Text>
-                </View>
-              ) : null
-            }
-            ListFooterComponent={
-              !isSearching && loading && posts.length > 0 ? (
-                <ActivityIndicator
-                  size="small"
-                  color={colors.primary}
-                  style={styles.footerLoader}
-                />
-              ) : null
-            }
-            contentContainerStyle={styles.listContent}
-          />
-        )}
+            ) : null
+          }
+          contentContainerStyle={styles.listContent}
+        />
 
         {/* FAB */}
         <Animated.View
@@ -1275,7 +1281,7 @@ export default function HomeScreen() {
         </Animated.View>
       </View>
 
-      {/* NOTIFICATION MODAL */}
+      {/* ===== NOTIFICATION MODAL ===== */}
       <Modal
         visible={notificationModalVisible}
         transparent={true}
@@ -1370,12 +1376,13 @@ export default function HomeScreen() {
 }
 
 // ========================================
-// STYLES — unchanged from prior delivery
+// STYLES
 // ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 24 },
 
+  // ===== STATIC BRAND HEADER =====
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1421,6 +1428,7 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { color: "#FFFFFF", fontSize: 9.5, fontWeight: "800" },
 
+  // ===== SCROLLABLE HEADER (inside FlatList) =====
   searchSection: { marginBottom: 12, gap: 6 },
   searchBar: {
     flexDirection: "row",
@@ -1498,11 +1506,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     marginBottom: 2,
   },
-  discoverySub: {
-    fontSize: 11,
-    lineHeight: 14,
-    marginBottom: 10,
-  },
+  discoverySub: { fontSize: 11, lineHeight: 14, marginBottom: 10 },
   discoveryBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1511,10 +1515,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 4,
   },
-  discoveryBtnText: {
-    fontSize: 11.5,
-    fontWeight: "700",
-  },
+  discoveryBtnText: { fontSize: 11.5, fontWeight: "700" },
 
   feedLabel: {
     flexDirection: "row",
@@ -1528,11 +1529,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: -0.2,
   },
-  feedLabelLine: {
-    flex: 1,
-    height: 1,
-  },
+  feedLabelLine: { flex: 1, height: 1 },
 
+  // ===== POST CARDS =====
   cardWrapper: { marginBottom: 14 },
   card: {
     borderRadius: 20,
@@ -1543,11 +1542,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
+  cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   avatarWrap: { position: "relative", marginRight: 12 },
   avatarContainer: {
     width: 46,
@@ -1570,24 +1565,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   headerInfo: { flex: 1, paddingRight: 8 },
-  nameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 2,
-  },
-  name: {
-    fontWeight: "700",
-    fontSize: 15.5,
-    letterSpacing: -0.2,
-    flexShrink: 1,
-  },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 },
+  name: { fontWeight: "700", fontSize: 15.5, letterSpacing: -0.2, flexShrink: 1 },
   verifiedIcon: {},
-  skill: {
-    fontSize: 12.5,
-    fontWeight: "600",
-    marginBottom: 3,
-  },
+  skill: { fontSize: 12.5, fontWeight: "600", marginBottom: 3 },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   locationText: { fontSize: 11, fontWeight: "500", flexShrink: 1 },
   ratingPill: {
@@ -1599,11 +1580,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   ratingPillText: { fontSize: 12, fontWeight: "700", color: "#92400E" },
-  newPill: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-  },
+  newPill: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12 },
   newPillText: {
     fontSize: 11,
     fontWeight: "800",
@@ -1627,12 +1604,7 @@ const styles = StyleSheet.create({
   tag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   tagText: { fontSize: 12, fontWeight: "600" },
   divider: { height: 1, marginBottom: 8 },
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 12,
-  },
+  actionRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 12 },
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1653,31 +1625,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     borderWidth: 1.5,
   },
-  viewProfileLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  viewProfileText: {
-    fontWeight: "700",
-    fontSize: 14,
-    letterSpacing: 0.1,
-  },
+  viewProfileLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  viewProfileText: { fontWeight: "700", fontSize: 14, letterSpacing: 0.1 },
   viewProfilePricePill: {
     paddingVertical: 5,
     paddingHorizontal: 12,
     borderRadius: 14,
   },
-  viewProfilePriceText: {
-    fontWeight: "800",
-    fontSize: 13,
-  },
+  viewProfilePriceText: { fontWeight: "800", fontSize: 13 },
 
-  fabWrap: {
-    position: "absolute",
-    bottom: 24,
-    right: 20,
-  },
+  fabWrap: { position: "absolute", bottom: 24, right: 20 },
   floatingButton: {
     width: 54,
     height: 54,
@@ -1689,20 +1646,22 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 8,
   },
-  skeletonContainer: { flex: 1, gap: 14, paddingTop: 4 },
-  skeletonCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 14,
-  },
+
+  skeletonContainer: { gap: 14, paddingTop: 4 },
+  skeletonCard: { borderRadius: 20, borderWidth: 1, padding: 14, marginBottom: 14 },
   skeletonHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   skeletonAvatar: { width: 46, height: 46, borderRadius: 23 },
   skeletonText: { height: 13, borderRadius: 6, marginBottom: 8, width: "60%" },
   skeletonTextShort: { height: 11, borderRadius: 6, width: "35%" },
   skeletonBodyLine: { height: 12, borderRadius: 6, marginBottom: 8, width: "92%" },
-  skeletonBodyLineShort: { height: 12, borderRadius: 6, marginBottom: 14, width: "58%" },
+  skeletonBodyLineShort: {
+    height: 12,
+    borderRadius: 6,
+    marginBottom: 14,
+    width: "58%",
+  },
   skeletonMedia: { height: 200, borderRadius: 14 },
+
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -1735,7 +1694,7 @@ const styles = StyleSheet.create({
   },
   retryBtnText: { fontSize: 13.5, fontWeight: "700" },
   footerLoader: { marginVertical: 20 },
-  listContent: { paddingBottom: 100, paddingTop: 4 },
+  listContent: { paddingBottom: 100 },
 
   modalOverlay: {
     flex: 1,
