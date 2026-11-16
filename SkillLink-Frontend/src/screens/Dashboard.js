@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
   Alert,
   TextInput,
   Modal,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
-import { useFocusEffect,useRoute } from "@react-navigation/native";
+import { useFocusEffect, useRoute } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -46,7 +46,6 @@ const STATUS_LABELS = {
   disputed: "Disputed",
 };
 
-// Chat is available in these statuses
 const CHAT_ACTIVE_STATUSES = [
   "paid_in_escrow",
   "in_progress",
@@ -54,6 +53,9 @@ const CHAT_ACTIVE_STATUSES = [
   "ready_for_release",
   "released",
 ];
+
+const PLATFORM_FEE_PCT = 5;
+const ESCROW_FEE_PCT = 3;
 
 // ================== Notification Item ==================
 const NotificationItem = ({ notification, onPress, colors }) => {
@@ -67,6 +69,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "payment_received": return "cash-outline";
       case "funds_released": return "wallet-outline";
       case "chat_message": return "chatbubble-ellipses-outline";
+      case "circle_reply": return "chatbubbles-outline";
       default: return "notifications-outline";
     }
   };
@@ -81,6 +84,7 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
       case "chat_message": return colors.primary;
+      case "circle_reply": return colors.primary;
       default: return colors.textTertiary;
     }
   };
@@ -98,18 +102,31 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       activeOpacity={0.7}
     >
       <View style={styles.notificationIconContainer}>
-        <Ionicons name={getIcon(notification.type)} size={22} color={getIconColor(notification.type)} />
+        <Ionicons
+          name={getIcon(notification.type)}
+          size={22}
+          color={getIconColor(notification.type)}
+        />
       </View>
       <View style={styles.notificationContent}>
-        <Text style={[styles.notificationTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+        <Text
+          style={[styles.notificationTitle, { color: colors.textPrimary }]}
+          numberOfLines={1}
+        >
           {notification.title}
         </Text>
-        <Text style={[styles.notificationMessage, { color: colors.textSecondary }]} numberOfLines={2}>
+        <Text
+          style={[styles.notificationMessage, { color: colors.textSecondary }]}
+          numberOfLines={2}
+        >
           {notification.message}
         </Text>
         <Text style={[styles.notificationTime, { color: colors.textTertiary }]}>
           {new Date(notification.createdAt).toLocaleDateString()}{" "}
-          {new Date(notification.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {new Date(notification.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
         </Text>
       </View>
       {!notification.read && (
@@ -138,23 +155,26 @@ const BookingCard = ({
   const otherPartyName = otherParty?.name || "User";
   const [actionLoading, setActionLoading] = useState(false);
   const statusColor = colors.status?.[booking.status] || "#64748B";
-  // ✅ Compute provider's net payout (uses actual data when available, else estimates)
-  const getProviderEarnings = () => {
-    const price = Number(booking.price) || 0;
 
-    // Prefer actual numbers from Pandascrow webhook
-    if (booking.payment?.pandascrowNetAmount != null) {
+  // ===== FIXED: use actual schema field names =====
+  // Was reading booking.payment.pandascrowPlatformFee (doesn't exist)
+  // → now uses booking.payment.pandascrowPartnerFee (correct field per schema)
+  // Compute once per render (was 4× before)
+  const earnings = (() => {
+    const price = Number(booking.price) || 0;
+    const net = booking.payment?.pandascrowNetAmount;
+    const partnerFee = booking.payment?.pandascrowPartnerFee;
+
+    if (net != null) {
+      const platformFee = partnerFee ?? Math.round(price * (PLATFORM_FEE_PCT / 100));
       return {
         exact: true,
-        net: booking.payment.pandascrowNetAmount,
-        platformFee: booking.payment.pandascrowPlatformFee ?? Math.round(price * 0.05),
-        escrowFee: price - (booking.payment.pandascrowNetAmount + (booking.payment.pandascrowPlatformFee ?? 0)),
+        net: Number(net),
+        platformFee,
+        escrowFee: Math.max(0, price - Number(net) - platformFee),
       };
     }
 
-    // Fallback: estimate using known commission + estimated escrow fee
-    const PLATFORM_FEE_PCT = 5;
-    const ESCROW_FEE_PCT = 3;   // approximate — will be exact once paid
     const platformFee = Math.round(price * (PLATFORM_FEE_PCT / 100));
     const escrowFee = Math.round(price * (ESCROW_FEE_PCT / 100));
     return {
@@ -163,99 +183,106 @@ const BookingCard = ({
       platformFee,
       escrowFee,
     };
-  };
+  })();
 
   const handleMarkCompleted = async () => {
     setActionLoading(true);
     try {
       await markBookingCompleted(booking._id);
-      Alert.alert("Success", "Job marked as completed. Waiting for client confirmation.");
+      Alert.alert(
+        "Success",
+        "Job marked as completed. Waiting for client confirmation."
+      );
       onStatusChange();
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.message || "Action failed");
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Action failed"
+      );
     } finally {
       setActionLoading(false);
     }
   };
 
-  // ✅ Simplified — delegates OTP prompt to parent Dashboard modal (works on Android/iOS/web)
   const handleConfirmCompletion = async () => {
     setActionLoading(true);
     try {
       const res = await confirmBookingCompletion(booking._id);
-
       if (res?.requires_otp) {
-        // Backend wants OTP — open the modal (parent handles prompt + submit)
         setActionLoading(false);
         onRequireOtp(booking._id);
         return;
       }
-
-      // Direct success path (no OTP needed)
       Alert.alert("Success", "Job confirmed.");
       onStatusChange();
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.message || "Action failed");
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Action failed"
+      );
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleAccept = () => {
-    const confirmMessage = "Do you want to accept this booking request?";
-    const onConfirm = () => {
+    const msg = "Do you want to accept this booking request?";
+    const go = () => {
       setActionLoading(true);
       onAccept(booking._id);
     };
     if (Platform.OS === "web") {
-      if (window.confirm(confirmMessage)) onConfirm();
+      if (window.confirm(msg)) go();
     } else {
-      Alert.alert("Accept Request", confirmMessage, [
+      Alert.alert("Accept Request", msg, [
         { text: "Cancel", style: "cancel" },
-        { text: "Accept", onPress: onConfirm },
+        { text: "Accept", onPress: go },
       ]);
     }
   };
 
   const handleReject = () => {
-    const confirmMessage = "Do you want to decline this booking request?";
-    const onConfirm = () => {
+    const msg = "Do you want to decline this booking request?";
+    const go = () => {
       setActionLoading(true);
       onReject(booking._id);
     };
     if (Platform.OS === "web") {
-      if (window.confirm(confirmMessage)) onConfirm();
+      if (window.confirm(msg)) go();
     } else {
-      Alert.alert("Decline Request", confirmMessage, [
+      Alert.alert("Decline Request", msg, [
         { text: "Cancel", style: "cancel" },
-        { text: "Decline", style: "destructive", onPress: onConfirm },
+        { text: "Decline", style: "destructive", onPress: go },
       ]);
     }
   };
 
   const handleCancel = () => {
-    const confirmMessage = "Are you sure you want to cancel this request?";
-    const onConfirm = () => {
+    const msg = "Are you sure you want to cancel this request?";
+    const go = () => {
       setActionLoading(true);
       onCancel(booking._id);
     };
     if (Platform.OS === "web") {
-      if (window.confirm(confirmMessage)) onConfirm();
+      if (window.confirm(msg)) go();
     } else {
-      Alert.alert("Cancel Request", confirmMessage, [
+      Alert.alert("Cancel Request", msg, [
         { text: "No", style: "cancel" },
-        { text: "Yes", style: "destructive", onPress: onConfirm },
+        { text: "Yes", style: "destructive", onPress: go },
       ]);
     }
   };
 
   const isExpired = booking.isExpired === true;
-  const statusLabel = isExpired ? "Expired" : (STATUS_LABELS[booking.status] || booking.status);
+  const statusLabel = isExpired
+    ? "Expired"
+    : STATUS_LABELS[booking.status] || booking.status;
   const canChat = CHAT_ACTIVE_STATUSES.includes(booking.status);
 
   const handleReviewPress = () => onPress && onPress(booking, "review");
   const handlePayPress = () => onPayPress && onPayPress(booking);
-  const handleChatPress = () => onChatPress && onChatPress(booking, isClient ? "provider" : "client");
+  const handleChatPress = () =>
+    onChatPress && onChatPress(booking, isClient ? "provider" : "client");
 
   return (
     <View
@@ -295,12 +322,12 @@ const BookingCard = ({
           </View>
 
           <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: statusColor + "18" },
-            ]}
+            style={[styles.statusBadge, { backgroundColor: statusColor + "18" }]}
           >
-            <Text style={[styles.statusText, { color: statusColor }]} numberOfLines={1}>
+            <Text
+              style={[styles.statusText, { color: statusColor }]}
+              numberOfLines={1}
+            >
               {statusLabel}
             </Text>
           </View>
@@ -336,12 +363,19 @@ const BookingCard = ({
           <Text style={[styles.price, { color: colors.primary }]}>
             ₦{booking.price?.toLocaleString()}
           </Text>
-          <View style={[styles.metaDot, { backgroundColor: colors.textTertiary }]} />
-
+          <View
+            style={[styles.metaDot, { backgroundColor: colors.textTertiary }]}
+          />
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
+            <Ionicons
+              name="calendar-outline"
+              size={12}
+              color={colors.textTertiary}
+            />
             <Text style={[styles.date, { color: colors.textTertiary }]}>
-              {new Date(booking.scheduledDate || booking.createdAt).toLocaleDateString(undefined, {
+              {new Date(
+                booking.scheduledDate || booking.createdAt
+              ).toLocaleDateString(undefined, {
                 weekday: "short",
                 month: "short",
                 day: "numeric",
@@ -361,9 +395,7 @@ const BookingCard = ({
             },
           ]}
         >
-          <Text
-            style={[styles.earningsHeader, { color: colors.textTertiary }]}
-          >
+          <Text style={[styles.earningsHeader, { color: colors.textTertiary }]}>
             YOUR EARNINGS
           </Text>
 
@@ -381,36 +413,40 @@ const BookingCard = ({
               Platform Fee
             </Text>
             <Text style={[styles.earningsValue, { color: colors.danger }]}>
-              -₦{Math.round(getProviderEarnings().platformFee).toLocaleString()}
+              -₦{Math.round(earnings.platformFee).toLocaleString()}
             </Text>
           </View>
 
           <View style={styles.earningsRow}>
             <Text style={[styles.earningsLabel, { color: colors.textSecondary }]}>
-              Escrow Fee {!getProviderEarnings().exact && "(est.)"}
+              Escrow Fee {!earnings.exact && "(est.)"}
             </Text>
             <Text style={[styles.earningsValue, { color: colors.danger }]}>
-              -₦{Math.round(getProviderEarnings().escrowFee).toLocaleString()}
+              -₦{Math.round(earnings.escrowFee).toLocaleString()}
             </Text>
           </View>
 
           <View
-            style={[styles.earningsDivider, { backgroundColor: colors.inputBorder }]}
+            style={[
+              styles.earningsDivider,
+              { backgroundColor: colors.inputBorder },
+            ]}
           />
 
           <View style={styles.earningsRow}>
-            <Text style={[styles.earningsNetLabel, { color: colors.textPrimary }]}>
+            <Text
+              style={[styles.earningsNetLabel, { color: colors.textPrimary }]}
+            >
               You Receive
             </Text>
             <Text style={[styles.earningsNetValue, { color: colors.success }]}>
-              {getProviderEarnings().exact ? "" : "~"}
-              ₦{Math.round(getProviderEarnings().net).toLocaleString()}
+              {earnings.exact ? "" : "~"}
+              ₦{Math.round(earnings.net).toLocaleString()}
             </Text>
           </View>
         </View>
       )}
 
-      {/* Action area */}
       {!isClient && booking.status === "pending_acceptance" && !isExpired && (
         <View style={styles.requestActions}>
           <TouchableOpacity
@@ -424,7 +460,10 @@ const BookingCard = ({
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.rejectButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+            style={[
+              styles.rejectButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
             onPress={handleReject}
             disabled={actionLoading}
             activeOpacity={0.85}
@@ -438,7 +477,10 @@ const BookingCard = ({
 
       {isClient && booking.status === "pending_acceptance" && !isExpired && (
         <TouchableOpacity
-          style={[styles.cancelButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+          style={[
+            styles.cancelButton,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
           onPress={handleCancel}
           disabled={actionLoading}
           activeOpacity={0.85}
@@ -482,7 +524,12 @@ const BookingCard = ({
           activeOpacity={0.85}
         >
           <Ionicons name="wallet-outline" size={17} color={colors.textInverse} />
-          <Text style={[styles.actionButtonText, { color: colors.textInverse, marginLeft: 6 }]}>
+          <Text
+            style={[
+              styles.actionButtonText,
+              { color: colors.textInverse, marginLeft: 6 },
+            ]}
+          >
             Pay Now
           </Text>
         </TouchableOpacity>
@@ -495,7 +542,12 @@ const BookingCard = ({
           activeOpacity={0.85}
         >
           <Ionicons name="star-outline" size={17} color={colors.textInverse} />
-          <Text style={[styles.actionButtonText, { color: colors.textInverse, marginLeft: 6 }]}>
+          <Text
+            style={[
+              styles.actionButtonText,
+              { color: colors.textInverse, marginLeft: 6 },
+            ]}
+          >
             Leave Review
           </Text>
         </TouchableOpacity>
@@ -510,7 +562,11 @@ const BookingCard = ({
           onPress={handleChatPress}
           activeOpacity={0.85}
         >
-          <Ionicons name="chatbubble-outline" size={16} color={colors.primary} />
+          <Ionicons
+            name="chatbubble-outline"
+            size={16}
+            color={colors.primary}
+          />
           <Text style={[styles.chatButtonText, { color: colors.primary }]}>
             Open Chat
           </Text>
@@ -531,7 +587,7 @@ export default function Dashboard({ navigation }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [loadError, setLoadError] = useState(false);
 
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -546,7 +602,6 @@ export default function Dashboard({ navigation }) {
   const [reviewComment, setReviewComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
-  // ✅ OTP modal state — works on Android, iOS, and web
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [otpBookingId, setOtpBookingId] = useState(null);
   const [otpValue, setOtpValue] = useState("");
@@ -554,13 +609,16 @@ export default function Dashboard({ navigation }) {
   const [otpError, setOtpError] = useState("");
   const [bankRequiredModalVisible, setBankRequiredModalVisible] = useState(false);
 
+  // Race-condition guard
+  const loadRequestIdRef = useRef(0);
+
+  // Handle incoming tab param
   useEffect(() => {
     if (route.params?.initialTab) {
       setActiveTab(route.params.initialTab);
-      // Clear param so it can trigger again next time
       navigation.setParams({ initialTab: undefined });
     }
-  }, [route.params?.initialTab]);
+  }, [route.params?.initialTab, navigation]);
 
   // ===== Notifications =====
   const fetchNotifications = async (page = 1, append = false) => {
@@ -589,58 +647,71 @@ export default function Dashboard({ navigation }) {
     }
   };
 
- const handleNotificationPress = async (notification) => {
-  if (!notification.read) {
-    await markNotificationRead(notification._id);
-    setUnreadCount((prev) => Math.max(0, prev - 1));
-    setNotifications((prev) =>
-      prev.map((n) => (n._id === notification._id ? { ...n, read: true } : n))
-    );
-  }
+  const handleNotificationPress = async (notification) => {
+    // Mark read — never block navigation on failure
+    if (!notification.read) {
+      try {
+        await markNotificationRead(notification._id);
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n._id === notification._id ? { ...n, read: true } : n
+          )
+        );
+      } catch (err) {
+        console.log("Mark read failed:", err);
+      }
+    }
 
-  // Chat notifications → still go to Chat screen (unchanged)
-  if (notification.type === "chat_message" && notification.data?.bookingId) {
-    setNotificationModalVisible(false);
-    navigation.navigate("Chat", {
-      bookingId: notification.data.bookingId,
-      otherPartyName: notification.title.replace("New message from ", ""),
-      otherPartyImage: null,
-    });
-    return;
-  }
-    // ✅ Product chat notifications → go to Chat screen with productId
-  if (notification.type === "chat_message" && notification.data?.extra?.productId) {
-    setNotificationModalVisible(false);
-    // The recipient is `user`, so the other party is the sender (clientId)
-    navigation.navigate("Chat", {
-      productId: notification.data.extra.productId,
-      recipientId: notification.data.clientId, // who sent it
-      otherPartyName: notification.title.replace("New message from ", ""),
-      otherPartyImage: null,
-    });
-    return;
-  }
+    if (notification.type === "chat_message" && notification.data?.bookingId) {
+      setNotificationModalVisible(false);
+      navigation.navigate("Chat", {
+        bookingId: notification.data.bookingId,
+        otherPartyName: notification.title.replace("New message from ", ""),
+        otherPartyImage: null,
+      });
+      return;
+    }
 
-  // Booking notifications → stay on Dashboard, switch to the correct tab
-  if (notification.data?.bookingId) {
-    setNotificationModalVisible(false);
+    if (
+      notification.type === "chat_message" &&
+      notification.data?.extra?.productId
+    ) {
+      setNotificationModalVisible(false);
+      navigation.navigate("Chat", {
+        productId: notification.data.extra.productId,
+        recipientId: notification.data.clientId,
+        otherPartyName: notification.title.replace("New message from ", ""),
+        otherPartyImage: null,
+      });
+      return;
+    }
 
-    // Determine which tab this booking belongs to:
-    // - If we're the client → "client" tab (Bookings I made)
-    // - If we're the provider → "worker" tab (Bookings with me)
-    const clientId = notification.data?.clientId;
-    const providerId = notification.data?.providerId;
-    const targetTab =
-      String(clientId) === String(user?._id)
-        ? "client"
-        : String(providerId) === String(user?._id)
-        ? "worker"
-        : "client"; // safe fallback
+    if (
+      notification.type === "circle_reply" &&
+      notification.data?.extra?.requestId
+    ) {
+      setNotificationModalVisible(false);
+      navigation.navigate("RequestDetail", {
+        circleId: notification.data.extra.circleId,
+        requestId: notification.data.extra.requestId,
+      });
+      return;
+    }
 
-    // We're already on Dashboard — just switch the tab (no navigation needed)
-    setActiveTab(targetTab);
-  }
-};
+    if (notification.data?.bookingId) {
+      setNotificationModalVisible(false);
+      const clientId = notification.data?.clientId;
+      const providerId = notification.data?.providerId;
+      const targetTab =
+        String(clientId) === String(user?._id)
+          ? "client"
+          : String(providerId) === String(user?._id)
+          ? "worker"
+          : "client";
+      setActiveTab(targetTab);
+    }
+  };
 
   const handleMarkAllRead = async () => {
     try {
@@ -658,30 +729,36 @@ export default function Dashboard({ navigation }) {
     }
   };
 
-  // ===== Bookings =====
-  const fetchBookings = async () => {
+  // ===== Bookings — race-safe =====
+  const fetchBookings = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     try {
       const response = await getMyBookings();
+      if (requestId !== loadRequestIdRef.current) return;
       const sorted = (response.data || []).sort(
         (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
       );
       setBookings(sorted);
-      setRefreshKey((prev) => prev + 1);
+      setLoadError(false);
     } catch (error) {
+      if (requestId !== loadRequestIdRef.current) return;
       console.log("Fetch bookings error:", error);
+      setLoadError(true);
       Alert.alert("Error", "Could not load bookings");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  };
+  }, []);
 
+  // Only re-fetch when screen gains focus — NOT on notification modal open
   useFocusEffect(
     useCallback(() => {
       fetchBookings();
       fetchUnreadCount();
-      if (notificationModalVisible) fetchNotifications(1, false);
-    }, [notificationModalVisible])
+    }, [fetchBookings])
   );
 
   const onRefresh = () => {
@@ -690,11 +767,13 @@ export default function Dashboard({ navigation }) {
     fetchUnreadCount();
   };
 
-    const handleAccept = async (bookingId) => {
+  // ===== Booking actions — ObjectId-safe (String comparison) =====
+  const handleAccept = async (bookingId) => {
     setBookings((prev) =>
-      prev.map((b) => (b._id === bookingId ? { ...b, status: "accepted" } : b))
+      prev.map((b) =>
+        String(b._id) === String(bookingId) ? { ...b, status: "accepted" } : b
+      )
     );
-    setRefreshKey((prev) => prev + 1);
     try {
       await acceptBooking(bookingId);
       Alert.alert("Accepted", "Booking request accepted.");
@@ -702,22 +781,20 @@ export default function Dashboard({ navigation }) {
       fetchUnreadCount();
     } catch (error) {
       await fetchBookings();
-
-      // ✅ Detect bank setup requirement — show modal instead of generic alert
       if (error.response?.data?.code === "BANK_REQUIRED") {
         setBankRequiredModalVisible(true);
         return;
       }
-
       Alert.alert("Error", "Could not accept booking.");
     }
   };
 
   const handleReject = async (bookingId) => {
     setBookings((prev) =>
-      prev.map((b) => (b._id === bookingId ? { ...b, status: "rejected" } : b))
+      prev.map((b) =>
+        String(b._id) === String(bookingId) ? { ...b, status: "rejected" } : b
+      )
     );
-    setRefreshKey((prev) => prev + 1);
     try {
       await rejectBooking(bookingId);
       Alert.alert("Declined", "Booking request declined.");
@@ -730,8 +807,9 @@ export default function Dashboard({ navigation }) {
   };
 
   const handleCancel = async (bookingId) => {
-    setBookings((prev) => prev.filter((b) => b._id !== bookingId));
-    setRefreshKey((prev) => prev + 1);
+    setBookings((prev) =>
+      prev.filter((b) => String(b._id) !== String(bookingId))
+    );
     try {
       await cancelBookingRequest(bookingId);
       Alert.alert("Cancelled", "Request cancelled successfully.");
@@ -751,7 +829,6 @@ export default function Dashboard({ navigation }) {
     });
   };
 
-  // ✅ Open OTP modal when backend signals it's required
   const handleRequireOtp = (bookingId) => {
     setOtpBookingId(bookingId);
     setOtpValue("");
@@ -760,7 +837,6 @@ export default function Dashboard({ navigation }) {
     setOtpModalVisible(true);
   };
 
-  // ✅ Submit OTP to release funds
   const handleSubmitOtp = async () => {
     const trimmed = otpValue.trim();
     if (!trimmed) {
@@ -792,7 +868,8 @@ export default function Dashboard({ navigation }) {
   };
 
   const handleChatPress = (booking, otherRole) => {
-    const otherParty = otherRole === "provider" ? booking.provider : booking.client;
+    const otherParty =
+      otherRole === "provider" ? booking.provider : booking.client;
     navigation.navigate("Chat", {
       bookingId: booking._id,
       otherPartyName: otherParty?.name || "User",
@@ -800,6 +877,7 @@ export default function Dashboard({ navigation }) {
     });
   };
 
+  // ===== FIXED: provider booking press now navigates to detail instead of dead-end alert =====
   const handleBookingPress = (booking, mode) => {
     if (mode === "review") {
       setReviewBooking(booking);
@@ -808,17 +886,10 @@ export default function Dashboard({ navigation }) {
       setReviewModalVisible(true);
       return;
     }
-    if (activeTab === "client") {
-      navigation.navigate("BookingScreen", {
-        bookingId: booking._id,
-        mode: "existing",
-      });
-    } else {
-      Alert.alert(
-        "Booking Details",
-        `Service: ${booking.serviceTitle}\nStatus: ${booking.status}\nPrice: ₦${booking.price}`
-      );
-    }
+    navigation.navigate("BookingScreen", {
+      bookingId: booking._id,
+      mode: "existing",
+    });
   };
 
   const submitReviewHandler = async () => {
@@ -830,63 +901,108 @@ export default function Dashboard({ navigation }) {
       setReviewModalVisible(false);
       fetchBookings();
     } catch (error) {
-      const msg = error.response?.data?.message || "Failed to submit review";
+      const msg =
+        error.response?.data?.message || "Failed to submit review";
       Alert.alert("Error", msg);
     } finally {
       setReviewSubmitting(false);
     }
   };
 
+  // ===== ObjectId-safe filter =====
   const filteredBookings = bookings.filter((booking) => {
-    if (activeTab === "client") return booking.client?._id === user?._id;
-    return booking.provider?._id === user?._id;
+    if (activeTab === "client")
+      return String(booking.client?._id || "") === String(user?._id || "");
+    return String(booking.provider?._id || "") === String(user?._id || "");
   });
 
-  // ✅ Earnings — computed from provider-side released bookings
-  // ✅ Compute provider's NET payout from a booking
-// Uses actual pandascrowNetAmount when available (post-webhook), otherwise estimates
   const getNetPayout = (b) => {
     if (b.payment?.pandascrowNetAmount != null) {
       return Number(b.payment.pandascrowNetAmount);
     }
-    // Fallback: estimate using same percentages as BookingCard
     const price = Number(b.price) || 0;
-    const PLATFORM_FEE_PCT = 5;
-    const ESCROW_FEE_PCT = 3;
     return Math.round(
       price * (1 - PLATFORM_FEE_PCT / 100 - ESCROW_FEE_PCT / 100)
     );
   };
 
-  // ✅ Total Earnings = sum of NET payouts from released bookings
   const totalEarnings = bookings
     .filter(
-      (b) => b.provider?._id === user?._id && b.status === "released"
+      (b) =>
+        String(b.provider?._id || "") === String(user?._id || "") &&
+        b.status === "released"
     )
     .reduce((sum, b) => sum + getNetPayout(b), 0);
 
-  // ✅ Pending = sum of NET payouts still in escrow (what will arrive)
   const pendingEarnings = bookings
     .filter(
       (b) =>
-        b.provider?._id === user?._id &&
+        String(b.provider?._id || "") === String(user?._id || "") &&
         ["paid_in_escrow", "completed"].includes(b.status)
     )
     .reduce((sum, b) => sum + getNetPayout(b), 0);
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <View style={[styles.emptyIconWrap, { backgroundColor: colors.inputBackground }]}>
-        <Ionicons name="calendar-outline" size={26} color={colors.textTertiary} />
+  const renderEmpty = () => {
+    if (loadError) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View
+            style={[
+              styles.emptyIconWrap,
+              { backgroundColor: colors.danger + "15" },
+            ]}
+          >
+            <Ionicons name="cloud-offline-outline" size={26} color={colors.danger} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+            Couldn't load bookings
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setLoadError(false);
+              setLoading(true);
+              fetchBookings();
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={16} color={colors.textInverse} />
+            <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+              Retry
+            </Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <View
+          style={[
+            styles.emptyIconWrap,
+            { backgroundColor: colors.inputBackground },
+          ]}
+        >
+          <Ionicons
+            name="calendar-outline"
+            size={26}
+            color={colors.textTertiary}
+          />
+        </View>
+        <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+          No bookings yet
+        </Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+          {activeTab === "client"
+            ? "Book a service to get started"
+            : "Wait for clients to book your services"}
+        </Text>
       </View>
-      <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No bookings yet</Text>
-      <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-        {activeTab === "client"
-          ? "Book a service to get started"
-          : "Wait for clients to book your services"}
-      </Text>
-    </View>
-  );
+    );
+  };
 
   const renderSkeleton = () => (
     <View style={styles.skeletonContainer}>
@@ -899,13 +1015,33 @@ export default function Dashboard({ navigation }) {
           ]}
         >
           <View style={styles.skeletonHeader}>
-            <View style={[styles.skeletonAvatar, { backgroundColor: colors.inputBackground }]} />
+            <View
+              style={[
+                styles.skeletonAvatar,
+                { backgroundColor: colors.inputBackground },
+              ]}
+            />
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <View style={[styles.skeletonLine, { backgroundColor: colors.inputBackground }]} />
-              <View style={[styles.skeletonLineShort, { backgroundColor: colors.inputBackground }]} />
+              <View
+                style={[
+                  styles.skeletonLine,
+                  { backgroundColor: colors.inputBackground },
+                ]}
+              />
+              <View
+                style={[
+                  styles.skeletonLineShort,
+                  { backgroundColor: colors.inputBackground },
+                ]}
+              />
             </View>
           </View>
-          <View style={[styles.skeletonBodyLine, { backgroundColor: colors.inputBackground }]} />
+          <View
+            style={[
+              styles.skeletonBodyLine,
+              { backgroundColor: colors.inputBackground },
+            ]}
+          />
         </View>
       ))}
     </View>
@@ -918,16 +1054,16 @@ export default function Dashboard({ navigation }) {
       <View
         style={[
           styles.container,
-          {
-            backgroundColor: colors.background,
-            paddingTop: insets.top + 8,
-          },
+          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
         ]}
       >
         <View style={styles.header}>
           {canGoBack && (
             <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+              style={[
+                styles.iconButton,
+                { backgroundColor: colors.card, borderColor: colors.inputBorder },
+              ]}
               onPress={() => navigation.goBack()}
               activeOpacity={0.7}
             >
@@ -946,7 +1082,10 @@ export default function Dashboard({ navigation }) {
           </Text>
           <View style={styles.headerRight}>
             <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+              style={[
+                styles.iconButton,
+                { backgroundColor: colors.card, borderColor: colors.inputBorder },
+              ]}
               onPress={() => {
                 setNotificationModalVisible(true);
                 fetchNotifications(1, false);
@@ -954,9 +1093,18 @@ export default function Dashboard({ navigation }) {
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="notifications-outline" size={20} color={colors.textPrimary} />
+              <Ionicons
+                name="notifications-outline"
+                size={20}
+                color={colors.textPrimary}
+              />
               {unreadCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.card }]}>
+                <View
+                  style={[
+                    styles.badge,
+                    { backgroundColor: colors.danger, borderColor: colors.card },
+                  ]}
+                >
                   <Text style={[styles.badgeText, { color: colors.textInverse }]}>
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </Text>
@@ -964,7 +1112,10 @@ export default function Dashboard({ navigation }) {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+              style={[
+                styles.iconButton,
+                { backgroundColor: colors.card, borderColor: colors.inputBorder },
+              ]}
               onPress={toggleTheme}
               activeOpacity={0.7}
             >
@@ -977,7 +1128,7 @@ export default function Dashboard({ navigation }) {
           </View>
         </View>
 
-        {/* ===== EARNINGS CARD (replaces wallet) ===== */}
+        {/* EARNINGS CARD */}
         <View
           style={[
             styles.walletCard,
@@ -1001,17 +1152,26 @@ export default function Dashboard({ navigation }) {
                 ₦{totalEarnings.toLocaleString()}
               </Text>
               {pendingEarnings > 0 && (
-                <Text style={[styles.walletPending, { color: colors.textTertiary }]}>
+                <Text
+                  style={[styles.walletPending, { color: colors.textTertiary }]}
+                >
                   ₦{pendingEarnings.toLocaleString()} pending release
                 </Text>
               )}
             </View>
-            <View style={[styles.walletIconWrap, { backgroundColor: colors.primaryLight }]}>
+            <View
+              style={[
+                styles.walletIconWrap,
+                { backgroundColor: colors.primaryLight },
+              ]}
+            >
               <Ionicons name="trending-up" size={22} color={colors.primary} />
             </View>
           </View>
 
-          <View style={[styles.walletDivider, { backgroundColor: colors.inputBorder }]} />
+          <View
+            style={[styles.walletDivider, { backgroundColor: colors.inputBorder }]}
+          />
 
           <View style={styles.walletActions}>
             <TouchableOpacity
@@ -1043,7 +1203,10 @@ export default function Dashboard({ navigation }) {
         <View
           style={[
             styles.segmentContainer,
-            { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
+            {
+              backgroundColor: colors.inputBackground,
+              borderColor: colors.inputBorder,
+            },
           ]}
         >
           <TouchableOpacity
@@ -1058,7 +1221,10 @@ export default function Dashboard({ navigation }) {
               style={[
                 styles.segmentText,
                 {
-                  color: activeTab === "client" ? colors.textInverse : colors.textSecondary,
+                  color:
+                    activeTab === "client"
+                      ? colors.textInverse
+                      : colors.textSecondary,
                 },
               ]}
               numberOfLines={1}
@@ -1078,7 +1244,10 @@ export default function Dashboard({ navigation }) {
               style={[
                 styles.segmentText,
                 {
-                  color: activeTab === "worker" ? colors.textInverse : colors.textSecondary,
+                  color:
+                    activeTab === "worker"
+                      ? colors.textInverse
+                      : colors.textSecondary,
                 },
               ]}
               numberOfLines={1}
@@ -1092,7 +1261,6 @@ export default function Dashboard({ navigation }) {
           renderSkeleton()
         ) : (
           <FlatList
-            key={refreshKey}
             data={filteredBookings}
             keyExtractor={(item) => item._id}
             renderItem={({ item }) => (
@@ -1103,9 +1271,7 @@ export default function Dashboard({ navigation }) {
                 onPayPress={handlePayNow}
                 onChatPress={handleChatPress}
                 onRequireOtp={handleRequireOtp}
-                onStatusChange={() => {
-                  fetchBookings();
-                }}
+                onStatusChange={fetchBookings}
                 colors={colors}
                 onAccept={handleAccept}
                 onReject={handleReject}
@@ -1127,10 +1293,10 @@ export default function Dashboard({ navigation }) {
         )}
       </View>
 
-      {/* ===== OTP MODAL ===== */}
+      {/* OTP MODAL */}
       <Modal
         visible={otpModalVisible}
-        transparent={true}
+        transparent
         animationType="slide"
         onRequestClose={() => {
           if (!otpSubmitting) {
@@ -1141,13 +1307,13 @@ export default function Dashboard({ navigation }) {
           }
         }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
           <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
             <View
-              style={[
-                styles.otpIconWrap,
-                { backgroundColor: colors.primaryLight },
-              ]}
+              style={[styles.otpIconWrap, { backgroundColor: colors.primaryLight }]}
             >
               <Ionicons name="shield-checkmark" size={24} color={colors.primary} />
             </View>
@@ -1201,7 +1367,10 @@ export default function Dashboard({ navigation }) {
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
+                style={[
+                  styles.modalButton,
+                  { backgroundColor: colors.inputBackground },
+                ]}
                 onPress={() => {
                   setOtpModalVisible(false);
                   setOtpBookingId(null);
@@ -1210,7 +1379,9 @@ export default function Dashboard({ navigation }) {
                 }}
                 disabled={otpSubmitting}
               >
-                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>
+                <Text
+                  style={[styles.modalButtonText, { color: colors.textPrimary }]}
+                >
                   Cancel
                 </Text>
               </TouchableOpacity>
@@ -1228,19 +1399,25 @@ export default function Dashboard({ navigation }) {
                 {otpSubmitting ? (
                   <ActivityIndicator size="small" color={colors.textInverse} />
                 ) : (
-                  <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
+                  <Text
+                    style={[
+                      styles.modalButtonText,
+                      { color: colors.textInverse },
+                    ]}
+                  >
                     Verify & Release
                   </Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-            {/* ===== BANK REQUIRED MODAL ===== */}
+
+      {/* BANK REQUIRED MODAL */}
       <Modal
         visible={bankRequiredModalVisible}
-        transparent={true}
+        transparent
         animationType="slide"
         onRequestClose={() => setBankRequiredModalVisible(false)}
       >
@@ -1265,10 +1442,15 @@ export default function Dashboard({ navigation }) {
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
+                style={[
+                  styles.modalButton,
+                  { backgroundColor: colors.inputBackground },
+                ]}
                 onPress={() => setBankRequiredModalVisible(false)}
               >
-                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>
+                <Text
+                  style={[styles.modalButtonText, { color: colors.textPrimary }]}
+                >
                   Cancel
                 </Text>
               </TouchableOpacity>
@@ -1279,7 +1461,12 @@ export default function Dashboard({ navigation }) {
                   navigation.navigate("BankSetup");
                 }}
               >
-                <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
+                <Text
+                  style={[
+                    styles.modalButtonText,
+                    { color: colors.textInverse },
+                  ]}
+                >
                   Set Up Bank
                 </Text>
               </TouchableOpacity>
@@ -1288,17 +1475,29 @@ export default function Dashboard({ navigation }) {
         </View>
       </Modal>
 
-      {/* ===== NOTIFICATION MODAL ===== */}
+      {/* NOTIFICATION MODAL */}
       <Modal
         visible={notificationModalVisible}
-        transparent={true}
+        transparent
         animationType="slide"
         onRequestClose={() => setNotificationModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.notificationModalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.notificationModalHeader, { borderBottomColor: colors.inputBorder }]}>
-              <Text style={[styles.notificationModalTitle, { color: colors.textPrimary }]}>
+          <View
+            style={[
+              styles.notificationModalContainer,
+              { backgroundColor: colors.card },
+            ]}
+          >
+            <View
+              style={[
+                styles.notificationModalHeader,
+                { borderBottomColor: colors.inputBorder },
+              ]}
+            >
+              <Text
+                style={[styles.notificationModalTitle, { color: colors.textPrimary }]}
+              >
                 Notifications
               </Text>
               <View style={styles.notificationModalActions}>
@@ -1321,8 +1520,17 @@ export default function Dashboard({ navigation }) {
 
             {notifications.length === 0 && !notificationsLoading ? (
               <View style={styles.emptyNotifications}>
-                <Ionicons name="notifications-off-outline" size={44} color={colors.textTertiary} />
-                <Text style={[styles.emptyNotificationsText, { color: colors.textTertiary }]}>
+                <Ionicons
+                  name="notifications-off-outline"
+                  size={44}
+                  color={colors.textTertiary}
+                />
+                <Text
+                  style={[
+                    styles.emptyNotificationsText,
+                    { color: colors.textTertiary },
+                  ]}
+                >
                   No notifications yet
                 </Text>
               </View>
@@ -1342,7 +1550,11 @@ export default function Dashboard({ navigation }) {
                 onEndReachedThreshold={0.2}
                 ListFooterComponent={
                   notificationsLoading ? (
-                    <ActivityIndicator size="small" color={colors.primary} style={styles.notificationLoader} />
+                    <ActivityIndicator
+                      size="small"
+                      color={colors.primary}
+                      style={styles.notificationLoader}
+                    />
                   ) : null
                 }
                 showsVerticalScrollIndicator={false}
@@ -1352,31 +1564,45 @@ export default function Dashboard({ navigation }) {
         </View>
       </Modal>
 
-      {/* ===== REVIEW MODAL ===== */}
+      {/* REVIEW MODAL */}
       <Modal
         visible={reviewModalVisible}
-        transparent={true}
+        transparent
         animationType="slide"
         onRequestClose={() => setReviewModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
           <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Leave a Review</Text>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Leave a Review
+            </Text>
             <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
-              How was your experience with {reviewBooking?.provider?.name || "the provider"}?
+              How was your experience with{" "}
+              {reviewBooking?.provider?.name || "the provider"}?
             </Text>
             <View style={styles.ratingStars}>
               {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity key={star} onPress={() => setReviewRating(star)} activeOpacity={0.7}>
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setReviewRating(star)}
+                  activeOpacity={0.7}
+                >
                   <Ionicons
                     name={star <= reviewRating ? "star" : "star-outline"}
                     size={38}
-                    color={star <= reviewRating ? "#F59E0B" : colors.textTertiary}
+                    color={
+                      star <= reviewRating ? "#F59E0B" : colors.textTertiary
+                    }
                   />
                 </TouchableOpacity>
               ))}
             </View>
-            <Text style={[styles.reviewRatingLabel, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.reviewRatingLabel, { color: colors.textSecondary }]}
+            >
               {reviewRating} / 5 stars
             </Text>
             <TextInput
@@ -1397,31 +1623,40 @@ export default function Dashboard({ navigation }) {
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
+                style={[
+                  styles.modalButton,
+                  { backgroundColor: colors.inputBackground },
+                ]}
                 onPress={() => setReviewModalVisible(false)}
               >
-                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>Cancel</Text>
+                <Text
+                  style={[styles.modalButtonText, { color: colors.textPrimary }]}
+                >
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, { backgroundColor: colors.primary }]}
                 onPress={submitReviewHandler}
                 disabled={reviewSubmitting}
               >
-                <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
+                <Text
+                  style={[
+                    styles.modalButtonText,
+                    { color: colors.textInverse },
+                  ]}
+                >
                   {reviewSubmitting ? "Submitting..." : "Submit Review"}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
 }
 
-// ========================================
-// STYLES
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 18 },
@@ -1526,11 +1761,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 2,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
+  sectionTitle: { fontSize: 17, fontWeight: "800", letterSpacing: -0.3 },
   sectionCount: {
     fontSize: 13,
     fontWeight: "700",
@@ -1611,22 +1842,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 8,
   },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  price: {
-    fontSize: 16.5,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  metaDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    opacity: 0.5,
-  },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  price: { fontSize: 16.5, fontWeight: "800", letterSpacing: -0.3 },
+  metaDot: { width: 3, height: 3, borderRadius: 1.5, opacity: 0.5 },
   date: { fontSize: 12.5, fontWeight: "500" },
 
   actionButton: {
@@ -1672,10 +1890,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     marginTop: 10,
   },
-  chatButtonText: {
-    fontWeight: "700",
-    fontSize: 13.5,
-  },
+  chatButtonText: { fontWeight: "700", fontSize: 13.5 },
 
   emptyContainer: { alignItems: "center", paddingVertical: 60 },
   emptyIconWrap: {
@@ -1687,11 +1902,30 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   emptyTitle: { fontSize: 16, fontWeight: "700", marginBottom: 6 },
-  emptySubtitle: { fontSize: 13, textAlign: "center", maxWidth: 260, lineHeight: 18 },
+  emptySubtitle: {
+    fontSize: 13,
+    textAlign: "center",
+    maxWidth: 260,
+    lineHeight: 18,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  retryBtnText: { fontSize: 13.5, fontWeight: "700" },
 
   skeletonContainer: { gap: 12 },
   skeletonCard: { borderRadius: 20, borderWidth: 1, padding: 14 },
-  skeletonHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  skeletonHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   skeletonAvatar: { width: 42, height: 42, borderRadius: 21 },
   skeletonLine: { height: 12, borderRadius: 6, marginBottom: 6, width: "60%" },
   skeletonLineShort: { height: 10, borderRadius: 5, width: "35%" },
@@ -1711,14 +1945,6 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 19, fontWeight: "800", marginBottom: 6 },
   modalSubtitle: { fontSize: 13.5, marginBottom: 18, textAlign: "center" },
-  modalInput: {
-    width: "100%",
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 20,
-    borderWidth: 1,
-  },
   modalButtons: { flexDirection: "row", gap: 10, width: "100%" },
   modalButton: {
     flex: 1,
@@ -1800,7 +2026,6 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     lineHeight: 18,
   },
-  // ✅ Provider earnings box
   earningsBox: {
     borderRadius: 12,
     borderWidth: 1,
@@ -1820,18 +2045,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 3,
   },
-  earningsLabel: {
-    fontSize: 12.5,
-    fontWeight: "500",
-  },
-  earningsValue: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  earningsDivider: {
-    height: 1,
-    marginVertical: 6,
-  },
+  earningsLabel: { fontSize: 12.5, fontWeight: "500" },
+  earningsValue: { fontSize: 13, fontWeight: "600" },
+  earningsDivider: { height: 1, marginVertical: 6 },
   earningsNetLabel: {
     fontSize: 13.5,
     fontWeight: "800",
@@ -1842,8 +2058,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: -0.3,
   },
-
-  // ✅ OTP modal styles
   otpIconWrap: {
     width: 56,
     height: 56,
@@ -1875,9 +2089,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12,
   },
-  otpErrorText: {
-    fontSize: 12.5,
-    fontWeight: "600",
-    flex: 1,
-  },
+  otpErrorText: { fontSize: 12.5, fontWeight: "600", flex: 1 },
 });

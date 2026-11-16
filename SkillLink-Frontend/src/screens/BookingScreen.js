@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,12 @@ import {
   Animated,
   ScrollView,
   ActivityIndicator,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthContext } from "../../context/AuthContext";
 import {
@@ -17,9 +22,16 @@ import {
   cancelBookingRequest,
   acceptBooking,
   rejectBooking,
+  markBookingCompleted,
+  submitReview,
 } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
+
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
 
 export default function BookingScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
@@ -29,39 +41,45 @@ export default function BookingScreen({ navigation, route }) {
     providerId,
     serviceTitle,
     price,
-    description,
-    providerName,
     bookingId: existingBookingId,
-    mode,
-    role,
     postId,
-    prefilledMessage, // ✅ NEW
-    prefilledDate,    // ✅ NEW
+    prefilledMessage,
+    prefilledDate,
   } = route.params || {};
 
   const [bookingId, setBookingId] = useState(existingBookingId || null);
   const [booking, setBooking] = useState(null);
   const [status, setStatus] = useState("loading");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // FIXED: was false → caused flash of "Unknown status: loading"
+  const [loadError, setLoadError] = useState(false);
   const [polling, setPolling] = useState(false);
-  const [message, setMessage] = useState(prefilledMessage || ""); // ✅ NEW
+  const [message, setMessage] = useState(prefilledMessage || "");
   const [invoice, setInvoice] = useState({ serviceFee: 0, platformFee: 0, total: 0 });
   const [cancelLoading, setCancelLoading] = useState(false);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [markingComplete, setMarkingComplete] = useState(false);
   const [userRole, setUserRole] = useState(null);
 
+  // Review modal state
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
   const primaryScale = useRef(new Animated.Value(1)).current;
-  const secondaryScale = useRef(new Animated.Value(1)).current;
 
   const intervalRef = useRef(null);
   const pollingAttempts = useRef(0);
   const MAX_POLLING_ATTEMPTS = 60;
 
-  // ===== ROLE =====
+  // FIXED: String comparison — safe against ObjectId vs string
   const determineRole = (bookingData) => {
     if (!bookingData || !user) return null;
-    if (bookingData.client?._id === user._id) return "client";
-    if (bookingData.provider?._id === user._id) return "provider";
+    const clientId = String(bookingData.client?._id || bookingData.client || "");
+    const provId = String(bookingData.provider?._id || bookingData.provider || "");
+    const userId = String(user._id || "");
+    if (clientId === userId) return "client";
+    if (provId === userId) return "provider";
     return null;
   };
 
@@ -79,8 +97,32 @@ export default function BookingScreen({ navigation, route }) {
     };
   }, []);
 
+  // Refresh on focus (e.g., returning from PaymentScreen)
+  const isInitialFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (isInitialFocus.current) {
+        isInitialFocus.current = false;
+        return;
+      }
+      if (bookingId && !intervalRef.current) {
+        getBookingById(bookingId)
+          .then((res) => {
+            if (res.success) {
+              setBooking(res.data);
+              setStatus(res.data.status);
+              const r = determineRole(res.data);
+              if (r) setUserRole(r);
+            }
+          })
+          .catch(() => {});
+      }
+    }, [bookingId])
+  );
+
   const loadExistingBooking = async (id) => {
     setLoading(true);
+    setLoadError(false);
     try {
       const res = await getBookingById(id);
       if (res.success) {
@@ -95,13 +137,11 @@ export default function BookingScreen({ navigation, route }) {
           startPolling(data._id);
         }
       } else {
-        Alert.alert("Error", "Could not load booking");
-        navigation.goBack();
+        setLoadError(true);
       }
     } catch (error) {
       console.log("Load booking error:", error);
-      Alert.alert("Error", "Failed to load booking");
-      navigation.goBack();
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -109,8 +149,8 @@ export default function BookingScreen({ navigation, route }) {
 
   const createBookingRequest = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
-      // ✅ NEW: Map prefilledDate option to actual scheduledDate
       let scheduledDate = new Date();
       if (prefilledDate === "tomorrow") {
         scheduledDate = new Date();
@@ -119,7 +159,6 @@ export default function BookingScreen({ navigation, route }) {
         scheduledDate = new Date();
         scheduledDate.setDate(scheduledDate.getDate() + 3);
       }
-      // "today" or undefined → keep `new Date()` (now)
 
       const res = await api.post("/bookings", {
         client: user?._id,
@@ -140,13 +179,11 @@ export default function BookingScreen({ navigation, route }) {
         pollingAttempts.current = 0;
         startPolling(newBooking._id);
       } else {
-        Alert.alert("Error", "Failed to create booking request");
-        navigation.goBack();
+        setLoadError(true);
       }
     } catch (error) {
       console.log("Create booking error:", error);
-      Alert.alert("Error", "Failed to create booking");
-      navigation.goBack();
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -184,7 +221,8 @@ export default function BookingScreen({ navigation, route }) {
           if (
             newStatus === "accepted" ||
             newStatus === "rejected" ||
-            newStatus === "cancelled"
+            newStatus === "cancelled" ||
+            newStatus === "paid_in_escrow"
           ) {
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
@@ -212,7 +250,8 @@ export default function BookingScreen({ navigation, route }) {
         if (
           newStatus === "accepted" ||
           newStatus === "rejected" ||
-          newStatus === "cancelled"
+          newStatus === "cancelled" ||
+          newStatus === "paid_in_escrow"
         ) {
           if (intervalRef.current) {
             clearInterval(intervalRef.current);
@@ -250,7 +289,10 @@ export default function BookingScreen({ navigation, route }) {
       Alert.alert("Accepted", "You have accepted this booking.");
       await loadExistingBooking(bookingId);
     } catch (error) {
-      Alert.alert("Error", "Could not accept booking.");
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Could not accept booking."
+      );
     }
   };
 
@@ -266,45 +308,53 @@ export default function BookingScreen({ navigation, route }) {
       Alert.alert("Declined", "You have declined this booking.");
       navigation.goBack();
     } catch (error) {
-      Alert.alert("Error", "Could not decline booking.");
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Could not decline booking."
+      );
     }
   };
 
-  const handleCancelRequest = async () => {
+  const handleCancelRequest = () => {
     if (!bookingId) return;
-    Alert.alert(
-      "Cancel Request",
-      "Are you sure you want to cancel this request?",
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          style: "destructive",
-          onPress: async () => {
-            setCancelLoading(true);
-            try {
-              await cancelBookingRequest(bookingId);
-              setStatus("cancelled");
-              if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-              }
-              setPolling(false);
-              Alert.alert("Cancelled", "Request cancelled successfully");
-              navigation.goBack();
-            } catch (error) {
-              console.log("Cancel error:", error);
-              Alert.alert("Error", "Could not cancel request. Please try again.");
-            } finally {
-              setCancelLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    const onConfirm = async () => {
+      setCancelLoading(true);
+      try {
+        await cancelBookingRequest(bookingId);
+        setStatus("cancelled");
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        setPolling(false);
+        Alert.alert("Cancelled", "Request cancelled successfully");
+        navigation.goBack();
+      } catch (error) {
+        console.log("Cancel error:", error);
+        Alert.alert(
+          "Error",
+          error.response?.data?.message || "Could not cancel request. Please try again."
+        );
+      } finally {
+        setCancelLoading(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure you want to cancel this request?")) onConfirm();
+    } else {
+      Alert.alert(
+        "Cancel Request",
+        "Are you sure you want to cancel this request?",
+        [
+          { text: "No", style: "cancel" },
+          { text: "Yes", style: "destructive", onPress: onConfirm },
+        ]
+      );
+    }
   };
 
-  const handleConfirmBooking = async () => {
+  const handleConfirmBooking = () => {
     navigation.navigate("PaymentScreen", {
       bookingId: bookingId,
       amount: invoice.total,
@@ -312,16 +362,58 @@ export default function BookingScreen({ navigation, route }) {
     });
   };
 
-  // ===== OPEN CHAT =====
+  const handleMarkComplete = async () => {
+    if (!bookingId || markingComplete) return;
+    setMarkingComplete(true);
+    try {
+      await markBookingCompleted(bookingId);
+      Alert.alert(
+        "Success",
+        "Job marked as completed. Waiting for client confirmation."
+      );
+      await loadExistingBooking(bookingId);
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Could not mark as completed"
+      );
+    } finally {
+      setMarkingComplete(false);
+    }
+  };
+
   const handleOpenChat = () => {
     const isClient = userRole === "client";
     const otherParty = isClient ? booking?.provider : booking?.client;
-
     navigation.navigate("Chat", {
       bookingId: bookingId,
       otherPartyName: otherParty?.name || "User",
       otherPartyImage: otherParty?.profileImage || null,
     });
+  };
+
+  const handleOpenReview = () => {
+    setReviewRating(5);
+    setReviewComment("");
+    setReviewModalVisible(true);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!bookingId || reviewSubmitting) return;
+    setReviewSubmitting(true);
+    try {
+      await submitReview(bookingId, reviewRating, reviewComment);
+      Alert.alert("Success", "Review posted! Thank you for your feedback.");
+      setReviewModalVisible(false);
+      await loadExistingBooking(bookingId);
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Failed to submit review"
+      );
+    } finally {
+      setReviewSubmitting(false);
+    }
   };
 
   const animatePressIn = (scale) => {
@@ -331,8 +423,8 @@ export default function BookingScreen({ navigation, route }) {
     Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start();
   };
 
-  // ===== SHARED BACK HEADER =====
-  const BackHeader = ({ title = "Booking" }) => (
+  // ===== RENDER FUNCTIONS (not components — no remount per render) =====
+  const renderBackHeader = (title = "Booking") => (
     <View style={styles.header}>
       <TouchableOpacity
         style={[
@@ -354,8 +446,7 @@ export default function BookingScreen({ navigation, route }) {
     </View>
   );
 
-  // ===== STATUS BADGE HELPER =====
-  const StatusBadge = ({ label, color }) => (
+  const renderStatusBadge = (label, color) => (
     <View
       style={[
         styles.statusBadge,
@@ -366,17 +457,91 @@ export default function BookingScreen({ navigation, route }) {
     </View>
   );
 
+  const renderServiceBox = () => (
+    <View
+      style={[
+        styles.serviceBox,
+        { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
+      ]}
+    >
+      <Text style={[styles.serviceLabel, { color: colors.textTertiary }]}>
+        Service
+      </Text>
+      <Text
+        style={[styles.serviceValue, { color: colors.textPrimary }]}
+        numberOfLines={2}
+      >
+        {booking?.serviceTitle}
+      </Text>
+      <Text style={[styles.priceHero, { color: colors.primary }]}>
+        ₦{booking?.price?.toLocaleString()}
+      </Text>
+    </View>
+  );
+
   // ===== LOADING =====
-  if (loading) {
+  if (loading || status === "loading") {
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
-          <BackHeader title="Booking" />
+          {renderBackHeader("Booking")}
           <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.textTertiary }]}>
               Loading request...
             </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // ===== ERROR =====
+  if (loadError) {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+          {renderBackHeader("Booking")}
+          <View style={styles.errorContainer}>
+            <View
+              style={[
+                styles.errorIconWrap,
+                { backgroundColor: colors.danger + "15" },
+              ]}
+            >
+              <Ionicons name="alert-circle-outline" size={32} color={colors.danger} />
+            </View>
+            <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>
+              Couldn't load booking
+            </Text>
+            <Text style={[styles.errorSub, { color: colors.textTertiary }]}>
+              Check your connection and try again.
+            </Text>
+            <View style={styles.errorActions}>
+              <TouchableOpacity
+                style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+                onPress={() =>
+                  existingBookingId
+                    ? loadExistingBooking(existingBookingId)
+                    : createBookingRequest()
+                }
+                activeOpacity={0.85}
+              >
+                <Ionicons name="refresh" size={16} color={colors.textInverse} />
+                <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+                  Retry
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.backBtnError, { borderColor: colors.inputBorder }]}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.backBtnErrorText, { color: colors.textSecondary }]}>
+                  Go Back
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -396,8 +561,7 @@ export default function BookingScreen({ navigation, route }) {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.container}>
-              <BackHeader title="Booking Request" />
-
+              {renderBackHeader("Booking Request")}
               <View
                 style={[
                   styles.card,
@@ -418,9 +582,7 @@ export default function BookingScreen({ navigation, route }) {
                     <Ionicons name="time-outline" size={32} color={colors.warning} />
                   </View>
                 </View>
-
-                <StatusBadge label="Pending Request" color={colors.warning} />
-
+                {renderStatusBadge("Pending Request", colors.warning)}
                 <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
                   New Booking Request
                 </Text>
@@ -430,30 +592,7 @@ export default function BookingScreen({ navigation, route }) {
                   </Text>{" "}
                   wants to book your service
                 </Text>
-
-                <View
-                  style={[
-                    styles.serviceBox,
-                    {
-                      backgroundColor: colors.inputBackground,
-                      borderColor: colors.inputBorder,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.serviceLabel, { color: colors.textTertiary }]}>
-                    Service
-                  </Text>
-                  <Text
-                    style={[styles.serviceValue, { color: colors.textPrimary }]}
-                    numberOfLines={2}
-                  >
-                    {booking?.serviceTitle}
-                  </Text>
-                  <Text style={[styles.priceHero, { color: colors.primary }]}>
-                    ₦{booking?.price?.toLocaleString()}
-                  </Text>
-                </View>
-
+                {renderServiceBox()}
                 <View style={styles.requestActions}>
                   <TouchableOpacity
                     style={[
@@ -497,8 +636,7 @@ export default function BookingScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.container}>
-            <BackHeader title="Booking Request" />
-
+            {renderBackHeader("Booking Request")}
             <View
               style={[
                 styles.card,
@@ -519,9 +657,7 @@ export default function BookingScreen({ navigation, route }) {
                   <Ionicons name="time-outline" size={32} color={colors.warning} />
                 </View>
               </View>
-
-              <StatusBadge label="Pending Request" color={colors.warning} />
-
+              {renderStatusBadge("Pending Request", colors.warning)}
               <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
                 Waiting for Provider
               </Text>
@@ -532,7 +668,6 @@ export default function BookingScreen({ navigation, route }) {
                 </Text>
                 . They will accept or decline shortly.
               </Text>
-
               {polling && (
                 <View style={styles.pollingHint}>
                   <ActivityIndicator size="small" color={colors.primary} />
@@ -541,7 +676,6 @@ export default function BookingScreen({ navigation, route }) {
                   </Text>
                 </View>
               )}
-
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
@@ -555,18 +689,13 @@ export default function BookingScreen({ navigation, route }) {
                   <ActivityIndicator color={colors.textInverse} size="small" />
                 ) : (
                   <>
-                    <Ionicons
-                      name="refresh-outline"
-                      size={18}
-                      color={colors.textInverse}
-                    />
+                    <Ionicons name="refresh-outline" size={18} color={colors.textInverse} />
                     <Text style={[styles.primaryText, { color: colors.textInverse }]}>
                       Refresh Status
                     </Text>
                   </>
                 )}
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={[
                   styles.outlineBtn,
@@ -598,8 +727,7 @@ export default function BookingScreen({ navigation, route }) {
           ]}
         >
           <View style={styles.container}>
-            <BackHeader title="Booking" />
-
+            {renderBackHeader("Booking")}
             <View
               style={[
                 styles.card,
@@ -620,9 +748,7 @@ export default function BookingScreen({ navigation, route }) {
                   <Ionicons name="close-circle-outline" size={32} color={colors.danger} />
                 </View>
               </View>
-
-              <StatusBadge label="Declined" color={colors.danger} />
-
+              {renderStatusBadge("Declined", colors.danger)}
               <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
                 Request Declined
               </Text>
@@ -631,7 +757,6 @@ export default function BookingScreen({ navigation, route }) {
                   ? "You declined this request."
                   : "The provider declined your request."}
               </Text>
-
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
@@ -662,8 +787,7 @@ export default function BookingScreen({ navigation, route }) {
           ]}
         >
           <View style={styles.container}>
-            <BackHeader title="Booking" />
-
+            {renderBackHeader("Booking")}
             <View
               style={[
                 styles.card,
@@ -684,16 +808,13 @@ export default function BookingScreen({ navigation, route }) {
                   <Ionicons name="ban-outline" size={32} color={colors.textTertiary} />
                 </View>
               </View>
-
-              <StatusBadge label="Cancelled" color={colors.textTertiary} />
-
+              {renderStatusBadge("Cancelled", colors.textTertiary)}
               <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
                 Request Cancelled
               </Text>
               <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
                 This request has been cancelled.
               </Text>
-
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
@@ -713,74 +834,8 @@ export default function BookingScreen({ navigation, route }) {
     );
   }
 
-  // ================= ACCEPTED =================
-  if (status === "accepted") {
-    if (userRole === "provider") {
-      return (
-        <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
-          <ScrollView
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
-            ]}
-          >
-            <View style={styles.container}>
-              <BackHeader title="Booking" />
-
-              <View
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.inputBorder,
-                    shadowColor: colors.shadowColor,
-                  },
-                ]}
-              >
-                <View style={styles.iconWrap}>
-                  <View
-                    style={[
-                      styles.iconCircle,
-                      { backgroundColor: colors.success + "20" },
-                    ]}
-                  >
-                    <Ionicons
-                      name="checkmark-circle-outline"
-                      size={32}
-                      color={colors.success}
-                    />
-                  </View>
-                </View>
-
-                <StatusBadge label="Accepted" color={colors.success} />
-
-                <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
-                  Booking Accepted
-                </Text>
-                <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
-                  You have accepted this booking. Waiting for the client to complete
-                  payment.
-                </Text>
-
-                <TouchableOpacity
-                  style={[
-                    styles.primaryBtn,
-                    { backgroundColor: colors.primary, shadowColor: colors.primary },
-                  ]}
-                  onPress={() => navigation.goBack()}
-                  activeOpacity={0.9}
-                >
-                  <Text style={[styles.primaryText, { color: colors.textInverse }]}>
-                    Go Back
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
-      );
-    }
-
+  // ================= ACCEPTED (Provider) =================
+  if (status === "accepted" && userRole === "provider") {
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <ScrollView
@@ -788,11 +843,9 @@ export default function BookingScreen({ navigation, route }) {
             styles.scrollContent,
             { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
           ]}
-          showsVerticalScrollIndicator={false}
         >
           <View style={styles.container}>
-            <BackHeader title="Booking Confirmed" />
-
+            {renderBackHeader("Booking")}
             <View
               style={[
                 styles.card,
@@ -810,103 +863,55 @@ export default function BookingScreen({ navigation, route }) {
                     { backgroundColor: colors.success + "20" },
                   ]}
                 >
-                  <Ionicons
-                    name="checkmark-circle-outline"
-                    size={32}
-                    color={colors.success}
-                  />
+                  <Ionicons name="checkmark-circle-outline" size={32} color={colors.success} />
                 </View>
               </View>
-
-              <StatusBadge label="Accepted" color={colors.success} />
-
+              {renderStatusBadge("Accepted", colors.success)}
               <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
-                Request Accepted
+                Booking Accepted
               </Text>
               <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
-                <Text style={{ fontWeight: "700", color: colors.textPrimary }}>
-                  {booking?.provider?.name || "Provider"}
-                </Text>{" "}
-                has accepted your request. Proceed to payment to confirm the booking.
+                You have accepted this booking. Waiting for the client to complete
+                payment.
               </Text>
-            </View>
-
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.inputBorder,
-                  shadowColor: colors.shadowColor,
-                },
-              ]}
-            >
-              <View
-                style={[styles.invoiceHeader, { borderBottomColor: colors.inputBorder }]}
-              >
-                <View
-                  style={[styles.cardIconWrap, { backgroundColor: colors.primaryLight }]}
-                >
-                  <Ionicons name="receipt-outline" size={17} color={colors.primary} />
-                </View>
-                <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
-                  Invoice
-                </Text>
-              </View>
-
-              <View style={styles.invoiceRow}>
-                <Text style={[styles.invoiceLabel, { color: colors.textTertiary }]}>
-                  Service Fee
-                </Text>
-                <Text style={[styles.invoiceValue, { color: colors.textPrimary }]}>
-                  ₦{invoice.serviceFee.toLocaleString()}
-                </Text>
-              </View>
-
-              <View
-                style={[styles.dashedDivider, { borderColor: colors.inputBorder }]}
-              />
-
-              <View style={styles.invoiceRow}>
-                <Text style={[styles.totalLabel, { color: colors.textPrimary }]}>
-                  Total
-                </Text>
-                <Text style={[styles.totalAmount, { color: colors.primary }]}>
-                  ₦{invoice.total.toLocaleString()}
-                </Text>
-              </View>
-            </View>
-
-            <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
               <TouchableOpacity
-                style={[
-                  styles.primaryBtn,
-                  { backgroundColor: colors.primary, shadowColor: colors.primary },
-                ]}
-                onPress={handleConfirmBooking}
-                onPressIn={() => animatePressIn(primaryScale)}
-                onPressOut={() => animatePressOut(primaryScale)}
+                style={[styles.primaryBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
+                onPress={manualRefresh}
+                disabled={refreshingStatus}
                 activeOpacity={0.9}
               >
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={18}
-                  color={colors.textInverse}
-                />
-                <Text style={[styles.primaryText, { color: colors.textInverse }]}>
-                  Confirm & Pay
-                </Text>
-                <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
+                {refreshingStatus ? (
+                  <ActivityIndicator color={colors.textInverse} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="refresh-outline" size={18} color={colors.textInverse} />
+                    <Text style={[styles.primaryText, { color: colors.textInverse }]}>
+                      Refresh Status
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
-            </Animated.View>
+              <TouchableOpacity
+                style={[
+                  styles.outlineBtn,
+                  { backgroundColor: colors.card, borderColor: colors.inputBorder },
+                ]}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.outlineBtnText, { color: colors.textSecondary }]}>
+                  Go Back
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </View>
     );
   }
 
-  // ================= RELEASED (review + chat) =================
-  if (status === "released" && userRole === "client" && !booking?.reviewed) {
+  // ================= ACCEPTED (Client — invoice & pay) =================
+  if (status === "accepted") {
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <ScrollView
@@ -914,10 +919,10 @@ export default function BookingScreen({ navigation, route }) {
             styles.scrollContent,
             { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
           ]}
+          showsVerticalScrollIndicator={false}
         >
           <View style={styles.container}>
-            <BackHeader title="Booking" />
-
+            {renderBackHeader("Booking Confirmed")}
             <View
               style={[
                 styles.card,
@@ -932,31 +937,199 @@ export default function BookingScreen({ navigation, route }) {
                 <View
                   style={[
                     styles.iconCircle,
-                    { backgroundColor: colors.warning + "20" },
+                    { backgroundColor: colors.success + "20" },
                   ]}
                 >
-                  <Ionicons name="star-outline" size={32} color="#F59E0B" />
+                  <Ionicons name="checkmark-circle-outline" size={32} color={colors.success} />
                 </View>
               </View>
-
-              <StatusBadge label="Completed" color={colors.success} />
-
+              {renderStatusBadge("Accepted", colors.success)}
               <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
-                Job Completed!
+                Request Accepted
               </Text>
               <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
-                Funds have been released to the provider. You can now leave a
-                review.
+                <Text style={{ fontWeight: "700", color: colors.textPrimary }}>
+                  {booking?.provider?.name || "Provider"}
+                </Text>{" "}
+                has accepted your request. Proceed to payment to confirm the booking.
               </Text>
-
+            </View>
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={[styles.invoiceHeader, { borderBottomColor: colors.inputBorder }]}>
+                <View style={[styles.cardIconWrap, { backgroundColor: colors.primaryLight }]}>
+                  <Ionicons name="receipt-outline" size={17} color={colors.primary} />
+                </View>
+                <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+                  Invoice
+                </Text>
+              </View>
+              <View style={styles.invoiceRow}>
+                <Text style={[styles.invoiceLabel, { color: colors.textTertiary }]}>
+                  Service Fee
+                </Text>
+                <Text style={[styles.invoiceValue, { color: colors.textPrimary }]}>
+                  ₦{invoice.serviceFee.toLocaleString()}
+                </Text>
+              </View>
+              <View style={[styles.dashedDivider, { borderColor: colors.inputBorder }]} />
+              <View style={styles.invoiceRow}>
+                <Text style={[styles.totalLabel, { color: colors.textPrimary }]}>
+                  Total
+                </Text>
+                <Text style={[styles.totalAmount, { color: colors.primary }]}>
+                  ₦{invoice.total.toLocaleString()}
+                </Text>
+              </View>
+            </View>
+            <Animated.View style={{ transform: [{ scale: primaryScale }] }}>
               <TouchableOpacity
                 style={[
-                  styles.chatBtn,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.primary,
-                  },
+                  styles.primaryBtn,
+                  { backgroundColor: colors.primary, shadowColor: colors.primary },
                 ]}
+                onPress={handleConfirmBooking}
+                onPressIn={() => animatePressIn(primaryScale)}
+                onPressOut={() => animatePressOut(primaryScale)}
+                activeOpacity={0.9}
+              >
+                <Ionicons name="lock-closed-outline" size={18} color={colors.textInverse} />
+                <Text style={[styles.primaryText, { color: colors.textInverse }]}>
+                  Confirm & Pay
+                </Text>
+                <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ================= NEW: AWAITING PAYMENT =================
+  if (status === "awaiting_payment") {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
+          ]}
+        >
+          <View style={styles.container}>
+            {renderBackHeader("Booking")}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={styles.iconWrap}>
+                <View
+                  style={[styles.iconCircle, { backgroundColor: colors.warning + "20" }]}
+                >
+                  <Ionicons name="time-outline" size={32} color={colors.warning} />
+                </View>
+              </View>
+              {renderStatusBadge("Awaiting Payment", colors.warning)}
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
+                Payment Processing
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                {userRole === "client"
+                  ? "We're waiting for your payment to be confirmed. This usually takes a few seconds."
+                  : "The client's payment is being processed. You'll be notified once it's secured in escrow."}
+              </Text>
+              {renderServiceBox()}
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
+                onPress={manualRefresh}
+                disabled={refreshingStatus}
+                activeOpacity={0.9}
+              >
+                {refreshingStatus ? (
+                  <ActivityIndicator color={colors.textInverse} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="refresh-outline" size={18} color={colors.textInverse} />
+                    <Text style={[styles.primaryText, { color: colors.textInverse }]}>
+                      Refresh Status
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.outlineBtn,
+                  { backgroundColor: colors.card, borderColor: colors.inputBorder },
+                ]}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.outlineBtnText, { color: colors.textSecondary }]}>
+                  Go Back
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ================= NEW: PAID IN ESCROW =================
+  if (status === "paid_in_escrow") {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
+          ]}
+        >
+          <View style={styles.container}>
+            {renderBackHeader("Booking")}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={styles.iconWrap}>
+                <View
+                  style={[styles.iconCircle, { backgroundColor: colors.success + "20" }]}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={32} color={colors.success} />
+                </View>
+              </View>
+              {renderStatusBadge("Escrow Funded", colors.success)}
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
+                Payment Secured
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                {userRole === "provider"
+                  ? "The client's payment is held safely in escrow. You can begin work."
+                  : "Your payment is held safely in escrow. The provider can begin work."}
+              </Text>
+              {renderServiceBox()}
+              <TouchableOpacity
+                style={[styles.chatBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
                 onPress={handleOpenChat}
                 activeOpacity={0.85}
               >
@@ -965,18 +1138,352 @@ export default function BookingScreen({ navigation, route }) {
                   Open Chat
                 </Text>
               </TouchableOpacity>
+              {userRole === "provider" && (
+                <TouchableOpacity
+                  style={[
+                    styles.primaryBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      shadowColor: colors.primary,
+                      marginTop: 12,
+                      opacity: markingComplete ? 0.7 : 1,
+                    },
+                  ]}
+                  onPress={handleMarkComplete}
+                  disabled={markingComplete}
+                  activeOpacity={0.9}
+                >
+                  {markingComplete ? (
+                    <ActivityIndicator size="small" color={colors.textInverse} />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle-outline" size={18} color={colors.textInverse} />
+                      <Text style={[styles.primaryText, { color: colors.textInverse }]}>
+                        Mark as Completed
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
+  // ================= NEW: IN PROGRESS =================
+  if (status === "in_progress") {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
+          ]}
+        >
+          <View style={styles.container}>
+            {renderBackHeader("Booking")}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={styles.iconWrap}>
+                <View
+                  style={[styles.iconCircle, { backgroundColor: colors.primary + "20" }]}
+                >
+                  <Ionicons name="construct-outline" size={32} color={colors.primary} />
+                </View>
+              </View>
+              {renderStatusBadge("In Progress", colors.primary)}
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
+                Work In Progress
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                {userRole === "provider"
+                  ? "You're working on this job. Mark it as completed when done."
+                  : "The provider is currently working on this job."}
+              </Text>
+              {renderServiceBox()}
+              <TouchableOpacity
+                style={[styles.chatBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
+                onPress={handleOpenChat}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                <Text style={[styles.chatBtnText, { color: colors.primary }]}>
+                  Open Chat
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ================= NEW: COMPLETED / READY FOR RELEASE =================
+  if (status === "completed" || status === "ready_for_release") {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
+          ]}
+        >
+          <View style={styles.container}>
+            {renderBackHeader("Booking")}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={styles.iconWrap}>
+                <View
+                  style={[styles.iconCircle, { backgroundColor: colors.warning + "20" }]}
+                >
+                  <Ionicons name="checkmark-done-outline" size={32} color={colors.warning} />
+                </View>
+              </View>
+              {renderStatusBadge("Awaiting Confirmation", colors.warning)}
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
+                Awaiting Your Confirmation
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                {userRole === "client"
+                  ? "The provider has marked this job as completed. Review the work and confirm from your Dashboard to release funds."
+                  : "You've marked this job as completed. Waiting for the client to confirm and release funds."}
+              </Text>
+              {renderServiceBox()}
+              <TouchableOpacity
+                style={[styles.chatBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
+                onPress={handleOpenChat}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                <Text style={[styles.chatBtnText, { color: colors.primary }]}>
+                  Open Chat
+                </Text>
+              </TouchableOpacity>
+              {userRole === "client" && (
+                <TouchableOpacity
+                  style={[
+                    styles.primaryBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      shadowColor: colors.primary,
+                      marginTop: 12,
+                    },
+                  ]}
+                  onPress={() => navigation.goBack()}
+                  activeOpacity={0.9}
+                >
+                  <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
+                  <Text style={[styles.primaryText, { color: colors.textInverse }]}>
+                    Confirm from Dashboard
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ================= NEW: DISPUTED =================
+  if (status === "disputed") {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
+          ]}
+        >
+          <View style={styles.container}>
+            {renderBackHeader("Booking")}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={styles.iconWrap}>
+                <View
+                  style={[styles.iconCircle, { backgroundColor: colors.danger + "20" }]}
+                >
+                  <Ionicons name="alert-circle-outline" size={32} color={colors.danger} />
+                </View>
+              </View>
+              {renderStatusBadge("Disputed", colors.danger)}
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
+                Booking Disputed
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                This booking is under review. Our team will contact you with next steps.
+              </Text>
+              {renderServiceBox()}
+              <TouchableOpacity
+                style={[styles.chatBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
+                onPress={handleOpenChat}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                <Text style={[styles.chatBtnText, { color: colors.primary }]}>
+                  Open Chat
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ================= RELEASED — awaiting review (client) =================
+  if (status === "released" && !booking?.reviewed) {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
+          ]}
+        >
+          <View style={styles.container}>
+            {renderBackHeader("Booking")}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={styles.iconWrap}>
+                <View
+                  style={[styles.iconCircle, { backgroundColor: colors.success + "20" }]}
+                >
+                  <Ionicons name="star-outline" size={32} color="#F59E0B" />
+                </View>
+              </View>
+              {renderStatusBadge("Completed", colors.success)}
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
+                Job Completed!
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                Funds have been released to the provider. You can now leave a
+                review.
+              </Text>
+              <TouchableOpacity
+                style={[styles.chatBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
+                onPress={handleOpenChat}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                <Text style={[styles.chatBtnText, { color: colors.primary }]}>
+                  Open Chat
+                </Text>
+              </TouchableOpacity>
+              {userRole === "client" && (
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: colors.success, shadowColor: colors.success }]}
+                  onPress={handleOpenReview}
+                  activeOpacity={0.9}
+                >
+                  <Ionicons name="star-outline" size={18} color={colors.textInverse} />
+                  <Text style={[styles.primaryText, { color: colors.textInverse }]}>
+                    Leave a Review
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+
+        {renderReviewModal()}
+      </View>
+    );
+  }
+
+  // ================= NEW: RELEASED + REVIEWED =================
+  if (status === "released" && booking?.reviewed) {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
+          ]}
+        >
+          <View style={styles.container}>
+            {renderBackHeader("Booking")}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  shadowColor: colors.shadowColor,
+                },
+              ]}
+            >
+              <View style={styles.iconWrap}>
+                <View
+                  style={[styles.iconCircle, { backgroundColor: colors.success + "20" }]}
+                >
+                  <Ionicons name="checkmark-circle" size={32} color={colors.success} />
+                </View>
+              </View>
+              {renderStatusBadge("Complete", colors.success)}
+              <Text style={[styles.statusTitle, { color: colors.textPrimary }]}>
+                Booking Complete
+              </Text>
+              <Text style={[styles.statusSubtitle, { color: colors.textTertiary }]}>
+                {userRole === "client"
+                  ? "Thanks for your review! This booking is now closed."
+                  : "This booking is complete. Funds have been released."}
+              </Text>
+              {renderServiceBox()}
+              <TouchableOpacity
+                style={[styles.chatBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
+                onPress={handleOpenChat}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                <Text style={[styles.chatBtnText, { color: colors.primary }]}>
+                  Open Chat
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.primaryBtn,
-                  { backgroundColor: colors.success, shadowColor: colors.success },
+                  styles.outlineBtn,
+                  { backgroundColor: colors.card, borderColor: colors.inputBorder },
                 ]}
                 onPress={() => navigation.goBack()}
-                activeOpacity={0.9}
+                activeOpacity={0.85}
               >
-                <Ionicons name="star-outline" size={18} color={colors.textInverse} />
-                <Text style={[styles.primaryText, { color: colors.textInverse }]}>
-                  Leave a Review
+                <Text style={[styles.outlineBtnText, { color: colors.textSecondary }]}>
+                  Back to Dashboard
                 </Text>
               </TouchableOpacity>
             </View>
@@ -990,7 +1497,7 @@ export default function BookingScreen({ navigation, route }) {
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
-        <BackHeader title="Booking" />
+        {renderBackHeader("Booking")}
         <View style={styles.center}>
           <Text style={{ color: colors.textPrimary }}>Unknown status: {status}</Text>
           <TouchableOpacity
@@ -1012,17 +1519,143 @@ export default function BookingScreen({ navigation, route }) {
       </View>
     </View>
   );
+
+  // ===== REVIEW MODAL (function, not component — no remount) =====
+  function renderReviewModal() {
+    return (
+      <Modal
+        visible={reviewModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReviewModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Leave a Review
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
+              How was your experience with{" "}
+              {booking?.provider?.name || "the provider"}?
+            </Text>
+            <View style={styles.ratingStars}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setReviewRating(star)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={star <= reviewRating ? "star" : "star-outline"}
+                    size={38}
+                    color={star <= reviewRating ? "#F59E0B" : colors.textTertiary}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.reviewRatingLabel, { color: colors.textSecondary }]}>
+              {reviewRating} / 5 stars
+            </Text>
+            <TextInput
+              style={[
+                styles.reviewInput,
+                {
+                  backgroundColor: colors.inputBackground,
+                  borderColor: colors.inputBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
+              placeholder="Write your review (optional)"
+              placeholderTextColor={colors.textTertiary}
+              multiline
+              numberOfLines={4}
+              value={reviewComment}
+              onChangeText={setReviewComment}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
+                onPress={() => setReviewModalVisible(false)}
+                disabled={reviewSubmitting}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  { backgroundColor: colors.primary, opacity: reviewSubmitting ? 0.7 : 1 },
+                ]}
+                onPress={handleSubmitReview}
+                disabled={reviewSubmitting}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textInverse }]}>
+                  {reviewSubmitting ? "Submitting..." : "Submit Review"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  }
 }
 
-// ========================================
-// STYLES (unchanged)
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { paddingHorizontal: 20 },
   scrollContent: { flexGrow: 1 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, fontSize: 14, fontWeight: "500" },
+
+  // Error state
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  errorIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorSub: {
+    fontSize: 13.5,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 24,
+  },
+  errorActions: { flexDirection: "row", gap: 10 },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  retryBtnText: { fontSize: 14, fontWeight: "700" },
+  backBtnError: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  backBtnErrorText: { fontSize: 14, fontWeight: "600" },
 
   header: {
     flexDirection: "row",
@@ -1268,5 +1901,41 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.5,
+  },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    borderRadius: 24,
+    padding: 20,
+    width: "88%",
+    alignItems: "center",
+  },
+  modalTitle: { fontSize: 19, fontWeight: "800", marginBottom: 6 },
+  modalSubtitle: { fontSize: 13.5, marginBottom: 18, textAlign: "center" },
+  modalButtons: { flexDirection: "row", gap: 10, width: "100%" },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  modalButtonText: { fontWeight: "700", fontSize: 14 },
+  ratingStars: { flexDirection: "row", gap: 6, marginVertical: 14 },
+  reviewRatingLabel: { fontSize: 15, fontWeight: "700", marginBottom: 14 },
+  reviewInput: {
+    width: "100%",
+    borderRadius: 14,
+    padding: 14,
+    fontSize: 14.5,
+    marginBottom: 20,
+    borderWidth: 1,
+    minHeight: 100,
+    textAlignVertical: "top",
   },
 });

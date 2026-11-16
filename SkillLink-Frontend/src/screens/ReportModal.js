@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
+import { AuthContext } from "../../context/AuthContext";
 import { submitReport } from "../services/api";
 
 const REASONS = [
@@ -25,19 +26,46 @@ const REASONS = [
   { key: "other", label: "Other" },
 ];
 
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
 export default function ReportModal({ visible, onClose, type, targetId, label }) {
   const { colors } = useTheme();
+  const { user } = useContext(AuthContext);
   const [selectedReason, setSelectedReason] = useState(null);
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Reset state every time modal opens
+  useEffect(() => {
+    if (visible) {
+      setSelectedReason(null);
+      setDescription("");
+      setSubmitting(false);
+    }
+  }, [visible]);
+
+  const isSelfReport =
+    type === "user" &&
+    user?._id &&
+    targetId &&
+    String(user._id) === String(targetId);
+
   const handleSubmit = async () => {
+    if (submitting) return;
+
+    if (!targetId) {
+      webAlert("Error", "Missing report target. Please try again.");
+      return;
+    }
+    if (isSelfReport) {
+      webAlert("Error", "You cannot report yourself.");
+      return;
+    }
     if (!selectedReason) {
-      if (Platform.OS === "web") {
-        window.alert("Please choose why you're reporting this.");
-      } else {
-        Alert.alert("Select a reason", "Please choose why you're reporting this.");
-      }
+      webAlert("Select a reason", "Please choose why you're reporting this.");
       return;
     }
 
@@ -54,43 +82,56 @@ export default function ReportModal({ visible, onClose, type, targetId, label })
       const res = await submitReport(payload);
 
       if (res.success) {
-        if (Platform.OS === "web") {
-          window.alert(res.message);
-        } else {
-          Alert.alert("Report Submitted", res.message);
-        }
+        webAlert("Report Submitted", res.message || "Thank you for your report.");
         setSelectedReason(null);
         setDescription("");
         onClose();
       } else {
-        const msg = res.message || "Failed to submit report";
-        if (Platform.OS === "web") window.alert(msg);
-        else Alert.alert("Error", msg);
+        webAlert("Couldn't Submit", res.message || "Failed to submit report.");
       }
     } catch (error) {
-      const msg = error.response?.data?.message || "Network error";
-      if (Platform.OS === "web") window.alert(msg);
-      else Alert.alert("Error", msg);
+      webAlert(
+        "Error",
+        error.response?.data?.message || "Network error. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleClose = () => {
+    if (submitting) return;
+    onClose();
+  };
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={handleClose}
+    >
       <View style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: colors.card }]}>
-          {/* Header */}
-          <View style={[styles.header, { borderBottomColor: colors.inputBorder }]}>
+          <View
+            style={[styles.header, { borderBottomColor: colors.inputBorder }]}
+          >
             <Text style={[styles.title, { color: colors.textPrimary }]}>
               {label || `Report ${type === "user" ? "User" : "Post"}`}
             </Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity
+              onPress={handleClose}
+              activeOpacity={0.7}
+              disabled={submitting}
+            >
               <Ionicons name="close" size={22} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
               Why are you reporting this?
             </Text>
@@ -108,6 +149,7 @@ export default function ReportModal({ visible, onClose, type, targetId, label })
                 ]}
                 onPress={() => setSelectedReason(reason.key)}
                 activeOpacity={0.7}
+                disabled={submitting}
               >
                 <Text
                   style={[
@@ -117,19 +159,29 @@ export default function ReportModal({ visible, onClose, type, targetId, label })
                         selectedReason === reason.key
                           ? colors.primary
                           : colors.textPrimary,
-                      fontWeight: selectedReason === reason.key ? "700" : "500",
+                      fontWeight:
+                        selectedReason === reason.key ? "700" : "500",
                     },
                   ]}
                 >
                   {reason.label}
                 </Text>
                 {selectedReason === reason.key && (
-                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={20}
+                    color={colors.primary}
+                  />
                 )}
               </TouchableOpacity>
             ))}
 
-            <Text style={[styles.subtitle, { color: colors.textTertiary, marginTop: 16 }]}>
+            <Text
+              style={[
+                styles.subtitle,
+                { color: colors.textTertiary, marginTop: 16 },
+              ]}
+            >
               Additional details (optional)
             </Text>
             <TextInput
@@ -148,7 +200,16 @@ export default function ReportModal({ visible, onClose, type, targetId, label })
               multiline
               numberOfLines={4}
               maxLength={500}
+              editable={!submitting}
             />
+            <Text
+              style={[
+                styles.charCounter,
+                { color: colors.textTertiary },
+              ]}
+            >
+              {description.length}/500
+            </Text>
 
             <TouchableOpacity
               style={[
@@ -196,7 +257,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   title: { fontSize: 18, fontWeight: "800", letterSpacing: -0.3 },
-  subtitle: { fontSize: 12.5, fontWeight: "600", marginBottom: 10, letterSpacing: 0.1 },
+  subtitle: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    marginBottom: 10,
+    letterSpacing: 0.1,
+  },
   reasonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -214,6 +280,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minHeight: 90,
     textAlignVertical: "top",
+    marginBottom: 6,
+  },
+  charCounter: {
+    fontSize: 11,
+    fontWeight: "500",
+    textAlign: "right",
     marginBottom: 16,
   },
   submitBtn: {

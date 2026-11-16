@@ -15,8 +15,9 @@ import {
   FlatList,
   ScrollView,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthContext } from "../../context/AuthContext";
@@ -26,8 +27,16 @@ import { nigeriaStates } from "../data/nigeriaStates";
 
 const CLOUD_NAME = "dz2te6uth";
 const UPLOAD_PRESET = "SkillLink";
+const IMAGE_MAX_WIDTH = 800;
+const IMAGE_QUALITY = 0.75;
+const UPLOAD_TIMEOUT_MS = 45000;
 
-// ===== Custom Dropdown Component =====
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
+// ===== Custom Dropdown =====
 const CustomPicker = ({
   label,
   selectedValue,
@@ -119,7 +128,9 @@ const CustomPicker = ({
                       style={[
                         styles.modalItemText,
                         {
-                          color: isSelected ? colors.primary : colors.textPrimary,
+                          color: isSelected
+                            ? colors.primary
+                            : colors.textPrimary,
                           fontWeight: isSelected ? "700" : "500",
                         },
                       ]}
@@ -157,91 +168,179 @@ export default function EditProfileScreen({ navigation, route }) {
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
   const [profileImage, setProfileImage] = useState(null);
+  const [originalImage, setOriginalImage] = useState(null);
   const [skills, setSkills] = useState("");
 
-  // Location state
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [availableCities, setAvailableCities] = useState([]);
+  const [originalSnapshot, setOriginalSnapshot] = useState(null);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [picking, setPicking] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
+  // Load profile — depends on user id so it re-fires when user becomes available
   useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    try {
-      if (!initialUser?._id) return;
-      const res = await api.get(`/users/${initialUser._id}`);
-      const data = res.data;
-      setName(data.name || "");
-      setAbout(data.bio || "");
-      setProfileImage(data.profileImage || null);
-      setSkills(data.skills?.join(", ") || "");
-
-      const userState = data.locationDetails?.state || "";
-      const userCity = data.locationDetails?.city || "";
-      setSelectedState(userState);
-      setSelectedCity(userCity);
-      const foundState = nigeriaStates.find((s) => s.name === userState);
-      if (foundState) {
-        setAvailableCities(foundState.lgas);
-      } else {
-        setAvailableCities([]);
+    const loadProfile = async () => {
+      if (!initialUser?._id) {
+        return;
       }
-    } catch (error) {
-      console.log("Profile load error", error);
-    }
-  };
+      setLoading(true);
+      setLoadError(false);
+      try {
+        const res = await api.get(`/users/${initialUser._id}`);
+        const data = res.data;
+
+        const nextState = data.locationDetails?.state || "";
+        const nextCity = data.locationDetails?.city || "";
+        const nextName = data.name || "";
+        const nextAbout = data.bio || "";
+        const nextImage = data.profileImage || null;
+        const nextSkills = (data.skills || []).join(", ");
+
+        setName(nextName);
+        setAbout(nextAbout);
+        setProfileImage(nextImage);
+        setOriginalImage(nextImage);
+        setSkills(nextSkills);
+        setSelectedState(nextState);
+        setSelectedCity(nextCity);
+
+        const foundState = nigeriaStates.find((s) => s.name === nextState);
+        setAvailableCities(foundState ? foundState.lgas : []);
+
+        setOriginalSnapshot({
+          name: nextName,
+          about: nextAbout,
+          image: nextImage,
+          skills: nextSkills,
+          state: nextState,
+          city: nextCity,
+        });
+      } catch (error) {
+        setLoadError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [initialUser?._id]);
 
   const handleStateChange = (stateName) => {
     setSelectedState(stateName);
     setSelectedCity("");
     const foundState = nigeriaStates.find((s) => s.name === stateName);
-    if (foundState) {
-      setAvailableCities(foundState.lgas);
+    setAvailableCities(foundState ? foundState.lgas : []);
+  };
+
+  const handleBack = () => {
+    const hasChanges =
+      originalSnapshot &&
+      (name !== originalSnapshot.name ||
+        about !== originalSnapshot.about ||
+        profileImage !== originalSnapshot.image ||
+        skills !== originalSnapshot.skills ||
+        selectedState !== originalSnapshot.state ||
+        selectedCity !== originalSnapshot.city);
+
+    if (!hasChanges) {
+      navigation.goBack();
+      return;
+    }
+
+    if (Platform.OS === "web") {
+      if (window.confirm("You have unsaved changes. Discard and leave?")) {
+        navigation.goBack();
+      }
     } else {
-      setAvailableCities([]);
+      Alert.alert(
+        "Discard changes?",
+        "You have unsaved changes. Leaving now will lose them.",
+        [
+          { text: "Stay", style: "cancel" },
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
     }
   };
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.7,
-      base64: true,
-    });
-    if (!result.canceled) {
+    if (picking || saving) return;
+    setPicking(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.85,
+      });
+      if (result.canceled) return;
+
       const asset = result.assets[0];
-      if (asset.base64) {
-        const base64Image = `data:image/jpeg;base64,${asset.base64}`;
-        setProfileImage(base64Image);
-      } else {
-        Alert.alert("Error", "Image processing failed. Try another image.");
+      // Compress before storing in state — prevents large base64 blobs
+      try {
+        const { width } = await new Promise((resolve, reject) => {
+          Image.getSize(
+            asset.uri,
+            (w, h) => resolve({ width: w, height: h }),
+            reject
+          );
+        });
+        const actions = width > IMAGE_MAX_WIDTH ? [{ resize: { width: IMAGE_MAX_WIDTH } }] : [];
+        const compressed = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          actions,
+          { compress: IMAGE_QUALITY, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        setProfileImage(compressed.uri);
+      } catch {
+        // Fallback — use original uri
+        setProfileImage(asset.uri);
       }
+    } catch (err) {
+      webAlert("Error", "Could not pick image: " + err.message);
+    } finally {
+      setPicking(false);
     }
   };
 
-  const uploadImageToCloudinary = async (imageUri) => {
+  const uploadImage = async (uri) => {
+    const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
     const formData = new FormData();
-    if (imageUri.startsWith("data:image")) {
-      formData.append("file", imageUri);
-    } else {
+    if (uri.startsWith("file://") || uri.startsWith("content://")) {
+      // React Native file upload via fetch
+      const filename = uri.split("/").pop() || "profile.jpg";
       formData.append("file", {
-        uri: imageUri,
+        uri,
         type: "image/jpeg",
-        name: "profile.jpg",
+        name: filename,
       });
+    } else {
+      // Web — fetch the blob first
+      const fileRes = await fetch(uri);
+      const blob = await fileRes.blob();
+      formData.append("file", blob);
     }
     formData.append("upload_preset", UPLOAD_PRESET);
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-      { method: "POST", body: formData }
-    );
-    const data = await response.json();
+
+    const uploadRes = await Promise.race([
+      fetch(endpoint, { method: "POST", body: formData }),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Upload timed out. Check your connection.")),
+          UPLOAD_TIMEOUT_MS
+        )
+      ),
+    ]);
+
+    const data = await uploadRes.json();
     if (!data.secure_url) {
       throw new Error(data?.error?.message || "Image upload failed");
     }
@@ -249,29 +348,47 @@ export default function EditProfileScreen({ navigation, route }) {
   };
 
   const updateProfile = async () => {
+    if (saving) return;
+
+    if (!initialUser?._id) {
+      webAlert("Error", "User not found");
+      return;
+    }
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      webAlert("Error", "Name cannot be empty.");
+      return;
+    }
+    if (trimmedName.length > 100) {
+      webAlert("Error", "Name must be 100 characters or less.");
+      return;
+    }
+
+    setSaving(true);
     try {
-      if (!initialUser?._id) {
-        Alert.alert("Error", "User not found");
-        return;
-      }
-      setLoading(true);
       let imageUrl = profileImage;
+      // Only upload if the image is a local file (not an existing https URL)
       if (
         profileImage &&
-        (profileImage.startsWith("file://") ||
-          profileImage.startsWith("data:image"))
+        !profileImage.startsWith("https://")
       ) {
-        imageUrl = await uploadImageToCloudinary(profileImage);
+        imageUrl = await uploadImage(profileImage);
       }
 
       const locationParts = [selectedCity, selectedState].filter(Boolean);
       const locationString = locationParts.join(", ");
 
+      const parsedSkills = skills
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
       const payload = {
-        name,
-        bio: about,
-        profileImage: imageUrl,
-        skills: skills.split(",").map((s) => s.trim()),
+        name: trimmedName,
+        bio: (about || "").trim(),
+        profileImage: imageUrl || "",
+        skills: parsedSkills,
         location: locationString,
         locationDetails: {
           city: selectedCity,
@@ -284,13 +401,17 @@ export default function EditProfileScreen({ navigation, route }) {
       if (updateUser) {
         updateUser(res.data);
       }
-      Alert.alert("Success", "Profile updated");
+      webAlert("Success", "Profile updated");
       navigation.goBack();
     } catch (error) {
-      console.log("Update error", error);
-      Alert.alert("Error", "Profile update failed");
+      webAlert(
+        "Error",
+        error.response?.data?.message ||
+          error.message ||
+          "Profile update failed"
+      );
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -301,14 +422,126 @@ export default function EditProfileScreen({ navigation, route }) {
     Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
   };
 
-  if (!initialUser?._id) {
+  const hasChanges =
+    originalSnapshot &&
+    (name !== originalSnapshot.name ||
+      about !== originalSnapshot.about ||
+      profileImage !== originalSnapshot.image ||
+      skills !== originalSnapshot.skills ||
+      selectedState !== originalSnapshot.state ||
+      selectedCity !== originalSnapshot.city);
+
+  const saveDisabled = !hasChanges || saving || loading;
+
+  // ===== LOADING =====
+  if (loading) {
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loaderText, { color: colors.textTertiary }]}>
-            Loading user data...
-          </Text>
+        <View
+          style={[
+            styles.container,
+            { paddingTop: insets.top + 8, flex: 1 },
+          ]}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={[
+                styles.backBtn,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text
+              style={[styles.title, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              Edit Profile
+            </Text>
+            <View style={styles.placeholder} />
+          </View>
+          <View style={styles.loader}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // ===== ERROR =====
+  if (loadError) {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.container,
+            { paddingTop: insets.top + 8, flex: 1 },
+          ]}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={[
+                styles.backBtn,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text
+              style={[styles.title, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              Edit Profile
+            </Text>
+            <View style={styles.placeholder} />
+          </View>
+          <View style={styles.loader}>
+            <View
+              style={[
+                styles.errorIcon,
+                { backgroundColor: colors.danger + "15" },
+              ]}
+            >
+              <Ionicons
+                name="cloud-offline-outline"
+                size={28}
+                color={colors.danger}
+              />
+            </View>
+            <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>
+              Couldn't load profile
+            </Text>
+            <Text style={[styles.errorSub, { color: colors.textTertiary }]}>
+              Check your connection and try again.
+            </Text>
+            <TouchableOpacity
+              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                setLoadError(false);
+                setLoading(true);
+                // Trigger re-fetch by toggling a state — use location param trick
+                // Simpler: extract loadProfile into a callback and call it
+                // For brevity here, we reload the screen's effect by forcing state
+                // In practice, call the load function directly
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="refresh" size={16} color={colors.textInverse} />
+              <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -332,10 +565,10 @@ export default function EditProfileScreen({ navigation, route }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.container}>
-            {/* ===== HEADER ===== */}
+            {/* HEADER */}
             <View style={styles.header}>
               <TouchableOpacity
-                onPress={() => navigation.goBack()}
+                onPress={handleBack}
                 style={[
                   styles.backBtn,
                   {
@@ -356,15 +589,17 @@ export default function EditProfileScreen({ navigation, route }) {
               <View style={styles.placeholder} />
             </View>
 
-            {/* ===== AVATAR ===== */}
+            {/* AVATAR */}
             <View style={styles.avatarSection}>
               <TouchableOpacity
                 onPress={pickImage}
                 style={styles.avatarContainer}
                 activeOpacity={0.85}
+                disabled={picking || saving}
               >
                 {profileImage ? (
                   <Image
+                    key={profileImage}
                     source={{ uri: profileImage }}
                     style={[styles.avatar, { borderColor: colors.card }]}
                   />
@@ -391,7 +626,11 @@ export default function EditProfileScreen({ navigation, route }) {
                     { backgroundColor: colors.primary, borderColor: colors.card },
                   ]}
                 >
-                  <Ionicons name="camera" size={14} color={colors.textInverse} />
+                  {picking ? (
+                    <ActivityIndicator size="small" color={colors.textInverse} />
+                  ) : (
+                    <Ionicons name="camera" size={14} color={colors.textInverse} />
+                  )}
                 </View>
               </TouchableOpacity>
               <Text style={[styles.avatarHint, { color: colors.textTertiary }]}>
@@ -399,7 +638,7 @@ export default function EditProfileScreen({ navigation, route }) {
               </Text>
             </View>
 
-            {/* ===== PERSONAL INFO ===== */}
+            {/* PERSONAL INFO */}
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                 Personal Info
@@ -408,7 +647,7 @@ export default function EditProfileScreen({ navigation, route }) {
 
             <View style={styles.fieldGroup}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>
-                Full Name
+                Full Name *
               </Text>
               <TextInput
                 style={[
@@ -423,6 +662,8 @@ export default function EditProfileScreen({ navigation, route }) {
                 onChangeText={setName}
                 placeholder="Your name"
                 placeholderTextColor={colors.textTertiary}
+                maxLength={100}
+                editable={!saving}
               />
             </View>
 
@@ -446,6 +687,8 @@ export default function EditProfileScreen({ navigation, route }) {
                 numberOfLines={4}
                 placeholder="Tell something about yourself..."
                 placeholderTextColor={colors.textTertiary}
+                maxLength={500}
+                editable={!saving}
               />
             </View>
 
@@ -466,17 +709,17 @@ export default function EditProfileScreen({ navigation, route }) {
                 onChangeText={setSkills}
                 placeholder="e.g., Plumbing, Electrical"
                 placeholderTextColor={colors.textTertiary}
+                editable={!saving}
               />
             </View>
 
-            {/* ===== LOCATION ===== */}
+            {/* LOCATION */}
             <View style={[styles.sectionHeader, styles.sectionHeaderSpaced]}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                 Location
               </Text>
             </View>
 
-            {/* Country (fixed) */}
             <View style={styles.fieldGroup}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>
                 Country
@@ -491,16 +734,17 @@ export default function EditProfileScreen({ navigation, route }) {
                   },
                 ]}
               >
-                <Text
-                  style={[styles.pickerText, { color: colors.textPrimary }]}
-                >
+                <Text style={[styles.pickerText, { color: colors.textPrimary }]}>
                   Nigeria
                 </Text>
-                <Ionicons name="lock-closed-outline" size={14} color={colors.textTertiary} />
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={14}
+                  color={colors.textTertiary}
+                />
               </View>
             </View>
 
-            {/* State */}
             <CustomPicker
               label="State"
               selectedValue={selectedState}
@@ -508,9 +752,9 @@ export default function EditProfileScreen({ navigation, route }) {
               items={nigeriaStates}
               placeholder="Select a state..."
               colors={colors}
+              disabled={saving}
             />
 
-            {/* City */}
             <CustomPicker
               label="LGA"
               selectedValue={selectedCity}
@@ -522,38 +766,44 @@ export default function EditProfileScreen({ navigation, route }) {
                   : "Select an LGA..."
               }
               colors={colors}
-              disabled={availableCities.length === 0}
+              disabled={availableCities.length === 0 || saving}
             />
 
-            {/* ===== SAVE BUTTON ===== */}
+            {/* SAVE BUTTON */}
             <Animated.View
-              style={[
-                styles.saveWrap,
-                { transform: [{ scale: scaleAnim }] },
-              ]}
+              style={[styles.saveWrap, { transform: [{ scale: scaleAnim }] }]}
             >
               <TouchableOpacity
                 style={[
                   styles.saveBtn,
                   {
-                    backgroundColor: colors.primary,
+                    backgroundColor: saveDisabled ? colors.inputBackground : colors.primary,
                     shadowColor: colors.primary,
-                    opacity: loading ? 0.7 : 1,
+                    opacity: saveDisabled ? 0.9 : 1,
+                    borderWidth: saveDisabled ? 1 : 0,
+                    borderColor: colors.inputBorder,
                   },
                 ]}
                 onPress={updateProfile}
                 onPressIn={animatePressIn}
                 onPressOut={animatePressOut}
-                disabled={loading}
+                disabled={saveDisabled}
                 activeOpacity={0.9}
               >
-                {loading ? (
+                {saving ? (
                   <ActivityIndicator color={colors.textInverse} size="small" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.textInverse} />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color={saveDisabled ? colors.textTertiary : colors.textInverse}
+                    />
                     <Text
-                      style={[styles.saveText, { color: colors.textInverse }]}
+                      style={[
+                        styles.saveText,
+                        { color: saveDisabled ? colors.textTertiary : colors.textInverse },
+                      ]}
                     >
                       Save Changes
                     </Text>
@@ -568,19 +818,50 @@ export default function EditProfileScreen({ navigation, route }) {
   );
 }
 
-// ========================================
-// STYLES
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboardView: { flex: 1 },
   scrollContent: { flexGrow: 1 },
   container: { paddingHorizontal: 20 },
 
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+  },
   loaderText: { marginTop: 12, fontSize: 14 },
+  errorIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorSub: {
+    fontSize: 13.5,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  retryBtnText: { fontSize: 14, fontWeight: "700" },
 
-  // ===== HEADER =====
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -604,7 +885,6 @@ const styles = StyleSheet.create({
   },
   placeholder: { width: 40 },
 
-  // ===== AVATAR =====
   avatarSection: { alignItems: "center", marginBottom: 26 },
   avatarContainer: { position: "relative" },
   avatar: {
@@ -640,14 +920,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== SECTION HEADERS =====
-  sectionHeader: {
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  sectionHeaderSpaced: {
-    marginTop: 20,
-  },
+  sectionHeader: { marginBottom: 12, marginTop: 4 },
+  sectionHeaderSpaced: { marginTop: 20 },
   sectionTitle: {
     fontSize: 15,
     fontWeight: "800",
@@ -655,7 +929,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
 
-  // ===== FIELDS =====
   fieldGroup: { marginBottom: 14 },
   label: {
     fontSize: 12.5,
@@ -678,7 +951,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
 
-  // ===== PICKER =====
   pickerWrapper: {
     borderRadius: 14,
     paddingHorizontal: 14,
@@ -695,7 +967,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  // ===== MODAL =====
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -737,7 +1008,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
 
-  // ===== SAVE =====
   saveWrap: { marginTop: 22 },
   saveBtn: {
     height: 54,

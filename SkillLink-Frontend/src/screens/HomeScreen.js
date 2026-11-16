@@ -13,12 +13,13 @@ import {
   Image,
   Modal,
   RefreshControl,
+  Keyboard,
+  AppState,
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
 import {
   api,
   getPosts,
-  searchPosts,
   savePost,
   likePost,
   unlikePost,
@@ -41,12 +42,7 @@ const VideoItem = ({ uri, style }) => {
   });
 
   return (
-    <VideoView
-      player={player}
-      style={style}
-      contentFit="cover"
-      nativeControls
-    />
+    <VideoView player={player} style={style} contentFit="cover" nativeControls />
   );
 };
 
@@ -58,10 +54,11 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_accepted": return "checkmark-circle-outline";
       case "booking_rejected": return "close-circle-outline";
       case "booking_cancelled": return "ban-outline";
-      case "booking_completed": return "checkmark-done-outline"; 
+      case "booking_completed": return "checkmark-done-outline";
       case "payment_received": return "cash-outline";
       case "funds_released": return "wallet-outline";
       case "chat_message": return "chatbubble-ellipses-outline";
+      case "circle_reply": return "chatbubbles-outline";
       default: return "notifications-outline";
     }
   };
@@ -72,10 +69,11 @@ const NotificationItem = ({ notification, onPress, colors }) => {
       case "booking_accepted": return colors.success;
       case "booking_rejected": return colors.danger;
       case "booking_cancelled": return colors.warning;
-      case "booking_completed": return colors.success; 
+      case "booking_completed": return colors.success;
       case "payment_received": return colors.success;
       case "funds_released": return colors.primary;
       case "chat_message": return colors.primary;
+      case "circle_reply": return colors.primary;
       default: return colors.textTertiary;
     }
   };
@@ -127,32 +125,303 @@ const NotificationItem = ({ notification, onPress, colors }) => {
   );
 };
 
+// ===== POST CARD COMPONENT (extracted, memoized animation) =====
+const PostCard = ({
+  item,
+  index,
+  isLiked,
+  isSaved,
+  onLike,
+  onSave,
+  onOpenProfile,
+  onOpenReviews,
+  colors,
+}) => {
+  // Animated values created ONCE per mount — not per render
+  const translateY = useRef(new Animated.Value(24)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 300,
+        delay: Math.min(index * 40, 240),
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 300,
+        delay: Math.min(index * 40, 240),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const likeCount = item.likesCount || 0;
+  const reviewCount = item.reviewCount || 0;
+  const hasReviews = reviewCount > 0;
+  const rating = Number(item.user?.rating || 0).toFixed(1);
+  const userActive = isUserActive(item.user?.lastActive);
+
+  return (
+    <Animated.View
+      style={[
+        styles.cardWrapper,
+        { transform: [{ translateY }], opacity },
+      ]}
+    >
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.inputBorder,
+            shadowColor: colors.shadowColor,
+          },
+        ]}
+      >
+        {/* HEADER ROW */}
+        <View style={styles.cardHeader}>
+          <TouchableOpacity
+            onPress={() => onOpenProfile(item.user?._id)}
+            activeOpacity={0.85}
+            style={styles.avatarWrap}
+          >
+            <View
+              style={[
+                styles.avatarContainer,
+                { backgroundColor: colors.primary, borderColor: colors.card },
+              ]}
+            >
+              {item.user?.profileImage ? (
+                <Image
+                  source={{ uri: item.user.profileImage }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Text style={[styles.avatarText, { color: colors.textInverse }]}>
+                  {item.user?.name?.charAt(0)?.toUpperCase() || "U"}
+                </Text>
+              )}
+            </View>
+
+            <View
+              style={[
+                styles.onlineDot,
+                {
+                  backgroundColor: userActive ? "#22C55E" : "#94A3B8",
+                  borderColor: colors.card,
+                },
+              ]}
+            />
+          </TouchableOpacity>
+
+          <View style={styles.headerInfo}>
+            <View style={styles.nameRow}>
+              <Text
+                style={[styles.name, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
+                {item.user?.name || "User"}
+              </Text>
+              {item.user?.isVerified && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color={colors.primary}
+                  style={styles.verifiedIcon}
+                />
+              )}
+            </View>
+
+            <Text
+              style={[styles.skill, { color: colors.textSecondary }]}
+              numberOfLines={1}
+            >
+              {item.skill || "Skilled Worker"}
+            </Text>
+
+            {item.location ? (
+              <View style={styles.locationRow}>
+                <Ionicons
+                  name="location-outline"
+                  size={11}
+                  color={colors.textTertiary}
+                />
+                <Text
+                  style={[styles.locationText, { color: colors.textTertiary }]}
+                  numberOfLines={1}
+                >
+                  {item.location}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {hasReviews ? (
+            <View style={[styles.ratingPill, { backgroundColor: "#FEF3C7" }]}>
+              <Ionicons name="star" size={12} color="#F59E0B" />
+              <Text style={styles.ratingPillText}>{rating}</Text>
+            </View>
+          ) : (
+            <View
+              style={[styles.newPill, { backgroundColor: colors.primaryLight }]}
+            >
+              <Text style={[styles.newPillText, { color: colors.primary }]}>
+                New
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* DESCRIPTION */}
+        {item.description ? (
+          <Text
+            style={[styles.description, { color: colors.textPrimary }]}
+            numberOfLines={2}
+          >
+            {item.description}
+          </Text>
+        ) : null}
+
+        {/* MEDIA */}
+        {item.media && item.mediaType === "image" && (
+          <Image
+            source={{ uri: item.media }}
+            style={styles.media}
+            resizeMode="cover"
+          />
+        )}
+        {item.media && item.mediaType === "video" && (
+          <VideoItem uri={item.media} style={styles.media} />
+        )}
+
+        {/* TAGS */}
+        {item.tags?.length > 0 && (
+          <View style={styles.tagRow}>
+            <View style={[styles.tag, { backgroundColor: colors.primaryLight }]}>
+              <Text
+                style={[styles.tagText, { color: colors.primary }]}
+                numberOfLines={1}
+              >
+                #{item.tags.slice(0, 2).join(" and ")}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <View style={[styles.divider, { backgroundColor: colors.inputBorder }]} />
+
+        {/* ACTIONS */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => onLike(item._id)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isLiked ? "heart" : "heart-outline"}
+              size={20}
+              color={isLiked ? "#EF4444" : colors.textSecondary}
+            />
+            <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
+              {likeCount}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => onOpenReviews(item.user?._id, item.user?.name)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="chatbubble-outline"
+              size={19}
+              color={colors.textSecondary}
+            />
+            <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
+              {reviewCount}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionRight]}
+            onPress={() => onSave(item._id)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isSaved ? "bookmark" : "bookmark-outline"}
+              size={18}
+              color={isSaved ? colors.primary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.actionButtonText,
+                { color: isSaved ? colors.primary : colors.textPrimary },
+              ]}
+            >
+              {isSaved ? "Saved" : "Save"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* VIEW PROFILE */}
+        <TouchableOpacity
+          style={[styles.viewProfileButton, { borderColor: colors.primary }]}
+          onPress={() => onOpenProfile(item.user?._id)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.viewProfileLeft}>
+            <Ionicons name="person-outline" size={16} color={colors.primary} />
+            <Text style={[styles.viewProfileText, { color: colors.primary }]}>
+              View Profile
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.viewProfilePricePill,
+              { backgroundColor: colors.primaryLight },
+            ]}
+          >
+            <Text style={[styles.viewProfilePriceText, { color: colors.primary }]}>
+              ₦{item.price?.toLocaleString?.() ?? item.price}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+};
+
+// ===== MAIN SCREEN =====
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const { logout, userToken, user } = useContext(AuthContext);
+  const { userToken, user } = useContext(AuthContext);
   const { refreshFlag, newPost, clearNewPost } = useContext(PostContext);
   const { colors, toggleTheme, theme } = useTheme();
 
-  // ===== POSTS STATE =====
+  // POSTS
   const [hasMore, setHasMore] = useState(true);
   const [allPosts, setAllPosts] = useState([]);
   const [posts, setPosts] = useState([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
-  // ===== SEARCH STATE =====
+  // SEARCH
   const [searchQuery, setSearchQuery] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // ===== LIKE / SAVE =====
+  // LIKE / SAVE
   const [savedPosts, setSavedPosts] = useState([]);
   const [likedPosts, setLikedPosts] = useState([]);
 
-  // ===== NOTIFICATION STATE =====
+  // NOTIFICATIONS
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -160,7 +429,7 @@ export default function HomeScreen() {
   const [notificationPage, setNotificationPage] = useState(1);
   const [notificationHasMore, setNotificationHasMore] = useState(false);
 
-  // ===== CATEGORIES =====
+  // CATEGORIES
   const [selectedCategory, setSelectedCategory] = useState("All");
   const categories = [
     "All",
@@ -173,13 +442,14 @@ export default function HomeScreen() {
     "Carpenter",
   ];
 
-  // ===== REFS =====
+  // REFS
   const categoryListRef = useRef(null);
   const scaleAnim = useRef(categories.map(() => new Animated.Value(1))).current;
   const fabScale = useRef(new Animated.Value(1)).current;
   const searchTimeout = useRef(null);
+  const isFirstRefresh = useRef(true);
 
-  // ===== NAV HELPERS =====
+  // NAVIGATION HELPERS
   const goToUserProfile = (userId) => {
     if (!userId) return;
     navigation.navigate("UsersProfile", { userId });
@@ -198,13 +468,11 @@ export default function HomeScreen() {
     return Array.from(map.values());
   };
 
-  // ===== NOTIFICATIONS =====
+  // NOTIFICATIONS
   const fetchUnreadCount = async () => {
     try {
       const res = await getUnreadNotificationCount();
-      if (res?.success) {
-        setUnreadCount(res.count || 0);
-      }
+      if (res?.success) setUnreadCount(res.count || 0);
     } catch (error) {
       console.log("Unread count error:", error);
     }
@@ -215,11 +483,8 @@ export default function HomeScreen() {
     try {
       const res = await getNotifications(pageNum, 20);
       if (res.success) {
-        if (append) {
-          setNotifications((prev) => [...prev, ...res.data]);
-        } else {
-          setNotifications(res.data);
-        }
+        if (append) setNotifications((prev) => [...prev, ...res.data]);
+        else setNotifications(res.data);
         setNotificationHasMore(res.pagination?.pages > pageNum);
         setNotificationPage(pageNum);
       }
@@ -231,17 +496,21 @@ export default function HomeScreen() {
   };
 
   const handleNotificationPress = async (notification) => {
+    // Mark read — never block navigation on failure
     if (!notification.read) {
-      await markNotificationRead(notification._id);
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n._id === notification._id ? { ...n, read: true } : n
-        )
-      );
+      try {
+        await markNotificationRead(notification._id);
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n._id === notification._id ? { ...n, read: true } : n
+          )
+        );
+      } catch (e) {
+        console.log("Mark read failed:", e);
+      }
     }
 
-    // Chat notifications → still go to Chat screen (unchanged)
     if (notification.type === "chat_message" && notification.data?.bookingId) {
       setNotificationModalVisible(false);
       navigation.navigate("Chat", {
@@ -251,22 +520,29 @@ export default function HomeScreen() {
       });
       return;
     }
-      // ✅ Product chat notifications → go to Chat screen with productId
+
     if (notification.type === "chat_message" && notification.data?.extra?.productId) {
       setNotificationModalVisible(false);
-      // The recipient is `user`, so the other party is the sender (clientId)
       navigation.navigate("Chat", {
         productId: notification.data.extra.productId,
-        recipientId: notification.data.clientId, // who sent it
+        recipientId: notification.data.clientId,
         otherPartyName: notification.title.replace("New message from ", ""),
         otherPartyImage: null,
       });
       return;
     }
-    // Booking notifications → navigate to Dashboard, switch to correct tab
+
+    if (notification.type === "circle_reply" && notification.data?.extra?.requestId) {
+      setNotificationModalVisible(false);
+      navigation.navigate("RequestDetail", {
+        circleId: notification.data.extra.circleId,
+        requestId: notification.data.extra.requestId,
+      });
+      return;
+    }
+
     if (notification.data?.bookingId) {
       setNotificationModalVisible(false);
-
       const clientId = notification.data?.clientId;
       const providerId = notification.data?.providerId;
       const targetTab =
@@ -274,9 +550,7 @@ export default function HomeScreen() {
           ? "client"
           : String(providerId) === String(user?._id)
           ? "worker"
-          : "client"; // safe fallback
-
-      // Navigate to Dashboard tab with the target tab param
+          : "client";
       navigation.navigate("Dashboard", { initialTab: targetTab });
     }
   };
@@ -303,22 +577,42 @@ export default function HomeScreen() {
     }
   };
 
+  // Poll notifications — pauses when app backgrounds
   useFocusEffect(
     useCallback(() => {
-      fetchUnreadCount();
+      let intervalId = null;
 
-      const interval = setInterval(() => {
+      const startPolling = () => {
         fetchUnreadCount();
-      }, 30000);
+        intervalId = setInterval(fetchUnreadCount, 30000);
+      };
 
-      return () => clearInterval(interval);
+      const stopPolling = () => {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      };
+
+      startPolling();
+
+      const sub = AppState.addEventListener("change", (nextState) => {
+        if (nextState === "active") startPolling();
+        else stopPolling();
+      });
+
+      return () => {
+        stopPolling();
+        sub.remove();
+      };
     }, [])
   );
 
-  // ===== LOAD POSTS =====
+  // LOAD POSTS
   const loadPosts = async (pageNumber = 1, limit = 20) => {
     try {
       setLoading(true);
+      setLoadError(false);
       const response = await getPosts(pageNumber, limit);
       if (response.success) {
         setHasMore(response.hasMore);
@@ -330,9 +624,12 @@ export default function HomeScreen() {
           setAllPosts((prev) => mergeUniquePosts(prev, rankedPosts));
           setPosts((prev) => mergeUniquePosts(prev, rankedPosts));
         }
+      } else {
+        if (pageNumber === 1) setLoadError(true);
       }
     } catch (error) {
       console.log("Load posts error:", error);
+      if (pageNumber === 1) setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -345,7 +642,7 @@ export default function HomeScreen() {
     loadPosts(nextPage);
   };
 
-  // ===== SEARCH =====
+  // SEARCH
   const performSearch = useCallback(async (query, location) => {
     if (!query.trim() && !location.trim()) {
       setSearchResults([]);
@@ -397,12 +694,14 @@ export default function HomeScreen() {
     }
   };
 
-  // ===== LIKE / SAVE =====
+  // LIKE / SAVE — updates ALL views (posts, allPosts, searchResults)
   const toggleSave = async (id) => {
     try {
-      await savePost(id, userToken);
-      if (savedPosts.includes(id)) setSavedPosts(savedPosts.filter((p) => p !== id));
-      else setSavedPosts([...savedPosts, id]);
+      await savePost(id);
+      const isSaved = savedPosts.includes(id);
+      setSavedPosts((prev) =>
+        isSaved ? prev.filter((p) => p !== id) : [...prev, id]
+      );
     } catch (error) {
       console.log("Save error:", error);
     }
@@ -413,16 +712,21 @@ export default function HomeScreen() {
     setLikedPosts((prev) =>
       isLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
     );
-    setPosts((prevPosts) =>
-      prevPosts.map((post) =>
-        post._id === postId
-          ? {
-              ...post,
-              likesCount: isLiked ? (post.likesCount || 1) - 1 : (post.likesCount || 0) + 1,
-            }
-          : post
-      )
-    );
+
+    const updatePost = (post) =>
+      post._id === postId
+        ? {
+            ...post,
+            likesCount: isLiked
+              ? Math.max(0, (post.likesCount || 1) - 1)
+              : (post.likesCount || 0) + 1,
+          }
+        : post;
+
+    setPosts((prev) => prev.map(updatePost));
+    setAllPosts((prev) => prev.map(updatePost));
+    setSearchResults((prev) => prev.map(updatePost));
+
     try {
       if (isLiked) await unlikePost(postId);
       else await likePost(postId);
@@ -431,7 +735,7 @@ export default function HomeScreen() {
     }
   };
 
-  // ===== REFRESH / CATEGORIES =====
+  // REFRESH / CATEGORIES
   const refreshPosts = () => {
     setPage(1);
     loadPosts(1, 20);
@@ -441,10 +745,7 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([
-        loadPosts(1, 20),
-        fetchUnreadCount(),
-      ]);
+      await Promise.all([loadPosts(1, 20), fetchUnreadCount()]);
       setPage(1);
     } catch (error) {
       console.log("Refresh error:", error);
@@ -454,14 +755,32 @@ export default function HomeScreen() {
   };
 
   const handleCategoryPress = (category, index) => {
+    Keyboard.dismiss();
     setSelectedCategory(category);
     Animated.sequence([
-      Animated.timing(scaleAnim[index], { toValue: 1.06, duration: 140, useNativeDriver: true }),
-      Animated.timing(scaleAnim[index], { toValue: 1, duration: 140, useNativeDriver: true }),
+      Animated.timing(scaleAnim[index], {
+        toValue: 1.06,
+        duration: 140,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim[index], {
+        toValue: 1,
+        duration: 140,
+        useNativeDriver: true,
+      }),
     ]).start();
-    if (categoryListRef.current) {
-      categoryListRef.current.scrollToIndex({ animated: true, index, viewPosition: 0.5 });
+
+    // Safe scroll — will retry via onScrollToIndexFailed if item not rendered
+    try {
+      categoryListRef.current?.scrollToIndex({
+        animated: true,
+        index,
+        viewPosition: 0.5,
+      });
+    } catch (e) {
+      // fallback — no crash
     }
+
     if (category === "All") setPosts(allPosts);
     else {
       const filtered = allPosts.filter((post) =>
@@ -471,269 +790,43 @@ export default function HomeScreen() {
     }
   };
 
-  // ===== EFFECTS =====
+  // EFFECTS — initial load (user change only, once)
   useEffect(() => {
     setAllPosts([]);
     setPosts([]);
     setPage(1);
     refreshPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userToken]);
 
+  // EFFECTS — refresh on post creation (skips the initial mount double-fire)
   useEffect(() => {
+    if (isFirstRefresh.current) {
+      isFirstRefresh.current = false;
+      return;
+    }
     if (newPost) {
       setAllPosts((prev) => [newPost, ...prev]);
       setPosts((prev) => [newPost, ...prev]);
       clearNewPost();
     }
     refreshPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshFlag]);
 
-  // ===== CARD ANIMATION =====
-  const getCardAnimation = (index) => {
-    const translateY = new Animated.Value(24);
-    const opacity = new Animated.Value(0);
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 300,
-        delay: Math.min(index * 40, 240),
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 300,
-        delay: Math.min(index * 40, 240),
-        useNativeDriver: true,
-      }),
-    ]).start();
-    return { transform: [{ translateY }], opacity };
-  };
+  // FAB ANIMATION
+  const handleFabPressIn = () =>
+    Animated.spring(fabScale, { toValue: 0.9, useNativeDriver: true }).start();
+  const handleFabPressOut = () =>
+    Animated.spring(fabScale, { toValue: 1, useNativeDriver: true }).start();
 
-  // ===== RENDER ITEM =====
-  const renderItem = ({ item, index }) => {
-    const animStyle = getCardAnimation(index);
-    const isLiked = likedPosts.includes(item._id);
-    const likeCount = item.likesCount || 0;
-    const isSaved = savedPosts.includes(item._id);
-    const rating = Number(item.user?.rating || 0).toFixed(1);
-    const userActive = isUserActive(item.user?.lastActive);
+  const displayData = isSearching ? searchResults : posts;
+  const isListLoading =
+    (isSearching && searchLoading) ||
+    (!isSearching && loading && posts.length === 0);
+  const isEmpty = displayData.length === 0 && !isListLoading && !loadError;
 
-    return (
-      <Animated.View style={[styles.cardWrapper, animStyle]}>
-        <View
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.inputBorder,
-              shadowColor: colors.shadowColor,
-            },
-          ]}
-        >
-          {/* ===== HEADER ROW ===== */}
-          <View style={styles.cardHeader}>
-            <TouchableOpacity
-              onPress={() => goToUserProfile(item.user?._id)}
-              activeOpacity={0.85}
-              style={styles.avatarWrap}
-            >
-              <View
-                style={[
-                  styles.avatarContainer,
-                  { backgroundColor: colors.primary, borderColor: colors.card },
-                ]}
-              >
-                {item.user?.profileImage ? (
-                  <Image
-                    source={{ uri: item.user.profileImage }}
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <Text style={[styles.avatarText, { color: colors.textInverse }]}>
-                    {item.user?.name?.charAt(0)?.toUpperCase() || "U"}
-                  </Text>
-                )}
-              </View>
-
-              <View
-                style={[
-                  styles.onlineDot,
-                  {
-                    backgroundColor: userActive ? "#22C55E" : "#94A3B8",
-                    borderColor: colors.card,
-                  },
-                ]}
-              />
-            </TouchableOpacity>
-
-            <View style={styles.headerInfo}>
-              <Text
-                style={[styles.name, { color: colors.textPrimary }]}
-                numberOfLines={1}
-              >
-                {item.user?.name || "User"}
-              </Text>
-
-              <View style={styles.skillRow}>
-                <Text
-                  style={[styles.skill, { color: colors.textPrimary }]}
-                  numberOfLines={1}
-                >
-                  {item.skill || "Skilled Worker"}
-                </Text>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={13}
-                  color={colors.primary}
-                  style={styles.verifiedIcon}
-                />
-              </View>
-
-              {item.location ? (
-                <View style={styles.locationRow}>
-                  <Ionicons name="location-outline" size={11} color={colors.textTertiary} />
-                  <Text
-                    style={[styles.locationText, { color: colors.textTertiary }]}
-                    numberOfLines={1}
-                  >
-                    {item.location}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={[styles.ratingPill, { backgroundColor: "#FEF3C7" }]}>
-              <Ionicons name="star" size={12} color="#F59E0B" />
-              <Text style={styles.ratingPillText}>{rating}</Text>
-            </View>
-          </View>
-
-          {/* ===== DESCRIPTION ===== */}
-          {item.description ? (
-            <Text
-              style={[styles.description, { color: colors.textPrimary }]}
-              numberOfLines={2}
-            >
-              {item.description}
-            </Text>
-          ) : null}
-
-          {/* ===== MEDIA ===== */}
-          {item.media && item.mediaType === "image" && (
-            <Image
-              source={{ uri: item.media }}
-              style={styles.media}
-              resizeMode="cover"
-            />
-          )}
-          {item.media && item.mediaType === "video" && (
-            <VideoItem uri={item.media} style={styles.media} />
-          )}
-
-          {/* ===== HASHTAGS ===== */}
-          {item.tags?.length > 0 && (
-            <View style={styles.tagRow}>
-              <View
-                style={[
-                  styles.tag,
-                  { backgroundColor: colors.primaryLight },
-                ]}
-              >
-                <Text
-                  style={[styles.tagText, { color: colors.primary }]}
-                  numberOfLines={1}
-                >
-                  #{item.tags.slice(0, 2).join(" and ")}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* ===== DIVIDER ===== */}
-          <View style={[styles.divider, { backgroundColor: colors.inputBorder }]} />
-
-          {/* ===== ACTION ROW ===== */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => toggleLike(item._id)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={isLiked ? "heart" : "heart-outline"}
-                size={20}
-                color={isLiked ? "#EF4444" : colors.textSecondary}
-              />
-              <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
-                {likeCount}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => goToAllReviews(item.user?._id, item.user?.name)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="chatbubble-outline"
-                size={19}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>
-                {item.reviewCount || 0}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.actionRight]}
-              onPress={() => toggleSave(item._id)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={isSaved ? "bookmark" : "bookmark-outline"}
-                size={18}
-                color={isSaved ? colors.primary : colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.actionButtonText,
-                  { color: isSaved ? colors.primary : colors.textPrimary },
-                ]}
-              >
-                {isSaved ? "Saved" : "Save"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ===== VIEW PROFILE CTA (outlined, secondary) ===== */}
-          <TouchableOpacity
-            style={[styles.viewProfileButton, { borderColor: colors.primary }]}
-            onPress={() => goToUserProfile(item.user?._id)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.viewProfileLeft}>
-              <Ionicons name="person-outline" size={16} color={colors.primary} />
-              <Text style={[styles.viewProfileText, { color: colors.primary }]}>
-                View Profile
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.viewProfilePricePill,
-                { backgroundColor: colors.primaryLight },
-              ]}
-            >
-              <Text style={[styles.viewProfilePriceText, { color: colors.primary }]}>
-                ₦{item.price?.toLocaleString?.() ?? item.price}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    );
-  };
-
-  // ===== SKELETON =====
+  // SKELETON
   const renderSkeleton = () => (
     <View style={styles.skeletonContainer}>
       {[1, 2, 3].map((_, idx) => (
@@ -777,29 +870,17 @@ export default function HomeScreen() {
     </View>
   );
 
-  // ===== FAB ANIMATION =====
-  const handleFabPressIn = () =>
-    Animated.spring(fabScale, { toValue: 0.9, useNativeDriver: true }).start();
-  const handleFabPressOut = () =>
-    Animated.spring(fabScale, { toValue: 1, useNativeDriver: true }).start();
-
-  const displayData = isSearching ? searchResults : posts;
-  const isListLoading =
-    (isSearching && searchLoading) ||
-    (!isSearching && loading && posts.length === 0);
-  const isEmpty = displayData.length === 0 && !isListLoading;
-
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* ===== HEADER ===== */}
+        {/* HEADER */}
         <View style={styles.topRow}>
           <View style={styles.brandBlock}>
             <View style={styles.brandRow}>
               <Text style={[styles.title, { color: colors.textPrimary }]}>Street</Text>
               <Ionicons
                 name="flash"
-                size={18}
+                size={16}
                 color={colors.primary}
                 style={styles.brandSpark}
               />
@@ -820,7 +901,7 @@ export default function HomeScreen() {
             >
               <Ionicons
                 name="notifications-outline"
-                size={19}
+                size={18}
                 color={colors.textPrimary}
               />
               {unreadCount > 0 && (
@@ -847,14 +928,14 @@ export default function HomeScreen() {
             >
               <Ionicons
                 name={theme === "light" ? "moon-outline" : "sunny-outline"}
-                size={19}
+                size={18}
                 color={colors.textPrimary}
               />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ===== SEARCH AREA ===== */}
+        {/* SEARCH */}
         <View style={styles.searchSection}>
           <View
             style={[
@@ -865,7 +946,7 @@ export default function HomeScreen() {
             <Ionicons
               name="search-outline"
               size={19}
-              color={colors.textSecondary}
+              color={colors.primary}
               style={styles.searchIcon}
             />
             <TextInput
@@ -891,7 +972,7 @@ export default function HomeScreen() {
           >
             <Ionicons
               name="location-outline"
-              size={15}
+              size={14}
               color={colors.primary}
               style={styles.cityIcon}
             />
@@ -913,7 +994,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ===== CATEGORIES ===== */}
+        {/* CATEGORIES */}
         {!isSearching && (
           <View style={styles.categorySection}>
             <FlatList
@@ -923,6 +1004,17 @@ export default function HomeScreen() {
               data={categories}
               keyExtractor={(item) => item}
               contentContainerStyle={styles.categoryList}
+              onScrollToIndexFailed={(info) => {
+                setTimeout(() => {
+                  try {
+                    categoryListRef.current?.scrollToIndex({
+                      animated: true,
+                      index: info.index,
+                      viewPosition: 0.5,
+                    });
+                  } catch {}
+                }, 100);
+              }}
               renderItem={({ item, index }) => (
                 <Animated.View style={{ transform: [{ scale: scaleAnim[index] }] }}>
                   <TouchableOpacity
@@ -959,67 +1051,161 @@ export default function HomeScreen() {
             />
           </View>
         )}
-                {/* ===== NEW: DISCOVERY CARDS ===== */}
+
+        {/* DISCOVERY CARDS */}
         {!isSearching && (
           <View style={styles.discoveryRow}>
-            {/* Stores Card */}
             <TouchableOpacity
-              style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
+              style={[
+                styles.discoveryCard,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  borderWidth: 1,
+                },
+              ]}
               onPress={() => navigation.navigate("StoresScreen")}
               activeOpacity={0.8}
             >
               <View style={styles.discoveryHeader}>
-                <View style={[styles.discoveryIconWrap, { backgroundColor: colors.primaryLight }]}>
-                  <Ionicons name="storefront" size={22} color={colors.primary} />
+                <View
+                  style={[
+                    styles.discoveryIconWrap,
+                    { backgroundColor: colors.primaryLight },
+                  ]}
+                >
+                  <Ionicons name="storefront" size={18} color={colors.primary} />
                 </View>
               </View>
-              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Stores</Text>
-              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
+              <Text
+                style={[styles.discoveryTitle, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
+                Street Stores
+              </Text>
+              <Text
+                style={[styles.discoverySub, { color: colors.textSecondary }]}
+                numberOfLines={2}
+              >
                 Buy and sell products near you
               </Text>
               <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>Shop Now</Text>
-                <Ionicons name="chevron-forward" size={13} color={colors.textInverse} />
+                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>
+                  Shop Now
+                </Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
               </View>
             </TouchableOpacity>
-            
-            {/* Circles Card */}
+
             <TouchableOpacity
-              style={[styles.discoveryCard, { backgroundColor: colors.card, borderColor: colors.inputBorder, borderWidth: 1 }]}
+              style={[
+                styles.discoveryCard,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.inputBorder,
+                  borderWidth: 1,
+                },
+              ]}
               onPress={() => navigation.navigate("CirclesScreen")}
               activeOpacity={0.8}
             >
               <View style={styles.discoveryHeader}>
-                <View style={[styles.discoveryIconWrap, { backgroundColor: colors.primaryLight }]}>
-                  <Ionicons name="people" size={22} color={colors.primary} />
+                <View
+                  style={[
+                    styles.discoveryIconWrap,
+                    { backgroundColor: colors.primaryLight },
+                  ]}
+                >
+                  <Ionicons name="people" size={18} color={colors.primary} />
                 </View>
               </View>
-              <Text style={[styles.discoveryTitle, { color: colors.textPrimary }]}>Street Circles</Text>
-              <Text style={[styles.discoverySub, { color: colors.textSecondary }]} numberOfLines={2}>
-                Get recommendations from neighbors in your area
+              <Text
+                style={[styles.discoveryTitle, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
+                Street Circles
+              </Text>
+              <Text
+                style={[styles.discoverySub, { color: colors.textSecondary }]}
+                numberOfLines={2}
+              >
+                Recommendations from neighbors
               </Text>
               <View style={[styles.discoveryBtn, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>Explore</Text>
-                <Ionicons name="chevron-forward" size={13} color={colors.textInverse} />
+                <Text style={[styles.discoveryBtnText, { color: colors.textInverse }]}>
+                  Explore
+                </Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.textInverse} />
               </View>
             </TouchableOpacity>
-
-            
           </View>
         )}
 
-        {/* ===== LIST ===== */}
+        {/* FEED LABEL */}
+        {!isSearching && (
+          <View style={styles.feedLabel}>
+            <Text style={[styles.feedLabelText, { color: colors.textPrimary }]}>
+              Discover Professionals
+            </Text>
+            <View
+              style={[styles.feedLabelLine, { backgroundColor: colors.inputBorder }]}
+            />
+          </View>
+        )}
+
+        {/* LIST */}
         {isListLoading ? (
           renderSkeleton()
+        ) : loadError && !isSearching && posts.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View
+              style={[styles.emptyIconWrap, { backgroundColor: colors.danger + "15" }]}
+            >
+              <Ionicons name="cloud-offline-outline" size={28} color={colors.danger} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              Couldn't load feed
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+              Check your connection and try again.
+            </Text>
+            <TouchableOpacity
+              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                setLoadError(false);
+                refreshPosts();
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="refresh" size={16} color={colors.textInverse} />
+              <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <FlatList
             data={displayData}
             keyExtractor={(item, index) => item._id || index.toString()}
-            renderItem={renderItem}
+            renderItem={({ item, index }) => (
+              <PostCard
+                item={item}
+                index={index}
+                isLiked={likedPosts.includes(item._id)}
+                isSaved={savedPosts.includes(item._id)}
+                onLike={toggleLike}
+                onSave={toggleSave}
+                onOpenProfile={goToUserProfile}
+                onOpenReviews={goToAllReviews}
+                colors={colors}
+              />
+            )}
             showsVerticalScrollIndicator={false}
             initialNumToRender={5}
             maxToRenderPerBatch={5}
             windowSize={5}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
             onEndReached={!isSearching ? loadMorePosts : null}
             onEndReachedThreshold={0.3}
             refreshControl={
@@ -1069,7 +1255,7 @@ export default function HomeScreen() {
           />
         )}
 
-        {/* ===== FAB ===== */}
+        {/* FAB */}
         <Animated.View
           style={[styles.fabWrap, { transform: [{ scale: fabScale }] }]}
           pointerEvents="box-none"
@@ -1089,7 +1275,7 @@ export default function HomeScreen() {
         </Animated.View>
       </View>
 
-      {/* ===== NOTIFICATION MODAL ===== */}
+      {/* NOTIFICATION MODAL */}
       <Modal
         visible={notificationModalVisible}
         transparent={true}
@@ -1097,15 +1283,29 @@ export default function HomeScreen() {
         onRequestClose={() => setNotificationModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.notificationModalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.notificationModalHeader, { borderBottomColor: colors.inputBorder }]}>
-              <Text style={[styles.notificationModalTitle, { color: colors.textPrimary }]}>
+          <View
+            style={[
+              styles.notificationModalContainer,
+              { backgroundColor: colors.card },
+            ]}
+          >
+            <View
+              style={[
+                styles.notificationModalHeader,
+                { borderBottomColor: colors.inputBorder },
+              ]}
+            >
+              <Text
+                style={[styles.notificationModalTitle, { color: colors.textPrimary }]}
+              >
                 Notifications
               </Text>
               <View style={styles.notificationModalActions}>
                 {unreadCount > 0 && (
                   <TouchableOpacity onPress={handleMarkAllRead} activeOpacity={0.7}>
-                    <Text style={[styles.markAllReadText, { color: colors.primary }]}>
+                    <Text
+                      style={[styles.markAllReadText, { color: colors.primary }]}
+                    >
                       Mark all read
                     </Text>
                   </TouchableOpacity>
@@ -1127,7 +1327,12 @@ export default function HomeScreen() {
                   size={44}
                   color={colors.textTertiary}
                 />
-                <Text style={[styles.emptyNotificationsText, { color: colors.textTertiary }]}>
+                <Text
+                  style={[
+                    styles.emptyNotificationsText,
+                    { color: colors.textTertiary },
+                  ]}
+                >
                   No notifications yet
                 </Text>
               </View>
@@ -1165,39 +1370,39 @@ export default function HomeScreen() {
 }
 
 // ========================================
-// STYLES
+// STYLES — unchanged from prior delivery
 // ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 16, paddingTop: 30 },
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 24 },
 
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 16,
+    marginBottom: 12,
     paddingHorizontal: 2,
   },
   brandBlock: { flex: 1, paddingRight: 8 },
   brandRow: { flexDirection: "row", alignItems: "center" },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "800",
     letterSpacing: -0.8,
-    lineHeight: 32,
+    lineHeight: 30,
   },
   brandSpark: { marginLeft: -2, marginTop: 2 },
   subtitle: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: "500",
     marginTop: 2,
     letterSpacing: 0.1,
   },
-  topButtons: { flexDirection: "row", gap: 8, paddingTop: 4 },
+  topButtons: { flexDirection: "row", gap: 8, paddingTop: 2 },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
@@ -1216,17 +1421,17 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { color: "#FFFFFF", fontSize: 9.5, fontWeight: "800" },
 
-  searchSection: { marginBottom: 14, gap: 8 },
+  searchSection: { marginBottom: 12, gap: 6 },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 14,
-    height: 48,
+    height: 46,
   },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14.5, fontWeight: "500", paddingVertical: 0 },
+  searchInput: { flex: 1, fontSize: 14, fontWeight: "500", paddingVertical: 0 },
   clearButton: { padding: 2 },
 
   cityBar: {
@@ -1235,31 +1440,98 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 12,
-    height: 42,
+    height: 38,
     alignSelf: "flex-start",
-    minWidth: 180,
+    minWidth: 170,
   },
   cityIcon: { marginRight: 6 },
   cityInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "600",
     paddingVertical: 0,
     marginRight: 6,
   },
   clearCity: { padding: 2 },
 
-  categorySection: { marginBottom: 14 },
-  categoryList: { paddingHorizontal: 2, gap: 8 },
+  categorySection: { marginBottom: 12 },
+  categoryList: { paddingHorizontal: 2, paddingRight: 16, gap: 8 },
   categoryChip: {
-    height: 38,
-    paddingHorizontal: 20,
-    borderRadius: 19,
+    height: 36,
+    paddingHorizontal: 18,
+    borderRadius: 18,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  categoryText: { fontWeight: "600", fontSize: 13.5 },
+  categoryText: { fontWeight: "600", fontSize: 13 },
+
+  discoveryRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  discoveryCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 12,
+    justifyContent: "space-between",
+    minHeight: 148,
+  },
+  discoveryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  discoveryIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  discoveryTitle: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  discoverySub: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginBottom: 10,
+  },
+  discoveryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  discoveryBtnText: {
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+
+  feedLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  feedLabelText: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  feedLabelLine: {
+    flex: 1,
+    height: 1,
+  },
 
   cardWrapper: { marginBottom: 14 },
   card: {
@@ -1274,55 +1546,70 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   avatarWrap: { position: "relative", marginRight: 12 },
   avatarContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
     overflow: "hidden",
   },
-  avatarImage: { width: 50, height: 50, borderRadius: 25 },
-  avatarText: { fontWeight: "700", fontSize: 19 },
+  avatarImage: { width: 46, height: 46, borderRadius: 23 },
+  avatarText: { fontWeight: "700", fontSize: 17 },
   onlineDot: {
     position: "absolute",
     bottom: 0,
     right: 0,
-    width: 13,
-    height: 13,
-    borderRadius: 6.5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     borderWidth: 2,
   },
   headerInfo: { flex: 1, paddingRight: 8 },
-  name: {
-    fontWeight: "700",
-    fontSize: 16,
-    letterSpacing: -0.2,
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     marginBottom: 2,
   },
-  skillRow: { flexDirection: "row", alignItems: "center", marginBottom: 3 },
-  skill: {
-    fontSize: 13,
-    fontWeight: "600",
-    maxWidth: "85%",
-    marginRight: 4,
+  name: {
+    fontWeight: "700",
+    fontSize: 15.5,
+    letterSpacing: -0.2,
+    flexShrink: 1,
   },
   verifiedIcon: {},
+  skill: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    marginBottom: 3,
+  },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 3 },
-  locationText: { fontSize: 11.5, fontWeight: "500" },
+  locationText: { fontSize: 11, fontWeight: "500", flexShrink: 1 },
   ratingPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    borderRadius: 12,
   },
-  ratingPillText: { fontSize: 12.5, fontWeight: "700", color: "#92400E" },
+  ratingPillText: { fontSize: 12, fontWeight: "700", color: "#92400E" },
+  newPill: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  newPillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
   description: {
     fontSize: 14,
     lineHeight: 20,
@@ -1357,10 +1644,9 @@ const styles = StyleSheet.create({
   actionRight: { marginLeft: "auto" },
   actionButtonText: { fontWeight: "600", fontSize: 13.5 },
 
-  // ✅ NEW: View Profile CTA (outlined)
   viewProfileButton: {
-    height: 52,
-    paddingHorizontal: 18,
+    height: 50,
+    paddingHorizontal: 16,
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
@@ -1374,7 +1660,7 @@ const styles = StyleSheet.create({
   },
   viewProfileText: {
     fontWeight: "700",
-    fontSize: 14.5,
+    fontSize: 14,
     letterSpacing: 0.1,
   },
   viewProfilePricePill: {
@@ -1411,7 +1697,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   skeletonHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  skeletonAvatar: { width: 50, height: 50, borderRadius: 25 },
+  skeletonAvatar: { width: 46, height: 46, borderRadius: 23 },
   skeletonText: { height: 13, borderRadius: 6, marginBottom: 8, width: "60%" },
   skeletonTextShort: { height: 11, borderRadius: 6, width: "35%" },
   skeletonBodyLine: { height: 12, borderRadius: 6, marginBottom: 8, width: "92%" },
@@ -1420,7 +1706,8 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 80,
+    paddingVertical: 60,
+    paddingHorizontal: 20,
   },
   emptyIconWrap: {
     width: 60,
@@ -1437,6 +1724,16 @@ const styles = StyleSheet.create({
     maxWidth: 260,
     lineHeight: 18,
   },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  retryBtnText: { fontSize: 13.5, fontWeight: "700" },
   footerLoader: { marginVertical: 20 },
   listContent: { paddingBottom: 100, paddingTop: 4 },
 
@@ -1485,12 +1782,7 @@ const styles = StyleSheet.create({
   notificationTitle: { fontSize: 14.5, fontWeight: "600", marginBottom: 2 },
   notificationMessage: { fontSize: 13, marginBottom: 2, lineHeight: 18 },
   notificationTime: { fontSize: 11.5 },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginLeft: 6,
-  },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 6 },
   emptyNotifications: {
     alignItems: "center",
     justifyContent: "center",
@@ -1498,55 +1790,4 @@ const styles = StyleSheet.create({
   },
   emptyNotificationsText: { fontSize: 15, marginTop: 10 },
   notificationLoader: { paddingVertical: 14 },
-
-    // ✅ NEW DISCOVERY CARDS
-  discoveryRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
-    paddingHorizontal: 2,
-  },
-  discoveryCard: {
-    flex: 1,
-    borderRadius: 18,
-    padding: 14,
-    justifyContent: "space-between",
-    minHeight: 172,
-  },
-  discoveryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  discoveryIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  discoveryTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: -0.2,
-    marginBottom: 4,
-  },
-  discoverySub: {
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 14,
-  },
-  discoveryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 9,
-    borderRadius: 10,
-    gap: 4,
-  },
-  discoveryBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
 });

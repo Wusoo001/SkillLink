@@ -7,8 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -36,6 +36,11 @@ const CATEGORIES = [
   "Other",
 ];
 
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else require("react-native").Alert.alert(title, message || "");
+};
+
 export default function CreateRequestScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -50,7 +55,52 @@ export default function CreateRequestScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const hasUnsavedChanges =
+    !submitting && (category !== "" || title !== "" || description !== "");
+
+  const handleBack = () => {
+    if (!hasUnsavedChanges) {
+      navigation.goBack();
+      return;
+    }
+    if (Platform.OS === "web") {
+      if (
+        window.confirm(
+          "You have unsaved changes. Discard and leave?"
+        )
+      ) {
+        navigation.goBack();
+      }
+    } else {
+      const { Alert } = require("react-native");
+      Alert.alert(
+        "Discard Changes?",
+        "You have unsaved changes. Leaving now will lose them.",
+        [
+          { text: "Stay", style: "cancel" },
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    }
+  };
+
+  const handleCategorySelect = (c) => {
+    Keyboard.dismiss();
+    setCategory(c);
+    if (error) setError("");
+  };
+
   const handleSubmit = async () => {
+    if (submitting) return;
+
+    if (!circleId) {
+      setError("Circle information is missing. Please go back and try again.");
+      return;
+    }
     if (!category) {
       setError("Please select a category.");
       return;
@@ -76,6 +126,46 @@ export default function CreateRequestScreen() {
     }
   };
 
+  // Guard: no circle info
+  if (!circleId) {
+    return (
+      <View
+        style={[
+          styles.safeArea,
+          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
+        ]}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text
+            style={[styles.headerTitle, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
+            New Request
+          </Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.errorPage}>
+          <Text style={[styles.errorPageText, { color: colors.textPrimary }]}>
+            Circle information is missing. Please go back and try again.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  const titleCount = title.length;
+  const descCount = description.length;
+  const titleNearLimit = titleCount > 80;
+
   return (
     <KeyboardAvoidingView
       style={[styles.safeArea, { backgroundColor: colors.background }]}
@@ -83,22 +173,30 @@ export default function CreateRequestScreen() {
     >
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
-          onPress={() => navigation.goBack()}
+          style={[
+            styles.backButton,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
+          onPress={handleBack}
         >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+        <Text
+          style={[styles.headerTitle, { color: colors.textPrimary }]}
+          numberOfLines={1}
+        >
           Ask {circleName || "your circle"}
         </Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: insets.bottom + 40 },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Category */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>
           What type of service?
         </Text>
@@ -109,17 +207,24 @@ export default function CreateRequestScreen() {
               style={[
                 styles.categoryChip,
                 {
-                  backgroundColor: category === c ? colors.primary : colors.card,
-                  borderColor: category === c ? colors.primary : colors.inputBorder,
+                  backgroundColor:
+                    category === c ? colors.primary : colors.card,
+                  borderColor:
+                    category === c ? colors.primary : colors.inputBorder,
                 },
               ]}
-              onPress={() => setCategory(c)}
+              onPress={() => handleCategorySelect(c)}
               activeOpacity={0.85}
             >
               <Text
                 style={[
                   styles.categoryChipText,
-                  { color: category === c ? colors.textInverse : colors.textSecondary },
+                  {
+                    color:
+                      category === c
+                        ? colors.textInverse
+                        : colors.textSecondary,
+                  },
                 ]}
               >
                 {c}
@@ -128,14 +233,22 @@ export default function CreateRequestScreen() {
           ))}
         </View>
 
-        {/* Title */}
-        <Text style={[styles.label, { color: colors.textSecondary, marginTop: 22 }]}>
+        <Text
+          style={[
+            styles.label,
+            { color: colors.textSecondary, marginTop: 22 },
+          ]}
+        >
           What do you need? <Text style={{ color: colors.danger }}>*</Text>
         </Text>
         <TextInput
           style={[
             styles.input,
-            { backgroundColor: colors.card, borderColor: colors.inputBorder, color: colors.textPrimary },
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.inputBorder,
+              color: colors.textPrimary,
+            },
           ]}
           placeholder="e.g., Anyone know a reliable plumber in Ikeja?"
           placeholderTextColor={colors.textTertiary}
@@ -146,18 +259,31 @@ export default function CreateRequestScreen() {
           }}
           maxLength={100}
         />
-        <Text style={[styles.helper, { color: colors.textTertiary }]}>
-          {title.length}/100 · minimum 10 characters
+        <Text
+          style={[
+            styles.helper,
+            { color: titleNearLimit ? colors.warning : colors.textTertiary },
+          ]}
+        >
+          {titleCount}/100 · minimum 10 characters
         </Text>
 
-        {/* Description */}
-        <Text style={[styles.label, { color: colors.textSecondary, marginTop: 12 }]}>
+        <Text
+          style={[
+            styles.label,
+            { color: colors.textSecondary, marginTop: 12 },
+          ]}
+        >
           Details (optional)
         </Text>
         <TextInput
           style={[
             styles.textArea,
-            { backgroundColor: colors.card, borderColor: colors.inputBorder, color: colors.textPrimary },
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.inputBorder,
+              color: colors.textPrimary,
+            },
           ]}
           placeholder="Add context — what needs fixing, when, budget..."
           placeholderTextColor={colors.textTertiary}
@@ -165,21 +291,25 @@ export default function CreateRequestScreen() {
           onChangeText={setDescription}
           multiline
           maxLength={500}
-          numberOfLines={4}
         />
         <Text style={[styles.helper, { color: colors.textTertiary }]}>
-          {description.length}/500
+          {descCount}/500
         </Text>
 
         {error ? (
           <View
             style={[
               styles.errorBox,
-              { backgroundColor: colors.danger + "12", borderColor: colors.danger + "40" },
+              {
+                backgroundColor: colors.danger + "12",
+                borderColor: colors.danger + "40",
+              },
             ]}
           >
             <Ionicons name="alert-circle" size={14} color={colors.danger} />
-            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+            <Text style={[styles.errorText, { color: colors.danger }]}>
+              {error}
+            </Text>
           </View>
         ) : null}
 
@@ -196,7 +326,11 @@ export default function CreateRequestScreen() {
             <ActivityIndicator color={colors.textInverse} />
           ) : (
             <>
-              <Ionicons name="paper-plane-outline" size={18} color={colors.textInverse} />
+              <Ionicons
+                name="paper-plane-outline"
+                size={18}
+                color={colors.textInverse}
+              />
               <Text style={[styles.submitText, { color: colors.textInverse }]}>
                 Post to Circle
               </Text>
@@ -228,6 +362,13 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: "800", flex: 1 },
   scroll: { paddingHorizontal: 20 },
+  errorPage: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  errorPageText: { fontSize: 14, textAlign: "center", lineHeight: 20 },
   label: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   categoryChip: {

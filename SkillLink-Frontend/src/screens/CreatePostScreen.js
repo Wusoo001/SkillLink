@@ -1,4 +1,4 @@
-import { useContext, useState, useRef, useEffect } from "react";
+import React, { useContext, useState, useEffect, useRef } from "react";
 import {
   View,
   TextInput,
@@ -11,11 +11,12 @@ import {
   ActivityIndicator,
   Animated,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Modal,
   FlatList,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -27,26 +28,29 @@ import { PostContext } from "../../context/PostContext";
 import { useTheme } from "../context/ThemeContext";
 import { nigeriaStates } from "../data/nigeriaStates";
 
-// ✅ Lazy-load the native video compressor — only on iOS/Android
 let VideoCompressor = null;
 if (Platform.OS !== "web") {
   try {
     VideoCompressor = require("react-native-compressor").Video;
-  } catch (err) {
-    console.log("Video compressor unavailable:", err.message);
-  }
+  } catch {}
 }
 
 const CLOUD_NAME = "dz2te6uth";
 const UPLOAD_PRESET = "SkillLink";
 
-// ===== Compression targets =====
 const IMAGE_MAX_WIDTH = 1920;
 const IMAGE_QUALITY = 0.8;
-const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-const VIDEO_MAX_BYTES = 25 * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 60000;
+const MIN_PRICE = 5000;
 
-// ===== Custom Dropdown Component =====
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
+const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+// ===== Custom Dropdown =====
 const CustomPicker = ({
   label,
   selectedValue,
@@ -57,11 +61,6 @@ const CustomPicker = ({
   colors,
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
-
-  const handleSelect = (value) => {
-    onValueChange(value);
-    setModalVisible(false);
-  };
 
   return (
     <View style={styles.fieldGroup}>
@@ -98,31 +97,50 @@ const CustomPicker = ({
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.inputBorder }]}>
+            <View
+              style={[
+                styles.modalHeader,
+                { borderBottomColor: colors.inputBorder },
+              ]}
+            >
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
                 Select {label}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)} activeOpacity={0.7}>
+              <TouchableOpacity
+                onPress={() => setModalVisible(false)}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="close" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
             <FlatList
               data={items || []}
-              keyExtractor={(item) => (typeof item === "string" ? item : item.name)}
+              keyExtractor={(item) =>
+                typeof item === "string" ? item : item.name
+              }
               renderItem={({ item }) => {
-                const displayValue = typeof item === "string" ? item : item.name;
+                const displayValue =
+                  typeof item === "string" ? item : item.name;
                 const isSelected = selectedValue === displayValue;
                 return (
                   <TouchableOpacity
-                    style={[styles.modalItem, { borderBottomColor: colors.inputBorder }]}
-                    onPress={() => handleSelect(displayValue)}
+                    style={[
+                      styles.modalItem,
+                      { borderBottomColor: colors.inputBorder },
+                    ]}
+                    onPress={() => {
+                      onValueChange(displayValue);
+                      setModalVisible(false);
+                    }}
                     activeOpacity={0.7}
                   >
                     <Text
                       style={[
                         styles.modalItemText,
                         {
-                          color: isSelected ? colors.primary : colors.textPrimary,
+                          color: isSelected
+                            ? colors.primary
+                            : colors.textPrimary,
                           fontWeight: isSelected ? "700" : "500",
                         },
                       ]}
@@ -130,7 +148,11 @@ const CustomPicker = ({
                       {displayValue}
                     </Text>
                     {isSelected && (
-                      <Ionicons name="checkmark" size={20} color={colors.primary} />
+                      <Ionicons
+                        name="checkmark"
+                        size={20}
+                        color={colors.primary}
+                      />
                     )}
                   </TouchableOpacity>
                 );
@@ -146,8 +168,7 @@ const CustomPicker = ({
 
 // ===== Main Screen =====
 export default function CreatePostScreen({ navigation, route }) {
-  const { user } = useContext(AuthContext);
-  const { userToken } = useContext(AuthContext);
+  const { user, userToken } = useContext(AuthContext);
   const { addNewPost, triggerRefresh } = useContext(PostContext);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -155,46 +176,52 @@ export default function CreatePostScreen({ navigation, route }) {
   const { editPost } = route.params || {};
   const isEdit = !!editPost;
 
-  // Post fields
   const [skill, setSkill] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [tags, setTags] = useState("");
 
-  // Location
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [availableCities, setAvailableCities] = useState([]);
+  const [originalSnapshot, setOriginalSnapshot] = useState(null);
 
-  // Media
   const [mediaUri, setMediaUri] = useState(null);
   const [mediaType, setMediaType] = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [existingMediaUrl, setExistingMediaUrl] = useState(null);
-
-  // ✅ Compression state
   const [compressing, setCompressing] = useState(false);
   const [compressionProgress, setCompressionProgress] = useState(0);
+  const [picking, setPicking] = useState(false);
 
-  // Animations
+  const [uploading, setUploading] = useState(false);
+
   const postScale = useRef(new Animated.Value(1)).current;
   const pickScale = useRef(new Animated.Value(1)).current;
 
   // Pre-fill
   useEffect(() => {
     if (editPost) {
+      const stateName = editPost.locationState || "";
+      const cityName = editPost.locationCity || "";
       setSkill(editPost.skill || "");
       setDescription(editPost.description || "");
       setPrice(editPost.price ? String(editPost.price) : "");
       setTags(editPost.tags?.join(", ") || "");
-      const stateName = editPost.locationState || "";
-      const cityName = editPost.locationCity || "";
       setSelectedState(stateName);
       setSelectedCity(cityName);
       const foundState = nigeriaStates.find((s) => s.name === stateName);
       setAvailableCities(foundState ? foundState.lgas : []);
       setExistingMediaUrl(editPost.media || null);
       setMediaType(editPost.mediaType || "image");
+      setOriginalSnapshot({
+        skill: editPost.skill || "",
+        description: editPost.description || "",
+        price: editPost.price ? String(editPost.price) : "",
+        tags: editPost.tags?.join(", ") || "",
+        state: stateName,
+        city: cityName,
+        media: editPost.media || null,
+      });
     } else {
       const userState = user?.locationDetails?.state || "";
       const userCity = user?.locationDetails?.city || "";
@@ -212,7 +239,6 @@ export default function CreatePostScreen({ navigation, route }) {
     setAvailableCities(foundState ? foundState.lgas : []);
   };
 
-  // ===== Get file size in bytes =====
   const getFileSize = async (uri) => {
     try {
       const info = await FileSystem.getInfoAsync(uri);
@@ -222,112 +248,126 @@ export default function CreatePostScreen({ navigation, route }) {
     }
   };
 
-  // ===== Compress Image =====
   const compressImage = async (uri) => {
     try {
       const { width, height } = await new Promise((resolve, reject) => {
         Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
       });
-
       const actions = [];
       if (width > IMAGE_MAX_WIDTH || height > IMAGE_MAX_WIDTH) {
-        if (width >= height) {
-          actions.push({ resize: { width: IMAGE_MAX_WIDTH } });
-        } else {
-          actions.push({ resize: { height: IMAGE_MAX_WIDTH } });
-        }
+        if (width >= height) actions.push({ resize: { width: IMAGE_MAX_WIDTH } });
+        else actions.push({ resize: { height: IMAGE_MAX_WIDTH } });
       }
-
       const result = await ImageManipulator.manipulateAsync(uri, actions, {
         compress: IMAGE_QUALITY,
         format: ImageManipulator.SaveFormat.JPEG,
       });
-
       return result.uri;
-    } catch (error) {
-      console.log("Image compression failed, using original:", error);
+    } catch {
       return uri;
     }
   };
 
-  // ===== Compress Video =====
   const compressVideo = async (uri, onProgress) => {
-    if (!VideoCompressor) {
-      console.log("📼 Video compressor not available on this platform — using original");
-      return uri;
-    }
-
+    if (!VideoCompressor) return uri;
     try {
-      const originalSize = await getFileSize(uri);
-      console.log("📼 Original video size:", (originalSize / 1024 / 1024).toFixed(1), "MB");
-
-      const compressedUri = await VideoCompressor.compress(
+      return await VideoCompressor.compress(
         uri,
-        {
-          compressionMethod: "auto",
-          minimumFileSizeForCompress: 1,
-        },
-        (progress) => {
-          if (onProgress) onProgress(progress);
-        }
+        { compressionMethod: "auto", minimumFileSizeForCompress: 1 },
+        (progress) => onProgress && onProgress(progress)
       );
-
-      const compressedSize = await getFileSize(compressedUri);
-      console.log("📼 Compressed video size:", (compressedSize / 1024 / 1024).toFixed(1), "MB");
-
-      return compressedUri;
-    } catch (error) {
-      console.log("Video compression failed, using original:", error);
+    } catch {
       return uri;
     }
   };
 
-  // ===== Handle Picking (with auto-compression) =====
-  const pickMedia = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      allowsEditing: true,
-      quality: 1,
-      base64: false,
-    });
+  const handleBack = () => {
+    const hasChanges = isEdit
+      ? originalSnapshot &&
+        (skill !== originalSnapshot.skill ||
+          description !== originalSnapshot.description ||
+          price !== originalSnapshot.price ||
+          tags !== originalSnapshot.tags ||
+          selectedState !== originalSnapshot.state ||
+          selectedCity !== originalSnapshot.city ||
+          existingMediaUrl !== originalSnapshot.media ||
+          mediaUri !== null)
+      : skill || description || price || tags || mediaUri;
 
-    if (result.canceled) return;
-
-    const asset = result.assets[0];
-    let type = asset.type;
-    if (!type) {
-      if (asset.mimeType?.startsWith("video/")) type = "video";
-      else if (asset.mimeType?.startsWith("image/")) type = "image";
-      else if (asset.uri.match(/\.(mp4|mov|avi|mkv)$/i)) type = "video";
-      else type = "image";
+    if (!hasChanges) {
+      navigation.goBack();
+      return;
     }
 
-    setCompressing(true);
-    setCompressionProgress(0);
-
-    try {
-      let finalUri = asset.uri;
-      if (type === "image") {
-        finalUri = await compressImage(asset.uri);
-      } else if (type === "video") {
-        if (Platform.OS !== "web") {
-          finalUri = await compressVideo(asset.uri, (p) => {
-            setCompressionProgress(p);
-          });
-        }
+    if (Platform.OS === "web") {
+      if (window.confirm("You have unsaved changes. Discard and leave?")) {
+        navigation.goBack();
       }
+    } else {
+      Alert.alert(
+        "Discard changes?",
+        "You have unsaved changes. Leaving now will lose them.",
+        [
+          { text: "Stay", style: "cancel" },
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    }
+  };
 
-      setMediaUri(finalUri);
-      setMediaType(type);
-      setExistingMediaUrl(null);
-    } catch (error) {
-      console.log("Compression error:", error);
-      setMediaUri(asset.uri);
-      setMediaType(type);
-      setExistingMediaUrl(null);
-    } finally {
-      setCompressing(false);
+  const pickMedia = async () => {
+    if (picking || compressing) return;
+    setPicking(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsEditing: true,
+        quality: 1,
+        base64: false,
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      let type = asset.type;
+      if (!type) {
+        if (asset.mimeType?.startsWith("video/")) type = "video";
+        else if (asset.mimeType?.startsWith("image/")) type = "image";
+        else if (asset.uri.match(/\.(mp4|mov|avi|mkv|webm)$/i)) type = "video";
+        else type = "image";
+      }
+      if (type !== "image" && type !== "video") type = "image";
+
+      setCompressing(true);
       setCompressionProgress(0);
+
+      try {
+        let finalUri = asset.uri;
+        if (type === "image") {
+          finalUri = await compressImage(asset.uri);
+        } else if (Platform.OS !== "web") {
+          finalUri = await compressVideo(asset.uri, (p) =>
+            setCompressionProgress(p)
+          );
+        }
+        setMediaUri(finalUri);
+        setMediaType(type);
+        setExistingMediaUrl(null);
+      } catch {
+        setMediaUri(asset.uri);
+        setMediaType(type);
+        setExistingMediaUrl(null);
+      } finally {
+        setCompressing(false);
+        setCompressionProgress(0);
+      }
+    } catch (err) {
+      webAlert("Error", "Could not pick media: " + err.message);
+    } finally {
+      setPicking(false);
     }
   };
 
@@ -338,45 +378,66 @@ export default function CreatePostScreen({ navigation, route }) {
   };
 
   const uploadMedia = async (uri, type) => {
-    const endpoint =
-      type === "video"
-        ? `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`
-        : `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+    const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${
+      type === "video" ? "video" : "image"
+    }/upload`;
 
-    try {
-      const uploadResult = await FileSystem.uploadAsync(endpoint, uri, {
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: "file",
-        parameters: { upload_preset: UPLOAD_PRESET },
-        headers: { Accept: "application/json" },
-      });
-      if (uploadResult.status !== 200) {
-        throw new Error(`Upload failed with status ${uploadResult.status}`);
-      }
-      const data = JSON.parse(uploadResult.body);
-      if (!data.secure_url) {
-        throw new Error(data.error?.message || "Upload failed");
-      }
-      return data.secure_url;
-    } catch (error) {
-      console.error("Upload error:", error);
-      throw error;
+    const uploadPromise = FileSystem.uploadAsync(endpoint, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      parameters: { upload_preset: UPLOAD_PRESET },
+      headers: { Accept: "application/json" },
+    });
+
+    const uploadResult = await Promise.race([
+      uploadPromise,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Upload timed out. Check your connection.")),
+          UPLOAD_TIMEOUT_MS
+        )
+      ),
+    ]);
+
+    if (uploadResult.status !== 200) {
+      throw new Error(`Upload failed (status ${uploadResult.status})`);
     }
+    const data = JSON.parse(uploadResult.body);
+    if (!data.secure_url) {
+      throw new Error(data.error?.message || "Upload failed");
+    }
+    return data.secure_url;
   };
 
   const handlePost = async () => {
-    if (!skill || !description) {
-      return Alert.alert("Error", "Skill and description are required");
+    if (uploading || compressing) return;
+
+    Keyboard.dismiss();
+
+    const trimmedSkill = skill.trim();
+    const trimmedDescription = description.trim();
+
+    if (!trimmedSkill || !trimmedDescription) {
+      return webAlert("Missing info", "Skill and description are required.");
     }
+    if (trimmedSkill.length > 100) {
+      return webAlert("Too long", "Skill must be 100 characters or less.");
+    }
+    if (trimmedDescription.length > 2000) {
+      return webAlert(
+        "Too long",
+        "Description must be 2000 characters or less."
+      );
+    }
+
     const priceNum = parseFloat(price);
     if (!price || isNaN(priceNum) || priceNum <= 0) {
-      return Alert.alert("Error", "Please enter a valid service fee (greater than 0)");
+      return webAlert("Invalid price", "Please enter a valid service fee.");
     }
-    const MIN_PRICE = 5000;
     if (priceNum < MIN_PRICE) {
-      return Alert.alert(
-        "Minimum Price Required",
+      return webAlert(
+        "Minimum price required",
         `Service fee must be at least ₦${MIN_PRICE.toLocaleString()} so clients can book with escrow protection.`
       );
     }
@@ -384,41 +445,43 @@ export default function CreatePostScreen({ navigation, route }) {
     const locationParts = [selectedCity, selectedState].filter(Boolean);
     const locationString = locationParts.join(", ");
 
+    const parsedTags = tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+
     setUploading(true);
-    let mediaUrl = null;
 
     try {
+      let mediaUrl = existingMediaUrl;
       if (mediaUri) {
-        mediaUrl = await uploadMedia(mediaUri, mediaType);
-      } else if (existingMediaUrl) {
-        mediaUrl = existingMediaUrl;
+        mediaUrl = await uploadMedia(mediaUri, mediaType || "image");
       }
 
       const postData = {
-        skill,
-        description,
+        skill: trimmedSkill,
+        description: trimmedDescription,
         price: priceNum,
-        tags: tags.split(",").filter((t) => t.trim()),
+        tags: parsedTags,
         location: locationString,
         locationCity: selectedCity,
         locationState: selectedState,
         locationCountry: "Nigeria",
-        media: mediaUrl,
+        media: mediaUrl || null,
         mediaType: mediaType || "image",
       };
 
       if (isEdit) {
         const response = await updatePost(editPost._id, postData);
-        if (response.success !== false) {
-          Alert.alert("Success", "Post updated!");
-          triggerRefresh();
-          navigation.goBack();
-        } else {
-          Alert.alert("Error", response.message || "Failed to update post");
+        if (response.success === false) {
+          throw new Error(response.message || "Failed to update post");
         }
+        webAlert("Success", "Post updated!");
+        triggerRefresh();
+        navigation.goBack();
       } else {
         const tempPost = {
-          _id: Math.random().toString(),
+          _id: `temp_${uid()}`,
           ...postData,
           user: { _id: user?._id || "me", name: user?.name || "You" },
           reviewCount: 0,
@@ -427,17 +490,20 @@ export default function CreatePostScreen({ navigation, route }) {
         addNewPost(tempPost);
 
         const response = await createPost(postData, userToken);
-        if (response.success) {
-          Alert.alert("Success", "Post created!");
-          triggerRefresh();
-          navigation.goBack();
-        } else {
-          Alert.alert("Error", response.message || "Failed to create post");
+        if (!response.success) {
+          throw new Error(response.message || "Failed to create post");
         }
+        webAlert("Success", "Post created!");
+        triggerRefresh();
+        navigation.goBack();
       }
     } catch (error) {
-      console.log("Post error:", error);
-      Alert.alert("Error", error.message || "Failed to save post");
+      webAlert(
+        "Error",
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to save post"
+      );
     } finally {
       setUploading(false);
     }
@@ -468,17 +534,23 @@ export default function CreatePostScreen({ navigation, route }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.container}>
-            {/* ===== HEADER ===== */}
             <View style={styles.header}>
               <TouchableOpacity
-                onPress={() => navigation.goBack()}
+                onPress={handleBack}
                 style={[
                   styles.backButton,
-                  { backgroundColor: colors.card, borderColor: colors.inputBorder },
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.inputBorder,
+                  },
                 ]}
                 activeOpacity={0.7}
               >
-                <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+                <Ionicons
+                  name="arrow-back"
+                  size={20}
+                  color={colors.textPrimary}
+                />
               </TouchableOpacity>
               <Text
                 style={[styles.headerTitle, { color: colors.textPrimary }]}
@@ -489,9 +561,10 @@ export default function CreatePostScreen({ navigation, route }) {
               <View style={styles.placeholder} />
             </View>
 
-            {/* ===== SERVICE DETAILS ===== */}
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              <Text
+                style={[styles.sectionTitle, { color: colors.textPrimary }]}
+              >
                 Service Details
               </Text>
             </View>
@@ -513,6 +586,8 @@ export default function CreatePostScreen({ navigation, route }) {
                 onChangeText={setSkill}
                 placeholder="e.g., Plumbing, Electrical"
                 placeholderTextColor={colors.textTertiary}
+                maxLength={100}
+                editable={!uploading}
               />
             </View>
 
@@ -536,6 +611,8 @@ export default function CreatePostScreen({ navigation, route }) {
                 placeholderTextColor={colors.textTertiary}
                 multiline
                 numberOfLines={4}
+                maxLength={2000}
+                editable={!uploading}
               />
             </View>
 
@@ -557,8 +634,15 @@ export default function CreatePostScreen({ navigation, route }) {
                 placeholder="e.g., 5000 (minimum)"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="numeric"
+                editable={!uploading}
               />
-              <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 4 }}>
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: colors.textTertiary,
+                  marginTop: 4,
+                }}
+              >
                 Minimum ₦5,000 — required for escrow protection
               </Text>
             </View>
@@ -580,12 +664,14 @@ export default function CreatePostScreen({ navigation, route }) {
                 onChangeText={setTags}
                 placeholder="e.g., fast, affordable, expert"
                 placeholderTextColor={colors.textTertiary}
+                editable={!uploading}
               />
             </View>
 
-            {/* ===== LOCATION ===== */}
             <View style={[styles.sectionHeader, styles.sectionHeaderSpaced]}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              <Text
+                style={[styles.sectionTitle, { color: colors.textPrimary }]}
+              >
                 Location
               </Text>
             </View>
@@ -604,7 +690,9 @@ export default function CreatePostScreen({ navigation, route }) {
                   },
                 ]}
               >
-                <Text style={[styles.pickerText, { color: colors.textPrimary }]}>
+                <Text
+                  style={[styles.pickerText, { color: colors.textPrimary }]}
+                >
                   Nigeria
                 </Text>
                 <Ionicons
@@ -622,6 +710,7 @@ export default function CreatePostScreen({ navigation, route }) {
               items={nigeriaStates}
               placeholder="Select a state..."
               colors={colors}
+              disabled={uploading}
             />
 
             <CustomPicker
@@ -635,17 +724,17 @@ export default function CreatePostScreen({ navigation, route }) {
                   : "Select an LGA..."
               }
               colors={colors}
-              disabled={availableCities.length === 0}
+              disabled={availableCities.length === 0 || uploading}
             />
 
-            {/* ===== MEDIA ===== */}
             <View style={[styles.sectionHeader, styles.sectionHeaderSpaced]}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              <Text
+                style={[styles.sectionTitle, { color: colors.textPrimary }]}
+              >
                 Media
               </Text>
             </View>
 
-            {/* ✅ Compression overlay */}
             {compressing && (
               <View
                 style={[
@@ -658,12 +747,20 @@ export default function CreatePostScreen({ navigation, route }) {
               >
                 <ActivityIndicator size="small" color={colors.primary} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[styles.compressingTitle, { color: colors.primary }]}>
+                  <Text
+                    style={[
+                      styles.compressingTitle,
+                      { color: colors.primary },
+                    ]}
+                  >
                     Optimizing your media...
                   </Text>
                   {compressionProgress > 0 && (
                     <Text
-                      style={[styles.compressingText, { color: colors.textTertiary }]}
+                      style={[
+                        styles.compressingText,
+                        { color: colors.textTertiary },
+                      ]}
                     >
                       {Math.round(compressionProgress * 100)}% complete
                     </Text>
@@ -676,6 +773,7 @@ export default function CreatePostScreen({ navigation, route }) {
               <View style={styles.mediaPreviewContainer}>
                 {mediaType === "image" ? (
                   <Image
+                    key={mediaUri || existingMediaUrl}
                     source={{ uri: mediaUri || existingMediaUrl }}
                     style={styles.mediaPreview}
                     resizeMode="cover"
@@ -690,8 +788,17 @@ export default function CreatePostScreen({ navigation, route }) {
                       },
                     ]}
                   >
-                    <Ionicons name="videocam" size={36} color={colors.primary} />
-                    <Text style={[styles.videoText, { color: colors.textTertiary }]}>
+                    <Ionicons
+                      name="videocam"
+                      size={36}
+                      color={colors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.videoText,
+                        { color: colors.textTertiary },
+                      ]}
+                    >
                       Video ready to upload
                     </Text>
                   </View>
@@ -719,23 +826,32 @@ export default function CreatePostScreen({ navigation, route }) {
                   {
                     backgroundColor: colors.primaryLight,
                     borderColor: colors.primary + "40",
-                    opacity: compressing ? 0.5 : 1,
+                    opacity: compressing || picking || uploading ? 0.5 : 1,
                   },
                 ]}
                 onPress={pickMedia}
                 onPressIn={() => animatePressIn(pickScale)}
                 onPressOut={() => animatePressOut(pickScale)}
                 activeOpacity={0.85}
-                disabled={compressing}
+                disabled={compressing || picking || uploading}
               >
-                <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
-                <Text style={[styles.pickButtonText, { color: colors.primary }]}>
+                {picking ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={18}
+                    color={colors.primary}
+                  />
+                )}
+                <Text
+                  style={[styles.pickButtonText, { color: colors.primary }]}
+                >
                   {isEdit ? "Change Media" : "Pick Image or Video"}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
 
-            {/* ===== SUBMIT CTA ===== */}
             <Animated.View
               style={[styles.postWrap, { transform: [{ scale: postScale }] }]}
             >
@@ -744,21 +860,31 @@ export default function CreatePostScreen({ navigation, route }) {
                   styles.postButton,
                   {
                     backgroundColor:
-                      uploading || compressing ? colors.gray : colors.primary,
+                      uploading || compressing || picking
+                        ? colors.gray
+                        : colors.primary,
                     shadowColor: colors.primary,
-                    opacity: uploading || compressing ? 0.7 : 1,
+                    opacity: uploading || compressing || picking ? 0.7 : 1,
                   },
                 ]}
                 onPress={handlePost}
                 onPressIn={() => animatePressIn(postScale)}
                 onPressOut={() => animatePressOut(postScale)}
-                disabled={uploading || compressing}
+                disabled={uploading || compressing || picking}
                 activeOpacity={0.9}
               >
                 {uploading ? (
                   <>
-                    <ActivityIndicator color={colors.textInverse} size="small" />
-                    <Text style={[styles.postButtonText, { color: colors.textInverse }]}>
+                    <ActivityIndicator
+                      color={colors.textInverse}
+                      size="small"
+                    />
+                    <Text
+                      style={[
+                        styles.postButtonText,
+                        { color: colors.textInverse },
+                      ]}
+                    >
                       {isEdit ? "Updating..." : "Posting..."}
                     </Text>
                   </>
@@ -769,7 +895,12 @@ export default function CreatePostScreen({ navigation, route }) {
                       size={19}
                       color={colors.textInverse}
                     />
-                    <Text style={[styles.postButtonText, { color: colors.textInverse }]}>
+                    <Text
+                      style={[
+                        styles.postButtonText,
+                        { color: colors.textInverse },
+                      ]}
+                    >
                       {isEdit ? "Update Service" : "Post Service"}
                     </Text>
                   </>
@@ -783,9 +914,6 @@ export default function CreatePostScreen({ navigation, route }) {
   );
 }
 
-// ========================================
-// STYLES
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboardView: { flex: 1 },
@@ -815,13 +943,8 @@ const styles = StyleSheet.create({
   },
   placeholder: { width: 40 },
 
-  sectionHeader: {
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  sectionHeaderSpaced: {
-    marginTop: 20,
-  },
+  sectionHeader: { marginBottom: 12, marginTop: 4 },
+  sectionHeaderSpaced: { marginTop: 20 },
   sectionTitle: {
     fontSize: 15,
     fontWeight: "800",
@@ -928,10 +1051,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  mediaPreviewContainer: {
-    position: "relative",
-    marginBottom: 12,
-  },
+  mediaPreviewContainer: { position: "relative", marginBottom: 12 },
   mediaPreview: {
     width: "100%",
     aspectRatio: 1.5,
@@ -947,11 +1067,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: "dashed",
   },
-  videoText: {
-    marginTop: 6,
-    fontSize: 13,
-    fontWeight: "500",
-  },
+  videoText: { marginTop: 6, fontSize: 13, fontWeight: "500" },
   removeMediaButton: {
     position: "absolute",
     top: 8,
@@ -973,11 +1089,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     minHeight: 48,
   },
-  pickButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: 0.1,
-  },
+  pickButtonText: { fontSize: 14, fontWeight: "700", letterSpacing: 0.1 },
 
   postWrap: { marginTop: 26 },
   postButton: {

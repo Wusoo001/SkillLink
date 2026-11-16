@@ -7,15 +7,27 @@ import {
   TouchableOpacity,
   View,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ScrollView,
   Animated,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { registerUser } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
+
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Nigerian mobile: 10-13 digits, optional leading +234 or 0
+const PHONE_REGEX = /^\+?[0-9]{10,14}$/;
+const MIN_PASSWORD_LENGTH = 6;
 
 export default function Register({ navigation }) {
   const { colors } = useTheme();
@@ -28,31 +40,81 @@ export default function Register({ navigation }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const buttonScale = useRef(new Animated.Value(1)).current;
 
-  const handleSignup = async () => {
-    if (!name || !email || !phone || !password || !confirmPassword) {
-      Alert.alert("Error", "All fields required");
-      return;
-    }
+  const validate = () => {
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPhone = phone.trim();
 
+    if (!trimmedName || !trimmedEmail || !trimmedPhone || !password || !confirmPassword) {
+      return "All fields are required.";
+    }
+    if (trimmedName.length < 2) {
+      return "Please enter your full name.";
+    }
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      return "Please enter a valid email address.";
+    }
+    if (!PHONE_REGEX.test(trimmedPhone)) {
+      return "Please enter a valid phone number (10-13 digits).";
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+    }
     if (password !== confirmPassword) {
-      Alert.alert("Error", "Passwords do not match");
+      return "Passwords do not match.";
+    }
+    return null;
+  };
+
+  const handleSignup = async () => {
+    if (submitting) return;
+
+    Keyboard.dismiss();
+
+    const validationError = validate();
+    if (validationError) {
+      webAlert("Check your details", validationError);
       return;
     }
 
+    setSubmitting(true);
     try {
-      const response = await registerUser({ name, email, phone, password });
+      const trimmedName = name.trim();
+      const trimmedEmail = email.trim().toLowerCase();
+      const trimmedPhone = phone.trim();
+
+      const response = await registerUser({
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+        password,
+      });
 
       if (response.success) {
-        Alert.alert("Success", "Account created! Please verify your email.");
-        navigation.replace("VerificationPending", { email });
+        webAlert(
+          "Success",
+          "Account created! Please verify your email."
+        );
+        navigation.replace("VerificationPending", { email: trimmedEmail });
       } else {
-        Alert.alert("Error", response.message);
+        webAlert(
+          "Couldn't create account",
+          response.message || "Please try again."
+        );
       }
     } catch (error) {
-      Alert.alert("Error", "Server error");
+      webAlert(
+        "Error",
+        error.response?.data?.message ||
+          error.message ||
+          "Server not reachable. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -80,7 +142,7 @@ export default function Register({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ===== BRAND HEADER ===== */}
+          {/* BRAND HEADER */}
           <View style={styles.brand}>
             <Image
               source={require("../../assets/images/street_logo.png")}
@@ -95,7 +157,7 @@ export default function Register({ navigation }) {
             </Text>
           </View>
 
-          {/* ===== REGISTER CARD ===== */}
+          {/* REGISTER CARD */}
           <View
             style={[
               styles.card,
@@ -136,6 +198,8 @@ export default function Register({ navigation }) {
                 value={name}
                 onChangeText={setName}
                 autoCorrect={false}
+                autoCapitalize="words"
+                editable={!submitting}
               />
             </View>
 
@@ -164,6 +228,7 @@ export default function Register({ navigation }) {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoCorrect={false}
+                editable={!submitting}
               />
             </View>
 
@@ -190,6 +255,8 @@ export default function Register({ navigation }) {
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
+                autoCorrect={false}
+                editable={!submitting}
               />
             </View>
 
@@ -210,12 +277,15 @@ export default function Register({ navigation }) {
                 style={styles.inputIcon}
               />
               <TextInput
-                placeholder="Password"
+                placeholder="Password (min 6 characters)"
                 secureTextEntry={!showPassword}
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, { color: colors.textPrimary }]}
                 value={password}
                 onChangeText={setPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!submitting}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
@@ -253,6 +323,9 @@ export default function Register({ navigation }) {
                 style={[styles.input, { color: colors.textPrimary }]}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!submitting}
               />
               <TouchableOpacity
                 onPress={() => setShowConfirmPassword(!showConfirmPassword)}
@@ -277,17 +350,31 @@ export default function Register({ navigation }) {
                   {
                     backgroundColor: colors.primary,
                     shadowColor: colors.primary,
+                    opacity: submitting ? 0.7 : 1,
                   },
                 ]}
                 onPress={handleSignup}
                 onPressIn={animateButtonIn}
                 onPressOut={animateButtonOut}
                 activeOpacity={0.9}
+                disabled={submitting}
               >
-                <Text style={[styles.buttonText, { color: colors.textInverse }]}>
-                  Verify & Continue
-                </Text>
-                <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
+                {submitting ? (
+                  <ActivityIndicator color={colors.textInverse} size="small" />
+                ) : (
+                  <>
+                    <Text
+                      style={[styles.buttonText, { color: colors.textInverse }]}
+                    >
+                      Verify & Continue
+                    </Text>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={18}
+                      color={colors.textInverse}
+                    />
+                  </>
+                )}
               </TouchableOpacity>
             </Animated.View>
 
@@ -296,10 +383,13 @@ export default function Register({ navigation }) {
               style={styles.loginLink}
               onPress={() => navigation.replace("Landing")}
               activeOpacity={0.7}
+              disabled={submitting}
             >
               <Text style={[styles.loginText, { color: colors.textTertiary }]}>
                 Already have an account?{" "}
-                <Text style={[styles.loginHighlight, { color: colors.primary }]}>
+                <Text
+                  style={[styles.loginHighlight, { color: colors.primary }]}
+                >
                   Login
                 </Text>
               </Text>
@@ -311,9 +401,6 @@ export default function Register({ navigation }) {
   );
 }
 
-// ========================================
-// STYLES
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboardView: { flex: 1 },
@@ -323,7 +410,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
 
-  // ===== BRAND =====
   brand: {
     alignItems: "center",
     marginBottom: 22,
@@ -345,7 +431,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== CARD =====
   card: {
     borderRadius: 24,
     borderWidth: 1,
@@ -371,7 +456,6 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
 
-  // ===== INPUTS =====
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -396,7 +480,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 
-  // ===== BUTTON =====
   button: {
     flexDirection: "row",
     alignItems: "center",
@@ -417,7 +500,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== FOOTER LINK =====
   loginLink: {
     marginTop: 18,
     paddingVertical: 6,

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext, useEffect } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  Platform,
   Alert,
 } from "react-native";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
@@ -20,8 +21,16 @@ import {
   getCircleRequests,
 } from "../services/api";
 
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
 const timeAgo = (date) => {
-  const diff = Date.now() - new Date(date).getTime();
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const diff = Date.now() - d.getTime();
+  if (diff < 0) return "just now";
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -29,7 +38,7 @@ const timeAgo = (date) => {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(date).toLocaleDateString();
+  return d.toLocaleDateString();
 };
 
 export default function CircleDetailScreen() {
@@ -42,51 +51,109 @@ export default function CircleDetailScreen() {
 
   const [circle, setCircle] = useState(null);
   const [requests, setRequests] = useState([]);
-  const [tab, setTab] = useState("open"); // "open" | "resolved"
+  const [tab, setTab] = useState("open");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [membershipLoading, setMembershipLoading] = useState(false);
 
-  const load = async () => {
+  const requestIdRef = useRef(0);
+  const isFirstFocusRef = useRef(true);
+
+  const load = async ({ silent = false } = {}) => {
+    if (!circleId) {
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+    const id = ++requestIdRef.current;
+    if (!silent) {
+      setLoading(true);
+      setLoadError(false);
+    }
     try {
       const [circleRes, requestsRes] = await Promise.all([
         getCircleById(circleId),
-        getCircleRequests(circleId, tab === "resolved", 1, 20),
+        getCircleRequests(circleId, tab === "resolved", 1, 30),
       ]);
-      if (circleRes?.success) setCircle(circleRes.data);
-      if (requestsRes?.success) setRequests(requestsRes.data || []);
+      if (id !== requestIdRef.current) return;
+
+      if (circleRes?.success && circleRes.data) {
+        setCircle(circleRes.data);
+        setLoadError(false);
+      } else if (!circle) {
+        setLoadError(true);
+      }
+
+      if (requestsRes?.success) {
+        setRequests(requestsRes.data || []);
+      }
     } catch (error) {
-      console.log("Load circle detail error:", error);
+      if (id !== requestIdRef.current) return;
+      setLoadError(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (id === requestIdRef.current && !silent) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      if (isFirstFocusRef.current) {
+        isFirstFocusRef.current = false;
+        load();
+      } else {
+        load({ silent: true });
+      }
     }, [circleId, tab])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
+    load({ silent: true });
+  };
+
+  const handleTabChange = (newTab) => {
+    if (newTab === tab) return;
+    setTab(newTab);
+    setRequests([]); // Clear immediately so stale tab doesn't show
     load();
   };
 
   const handleToggleMembership = async () => {
     if (!circle || membershipLoading) return;
     setMembershipLoading(true);
+
+    const wasMember = circle.isMember;
+    const prevCount = circle.memberCount;
+    // Optimistic
+    setCircle({
+      ...circle,
+      isMember: !wasMember,
+      memberCount: wasMember
+        ? Math.max(0, prevCount - 1)
+        : prevCount + 1,
+    });
+
     try {
-      if (circle.isMember) {
-        await leaveCircle(circle._id);
-        setCircle({ ...circle, isMember: false, memberCount: Math.max(0, circle.memberCount - 1) });
-      } else {
-        await joinCircle(circle._id);
-        setCircle({ ...circle, isMember: true, memberCount: circle.memberCount + 1 });
-      }
+      if (wasMember) await leaveCircle(circle._id);
+      else await joinCircle(circle._id);
+
+      // Reload full state — member status changed, requests visibility may too
+      await load({ silent: true });
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.message || "Could not update membership");
+      // Rollback
+      setCircle({
+        ...circle,
+        isMember: wasMember,
+        memberCount: prevCount,
+      });
+      webAlert(
+        "Error",
+        error.response?.data?.message || "Could not update membership"
+      );
     } finally {
       setMembershipLoading(false);
     }
@@ -102,12 +169,17 @@ export default function CircleDetailScreen() {
 
   const renderRequest = ({ item }) => (
     <TouchableOpacity
-      style={[styles.requestCard, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+      style={[
+        styles.requestCard,
+        { backgroundColor: colors.card, borderColor: colors.inputBorder },
+      ]}
       onPress={() => handleOpenRequest(item)}
       activeOpacity={0.85}
     >
       <View style={styles.requestHeader}>
-        <View style={[styles.categoryChip, { backgroundColor: colors.primaryLight }]}>
+        <View
+          style={[styles.categoryChip, { backgroundColor: colors.primaryLight }]}
+        >
           <Text style={[styles.categoryChipText, { color: colors.primary }]}>
             {item.category}
           </Text>
@@ -116,7 +188,10 @@ export default function CircleDetailScreen() {
           {timeAgo(item.createdAt)}
         </Text>
       </View>
-      <Text style={[styles.requestTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+      <Text
+        style={[styles.requestTitle, { color: colors.textPrimary }]}
+        numberOfLines={2}
+      >
         {item.title}
       </Text>
       {item.description ? (
@@ -134,7 +209,10 @@ export default function CircleDetailScreen() {
               {item.author?.name?.charAt(0)?.toUpperCase() || "U"}
             </Text>
           </View>
-          <Text style={[styles.authorName, { color: colors.textTertiary }]} numberOfLines={1}>
+          <Text
+            style={[styles.authorName, { color: colors.textTertiary }]}
+            numberOfLines={1}
+          >
             {item.author?.name || "Someone"}
           </Text>
         </View>
@@ -152,17 +230,24 @@ export default function CircleDetailScreen() {
     </TouchableOpacity>
   );
 
-  if (loading) {
+  // Loading
+  if (loading && !circle) {
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
             onPress={() => navigation.goBack()}
           >
             <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+          <Text
+            style={[styles.headerTitle, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
             {circleName || "Circle"}
           </Text>
           <View style={{ width: 40 }} />
@@ -174,44 +259,103 @@ export default function CircleDetailScreen() {
     );
   }
 
-  if (!circle) {
+  // Error — actual failure OR circle missing
+  if (loadError && !circle) {
     return (
-      <View style={[styles.safeArea, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
+      <View
+        style={[
+          styles.safeArea,
+          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
+        ]}
+      >
         <View style={styles.header}>
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
             onPress={() => navigation.goBack()}
           >
             <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Circle</Text>
+          <Text
+            style={[styles.headerTitle, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
+            {circleName || "Circle"}
+          </Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.center}>
-          <Text style={{ color: colors.textPrimary }}>Circle not found.</Text>
+          <View
+            style={[
+              styles.emptyIconWrap,
+              { backgroundColor: colors.danger + "15" },
+            ]}
+          >
+            <Ionicons
+              name="cloud-offline-outline"
+              size={28}
+              color={colors.danger}
+            />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+            Couldn't load circle
+          </Text>
+          <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setLoadError(false);
+              load();
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={16} color={colors.textInverse} />
+            <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+              Retry
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
+  }
+
+  if (!circle) {
+    return null;
   }
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+          style={[
+            styles.backButton,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
           onPress={() => navigation.goBack()}
         >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+        <Text
+          style={[styles.headerTitle, { color: colors.textPrimary }]}
+          numberOfLines={1}
+        >
           {circle.name}
         </Text>
         <TouchableOpacity
           style={[
             styles.membershipBtn,
             {
-              backgroundColor: circle.isMember ? colors.inputBackground : colors.primary,
-              borderColor: circle.isMember ? colors.inputBorder : colors.primary,
+              backgroundColor: circle.isMember
+                ? colors.inputBackground
+                : colors.primary,
+              borderColor: circle.isMember
+                ? colors.inputBorder
+                : colors.primary,
+              opacity: membershipLoading ? 0.6 : 1,
             },
           ]}
           onPress={handleToggleMembership}
@@ -220,7 +364,11 @@ export default function CircleDetailScreen() {
           <Text
             style={[
               styles.membershipBtnText,
-              { color: circle.isMember ? colors.textPrimary : colors.textInverse },
+              {
+                color: circle.isMember
+                  ? colors.textPrimary
+                  : colors.textInverse,
+              },
             ]}
           >
             {membershipLoading
@@ -239,11 +387,13 @@ export default function CircleDetailScreen() {
         </Text>
       </View>
 
-      {/* Tabs */}
       <View
         style={[
           styles.tabBar,
-          { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
+          {
+            backgroundColor: colors.inputBackground,
+            borderColor: colors.inputBorder,
+          },
         ]}
       >
         {[
@@ -252,13 +402,19 @@ export default function CircleDetailScreen() {
         ].map((t) => (
           <TouchableOpacity
             key={t.key}
-            style={[styles.tab, tab === t.key && { backgroundColor: colors.primary }]}
-            onPress={() => setTab(t.key)}
+            style={[
+              styles.tab,
+              tab === t.key && { backgroundColor: colors.primary },
+            ]}
+            onPress={() => handleTabChange(t.key)}
           >
             <Text
               style={[
                 styles.tabText,
-                { color: tab === t.key ? colors.textInverse : colors.textSecondary },
+                {
+                  color:
+                    tab === t.key ? colors.textInverse : colors.textSecondary,
+                },
               ]}
             >
               {t.label}
@@ -273,13 +429,30 @@ export default function CircleDetailScreen() {
         renderItem={renderRequest}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="chatbubbles-outline" size={40} color={colors.textTertiary} />
+            <View
+              style={[
+                styles.emptyIconWrap,
+                { backgroundColor: colors.inputBackground },
+              ]}
+            >
+              <Ionicons
+                name="chatbubbles-outline"
+                size={26}
+                color={colors.textTertiary}
+              />
+            </View>
             <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-              {tab === "resolved" ? "No resolved requests yet" : "No open requests"}
+              {tab === "resolved"
+                ? "No resolved requests yet"
+                : "No open requests"}
             </Text>
             <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
               {tab === "resolved"
@@ -292,7 +465,6 @@ export default function CircleDetailScreen() {
         }
       />
 
-      {/* FAB — only for members */}
       {circle.isMember && (
         <TouchableOpacity
           style={[
@@ -363,7 +535,12 @@ const styles = StyleSheet.create({
   },
   tabText: { fontSize: 12.5, fontWeight: "700" },
   listContent: { paddingHorizontal: 20, paddingBottom: 120 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
   requestCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -377,9 +554,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   categoryChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  categoryChipText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.2 },
+  categoryChipText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
   requestTime: { fontSize: 11, fontWeight: "500" },
-  requestTitle: { fontSize: 15, fontWeight: "700", lineHeight: 20, marginBottom: 6 },
+  requestTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginBottom: 6,
+  },
   requestDesc: { fontSize: 13, lineHeight: 18, marginBottom: 10 },
   requestFooter: {
     flexDirection: "row",
@@ -399,8 +585,36 @@ const styles = StyleSheet.create({
   replyCount: { flexDirection: "row", alignItems: "center", gap: 4 },
   replyCountText: { fontSize: 11.5, fontWeight: "600" },
   empty: { alignItems: "center", paddingVertical: 60, paddingHorizontal: 20 },
-  emptyTitle: { fontSize: 15, fontWeight: "700", marginTop: 12, marginBottom: 6 },
-  emptySub: { fontSize: 12.5, textAlign: "center", lineHeight: 18, maxWidth: 280 },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  emptySub: {
+    fontSize: 12.5,
+    textAlign: "center",
+    lineHeight: 18,
+    maxWidth: 280,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  retryBtnText: { fontSize: 13.5, fontWeight: "700" },
   fab: {
     position: "absolute",
     right: 20,

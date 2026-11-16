@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext } from "react";
+import React, { useState, useCallback, useContext, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Image,
 } from "react-native";
 import {
   useNavigation,
@@ -30,8 +31,29 @@ import {
   searchUsers,
 } from "../services/api";
 
+const SEARCH_DEBOUNCE_MS = 350;
+
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
+const webConfirm = (title, message, onConfirm) => {
+  if (Platform.OS === "web") {
+    if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: "Cancel", style: "cancel" },
+    { text: "Confirm", style: "destructive", onPress: onConfirm },
+  ]);
+};
+
 const timeAgo = (date) => {
-  const diff = Date.now() - new Date(date).getTime();
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const diff = Date.now() - d.getTime();
+  if (diff < 0) return "just now";
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -39,7 +61,7 @@ const timeAgo = (date) => {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(date).toLocaleDateString();
+  return d.toLocaleDateString();
 };
 
 export default function RequestDetailScreen() {
@@ -53,69 +75,120 @@ export default function RequestDetailScreen() {
 
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [recommendedUser, setRecommendedUser] = useState(null);
 
-  // Provider picker modal state
+  // Provider picker
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
 
-  const load = async () => {
-    try {
-      const res = await getCircleRequest(circleId, requestId);
-      if (res?.success) setRequest(res.data);
-    } catch (error) {
-      console.log("Load request error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const requestIdRef = useRef(0);
+  const searchRequestIdRef = useRef(0);
+  const searchTimeoutRef = useRef(null);
+  const isFirstFocusRef = useRef(true);
+
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!circleId || !requestId) {
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+      const id = ++requestIdRef.current;
+      if (!silent) {
+        setLoading(true);
+        setLoadError(false);
+        setNotFound(false);
+      }
+
+      try {
+        const res = await getCircleRequest(circleId, requestId);
+        if (id !== requestIdRef.current) return;
+
+        if (res?.success && res.data) {
+          setRequest(res.data);
+          setLoadError(false);
+          setNotFound(false);
+        } else if (res && res.success === false) {
+          setNotFound(true);
+        } else {
+          setLoadError(true);
+        }
+      } catch (error) {
+        if (id !== requestIdRef.current) return;
+        if (error?.response?.status === 404) setNotFound(true);
+        else setLoadError(true);
+      } finally {
+        if (id === requestIdRef.current && !silent) setLoading(false);
+      }
+    },
+    [circleId, requestId]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [circleId, requestId])
+      if (isFirstFocusRef.current) {
+        isFirstFocusRef.current = false;
+        load();
+      } else {
+        load({ silent: true });
+      }
+    }, [load])
   );
 
-  const isAuthor = request && user && String(request.author?._id) === String(user._id);
+  const isAuthor =
+    request && user && String(request.author?._id) === String(user._id);
+  const isResolved = !!request?.isResolved;
 
   const handleResolve = async () => {
+    if (resolving) return;
+    setResolving(true);
     try {
       await resolveCircleRequest(circleId, requestId);
-      await load();
+      await load({ silent: true });
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.message || "Could not update");
+      webAlert(
+        "Error",
+        error.response?.data?.message || "Could not update request"
+      );
+    } finally {
+      setResolving(false);
     }
   };
 
   const handleDeleteRequest = () => {
-    Alert.alert(
+    if (deleting) return;
+    webConfirm(
       "Delete Request",
       "Delete this request and all replies? This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteCircleRequest(circleId, requestId);
-              navigation.goBack();
-            } catch (error) {
-              Alert.alert("Error", error.response?.data?.message || "Could not delete");
-            }
-          },
-        },
-      ]
+      async () => {
+        setDeleting(true);
+        try {
+          await deleteCircleRequest(circleId, requestId);
+          navigation.goBack();
+        } catch (error) {
+          webAlert(
+            "Error",
+            error.response?.data?.message || "Could not delete request"
+          );
+        } finally {
+          setDeleting(false);
+        }
+      }
     );
   };
 
   const handleSubmitReply = async () => {
+    if (submitting) return;
     if (replyText.trim().length < 5) {
-      Alert.alert("Too short", "Reply must be at least 5 characters.");
+      webAlert("Too short", "Reply must be at least 5 characters.");
       return;
     }
     setSubmitting(true);
@@ -126,45 +199,65 @@ export default function RequestDetailScreen() {
       });
       setReplyText("");
       setRecommendedUser(null);
-      await load();
+      await load({ silent: true });
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.message || "Could not post reply");
+      webAlert(
+        "Couldn't post reply",
+        error.response?.data?.message || "Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDeleteReply = (reply) => {
-    Alert.alert("Delete Reply", "Remove this reply?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteCircleReply(circleId, requestId, reply._id);
-            await load();
-          } catch (error) {
-            Alert.alert("Error", error.response?.data?.message || "Could not delete");
-          }
-        },
-      },
-    ]);
+    webConfirm("Delete Reply", "Remove this reply?", async () => {
+      try {
+        await deleteCircleReply(circleId, requestId, reply._id);
+        await load({ silent: true });
+      } catch (error) {
+        webAlert(
+          "Error",
+          error.response?.data?.message || "Could not delete reply"
+        );
+      }
+    });
   };
 
-  const handleSearchUsers = async () => {
-    if (searchQuery.trim().length < 2) {
+  const handleSearchUsers = useCallback(async (query) => {
+    if (!query || query.trim().length < 2) {
       setSearchResults([]);
       return;
     }
+    const id = ++searchRequestIdRef.current;
     setSearching(true);
     try {
-      const res = await searchUsers(searchQuery.trim(), 10);
-      if (res?.success) setSearchResults(res.data || []);
+      const res = await searchUsers(query.trim(), 10);
+      if (id !== searchRequestIdRef.current) return;
+      if (res?.success) {
+        // Exclude self from results — you can't recommend yourself
+        const filtered = (res.data || []).filter(
+          (u) => String(u._id) !== String(user?._id || "")
+        );
+        setSearchResults(filtered);
+      }
+    } catch {
+      if (id === searchRequestIdRef.current) setSearchResults([]);
     } finally {
-      setSearching(false);
+      if (id === searchRequestIdRef.current) setSearching(false);
     }
-  };
+  }, [user?._id]);
+
+  // Debounced search
+  useEffect(() => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      handleSearchUsers(searchQuery);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [searchQuery, handleSearchUsers]);
 
   const pickRecommendedUser = (u) => {
     setRecommendedUser(u);
@@ -173,8 +266,25 @@ export default function RequestDetailScreen() {
     setSearchResults([]);
   };
 
+  const handleBack = () => {
+    if (replyText.trim().length > 0 || recommendedUser) {
+      webConfirm(
+        "Discard reply?",
+        "You've typed a reply. Leaving now will lose it.",
+        () => navigation.goBack()
+      );
+      return;
+    }
+    navigation.goBack();
+  };
+
+  // ===== RENDER REPLY =====
   const renderReply = ({ item }) => {
-    const isMyReply = user && String(item.author?._id) === String(user._id);
+    const isMyReply =
+      user && String(item.author?._id) === String(user._id);
+    const rec = item.recommendedUser;
+    const recInitial = rec?.name?.charAt(0)?.toUpperCase() || "U";
+
     return (
       <View
         style={[
@@ -190,7 +300,10 @@ export default function RequestDetailScreen() {
               </Text>
             </View>
             <View>
-              <Text style={[styles.authorName, { color: colors.textPrimary }]}>
+              <Text
+                style={[styles.authorName, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
                 {item.author?.name || "Someone"}
               </Text>
               <Text style={[styles.replyTime, { color: colors.textTertiary }]}>
@@ -199,7 +312,10 @@ export default function RequestDetailScreen() {
             </View>
           </View>
           {isMyReply && (
-            <TouchableOpacity onPress={() => handleDeleteReply(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={() => handleDeleteReply(item)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <Ionicons name="trash-outline" size={16} color={colors.danger} />
             </TouchableOpacity>
           )}
@@ -209,57 +325,100 @@ export default function RequestDetailScreen() {
           {item.text}
         </Text>
 
-        {item.recommendedUser ? (
+        {/* FIXED: proper image rendering */}
+        {rec && rec._id ? (
           <TouchableOpacity
-            style={[styles.providerCard, { backgroundColor: colors.primaryLight, borderColor: colors.primary + "40" }]}
+            style={[
+              styles.providerCard,
+              {
+                backgroundColor: colors.primaryLight,
+                borderColor: colors.primary + "40",
+              },
+            ]}
             onPress={() =>
-              navigation.navigate("UsersProfile", { userId: item.recommendedUser._id })
+              navigation.navigate("UsersProfile", { userId: rec._id })
             }
             activeOpacity={0.85}
           >
-            {item.recommendedUser.profileImage ? (
-              <View style={{ width: 36, height: 36, borderRadius: 18, overflow: "hidden" }}>
-                <Text> </Text>
-              </View>
+            {rec.profileImage ? (
+              <Image
+                source={{ uri: rec.profileImage }}
+                style={styles.providerAvatarImage}
+              />
             ) : (
-              <View style={[styles.providerAvatar, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.providerAvatarText, { color: colors.textInverse }]}>
-                  {item.recommendedUser.name?.charAt(0)?.toUpperCase() || "U"}
+              <View
+                style={[styles.providerAvatar, { backgroundColor: colors.primary }]}
+              >
+                <Text
+                  style={[
+                    styles.providerAvatarText,
+                    { color: colors.textInverse },
+                  ]}
+                >
+                  {recInitial}
                 </Text>
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <Text style={[styles.providerName, { color: colors.textPrimary }]} numberOfLines={1}>
-                  {item.recommendedUser.name}
+              <View style={styles.providerNameRow}>
+                <Text
+                  style={[styles.providerName, { color: colors.textPrimary }]}
+                  numberOfLines={1}
+                >
+                  {rec.name}
                 </Text>
-                {item.recommendedUser.isVerified && (
-                  <Ionicons name="checkmark-circle" size={13} color={colors.primary} />
+                {rec.isVerified && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={13}
+                    color={colors.primary}
+                  />
                 )}
               </View>
-              <Text style={[styles.providerMeta, { color: colors.textTertiary }]}>
-                ⭐ {Number(item.recommendedUser.rating || 0).toFixed(1)} ·{" "}
-                {item.recommendedUser.jobsCompleted || 0} jobs
-              </Text>
+              <View style={styles.providerMetaRow}>
+                <Ionicons name="star" size={11} color="#F59E0B" />
+                <Text style={[styles.providerMeta, { color: colors.textTertiary }]}>
+                  {Number(rec.rating || 0).toFixed(1)} ·{" "}
+                  {rec.jobsCompleted || 0} jobs
+                </Text>
+              </View>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.primary}
+            />
           </TouchableOpacity>
         ) : null}
       </View>
     );
   };
 
+  // ===== INITIAL LOADING =====
   if (loading) {
     return (
-      <View style={[styles.safeArea, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
+      <View
+        style={[
+          styles.safeArea,
+          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
+        ]}
+      >
         <View style={styles.header}>
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
-            onPress={() => navigation.goBack()}
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
+            onPress={handleBack}
           >
             <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Request</Text>
+          <Text
+            style={[styles.headerTitle, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
+            Request
+          </Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.center}>
@@ -269,21 +428,111 @@ export default function RequestDetailScreen() {
     );
   }
 
-  if (!request) {
+  // ===== NOT FOUND =====
+  if (notFound) {
     return (
-      <View style={[styles.safeArea, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
+      <View
+        style={[
+          styles.safeArea,
+          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
+        ]}
+      >
         <View style={styles.header}>
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
             onPress={() => navigation.goBack()}
           >
             <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Request</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+            Request
+          </Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.center}>
-          <Text style={{ color: colors.textPrimary }}>Request not found.</Text>
+          <View
+            style={[
+              styles.errorIconWrap,
+              { backgroundColor: colors.inputBackground },
+            ]}
+          >
+            <Ionicons
+              name="chatbubbles-outline"
+              size={32}
+              color={colors.textTertiary}
+            />
+          </View>
+          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>
+            Request not found
+          </Text>
+          <Text style={[styles.errorSub, { color: colors.textTertiary }]}>
+            This request may have been deleted.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ===== ERROR =====
+  if (loadError || !request) {
+    return (
+      <View
+        style={[
+          styles.safeArea,
+          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
+        ]}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+            Request
+          </Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.center}>
+          <View
+            style={[
+              styles.errorIconWrap,
+              { backgroundColor: colors.danger + "15" },
+            ]}
+          >
+            <Ionicons
+              name="cloud-offline-outline"
+              size={32}
+              color={colors.danger}
+            />
+          </View>
+          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>
+            Couldn't load request
+          </Text>
+          <Text style={[styles.errorSub, { color: colors.textTertiary }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setLoadError(false);
+              setLoading(true);
+              load();
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={16} color={colors.textInverse} />
+            <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+              Retry
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -296,20 +545,38 @@ export default function RequestDetailScreen() {
     >
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
-          onPress={() => navigation.goBack()}
+          style={[
+            styles.backButton,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
+          onPress={handleBack}
         >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+        <Text
+          style={[styles.headerTitle, { color: colors.textPrimary }]}
+          numberOfLines={1}
+        >
           {circleName || "Request"}
         </Text>
         {isAuthor ? (
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+            style={[
+              styles.backButton,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.inputBorder,
+                opacity: deleting ? 0.5 : 1,
+              },
+            ]}
             onPress={handleDeleteRequest}
+            disabled={deleting}
           >
-            <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            {deleting ? (
+              <ActivityIndicator size="small" color={colors.danger} />
+            ) : (
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            )}
           </TouchableOpacity>
         ) : (
           <View style={{ width: 40 }} />
@@ -322,27 +589,50 @@ export default function RequestDetailScreen() {
         renderItem={renderReply}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         ListHeaderComponent={
           <View
             style={[
               styles.requestCard,
               {
                 backgroundColor: colors.card,
-                borderColor: request.isResolved ? colors.success + "40" : colors.inputBorder,
+                borderColor: isResolved
+                  ? colors.success + "40"
+                  : colors.inputBorder,
                 borderWidth: 1,
               },
             ]}
           >
             <View style={styles.requestTopRow}>
-              <View style={[styles.categoryChip, { backgroundColor: colors.primaryLight }]}>
-                <Text style={[styles.categoryChipText, { color: colors.primary }]}>
+              <View
+                style={[
+                  styles.categoryChip,
+                  { backgroundColor: colors.primaryLight },
+                ]}
+              >
+                <Text
+                  style={[styles.categoryChipText, { color: colors.primary }]}
+                >
                   {request.category}
                 </Text>
               </View>
-              {request.isResolved && (
-                <View style={[styles.resolvedBadge, { backgroundColor: colors.success + "15" }]}>
-                  <Ionicons name="checkmark-circle" size={12} color={colors.success} />
-                  <Text style={[styles.resolvedText, { color: colors.success }]}>Resolved</Text>
+              {isResolved && (
+                <View
+                  style={[
+                    styles.resolvedBadge,
+                    { backgroundColor: colors.success + "15" },
+                  ]}
+                >
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={12}
+                    color={colors.success}
+                  />
+                  <Text
+                    style={[styles.resolvedText, { color: colors.success }]}
+                  >
+                    Resolved
+                  </Text>
                 </View>
               )}
             </View>
@@ -352,66 +642,118 @@ export default function RequestDetailScreen() {
             </Text>
 
             {request.description ? (
-              <Text style={[styles.requestDesc, { color: colors.textSecondary }]}>
+              <Text
+                style={[styles.requestDesc, { color: colors.textSecondary }]}
+              >
                 {request.description}
               </Text>
             ) : null}
 
             <View style={styles.requestAuthor}>
               <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.avatarText, { color: colors.textInverse }]}>
+                <Text
+                  style={[styles.avatarText, { color: colors.textInverse }]}
+                >
                   {request.author?.name?.charAt(0)?.toUpperCase() || "U"}
                 </Text>
               </View>
               <View>
-                <Text style={[styles.authorName, { color: colors.textPrimary }]}>
+                <Text
+                  style={[styles.authorName, { color: colors.textPrimary }]}
+                  numberOfLines={1}
+                >
                   {request.author?.name || "Someone"}
                 </Text>
-                <Text style={[styles.replyTime, { color: colors.textTertiary }]}>
+                <Text
+                  style={[styles.replyTime, { color: colors.textTertiary }]}
+                >
                   {timeAgo(request.createdAt)} · {request.replyCount} repl
                   {request.replyCount === 1 ? "y" : "ies"}
                 </Text>
               </View>
             </View>
 
-            {isAuthor && !request.isResolved && (
+            {isAuthor && !isResolved && (
               <TouchableOpacity
-                style={[styles.resolveBtn, { backgroundColor: colors.success }]}
+                style={[
+                  styles.resolveBtn,
+                  {
+                    backgroundColor: colors.success,
+                    opacity: resolving ? 0.7 : 1,
+                  },
+                ]}
                 onPress={handleResolve}
+                disabled={resolving}
                 activeOpacity={0.85}
               >
-                <Ionicons name="checkmark-circle-outline" size={16} color={colors.textInverse} />
-                <Text style={[styles.resolveBtnText, { color: colors.textInverse }]}>
-                  Mark as Resolved
-                </Text>
+                {resolving ? (
+                  <ActivityIndicator size="small" color={colors.textInverse} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="checkmark-circle-outline"
+                      size={16}
+                      color={colors.textInverse}
+                    />
+                    <Text
+                      style={[
+                        styles.resolveBtnText,
+                        { color: colors.textInverse },
+                      ]}
+                    >
+                      Mark as Resolved
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             )}
 
-            {isAuthor && request.isResolved && (
+            {isAuthor && isResolved && (
               <TouchableOpacity
-                style={[styles.reopenBtn, { borderColor: colors.inputBorder }]}
+                style={[
+                  styles.reopenBtn,
+                  {
+                    borderColor: colors.inputBorder,
+                    opacity: resolving ? 0.5 : 1,
+                  },
+                ]}
                 onPress={handleResolve}
+                disabled={resolving}
                 activeOpacity={0.85}
               >
-                <Text style={[styles.reopenBtnText, { color: colors.textSecondary }]}>
-                  Reopen Request
-                </Text>
+                {resolving ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.reopenBtnText,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Reopen Request
+                  </Text>
+                )}
               </TouchableOpacity>
             )}
           </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="chatbubbles-outline" size={36} color={colors.textTertiary} />
+            <Ionicons
+              name="chatbubbles-outline"
+              size={36}
+              color={colors.textTertiary}
+            />
             <Text style={[styles.emptyText, { color: colors.textTertiary }]}>
-              No replies yet. Be the first to recommend someone.
+              {isResolved
+                ? "This request is resolved. No replies were posted."
+                : "No replies yet. Be the first to recommend someone."}
             </Text>
           </View>
         }
       />
 
-      {/* Reply composer — only if not author and not resolved */}
-      {!isAuthor && !request.isResolved && (
+      {!isAuthor && !isResolved && (
         <View
           style={[
             styles.composer,
@@ -423,13 +765,28 @@ export default function RequestDetailScreen() {
           ]}
         >
           {recommendedUser && (
-            <View style={[styles.recommendedPreview, { backgroundColor: colors.primaryLight }]}>
+            <View
+              style={[
+                styles.recommendedPreview,
+                { backgroundColor: colors.primaryLight },
+              ]}
+            >
               <Ionicons name="person-circle" size={18} color={colors.primary} />
-              <Text style={[styles.recommendedPreviewText, { color: colors.primary }]} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.recommendedPreviewText,
+                  { color: colors.primary },
+                ]}
+                numberOfLines={1}
+              >
                 Recommending: {recommendedUser.name}
               </Text>
               <TouchableOpacity onPress={() => setRecommendedUser(null)}>
-                <Ionicons name="close-circle" size={18} color={colors.primary} />
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={colors.primary}
+                />
               </TouchableOpacity>
             </View>
           )}
@@ -437,13 +794,22 @@ export default function RequestDetailScreen() {
             <TouchableOpacity
               style={[styles.attachBtn, { borderColor: colors.inputBorder }]}
               onPress={() => setPickerOpen(true)}
+              disabled={submitting}
             >
-              <Ionicons name="person-add-outline" size={18} color={colors.textSecondary} />
+              <Ionicons
+                name="person-add-outline"
+                size={18}
+                color={colors.textSecondary}
+              />
             </TouchableOpacity>
             <TextInput
               style={[
                 styles.replyInput,
-                { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.textPrimary },
+                {
+                  backgroundColor: colors.inputBackground,
+                  borderColor: colors.inputBorder,
+                  color: colors.textPrimary,
+                },
               ]}
               value={replyText}
               onChangeText={setReplyText}
@@ -451,11 +817,15 @@ export default function RequestDetailScreen() {
               placeholderTextColor={colors.textTertiary}
               multiline
               maxLength={500}
+              editable={!submitting}
             />
             <TouchableOpacity
               style={[
                 styles.sendBtn,
-                { backgroundColor: colors.primary, opacity: !replyText.trim() || submitting ? 0.5 : 1 },
+                {
+                  backgroundColor: colors.primary,
+                  opacity: !replyText.trim() || submitting ? 0.5 : 1,
+                },
               ]}
               onPress={handleSubmitReply}
               disabled={!replyText.trim() || submitting}
@@ -470,7 +840,7 @@ export default function RequestDetailScreen() {
         </View>
       )}
 
-      {/* Provider picker modal */}
+      {/* PROVIDER PICKER MODAL */}
       <Modal
         visible={pickerOpen}
         animationType="slide"
@@ -478,9 +848,18 @@ export default function RequestDetailScreen() {
         onRequestClose={() => setPickerOpen(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.inputBorder }]}>
-              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+          <View
+            style={[styles.modalContainer, { backgroundColor: colors.card }]}
+          >
+            <View
+              style={[
+                styles.modalHeader,
+                { borderBottomColor: colors.inputBorder },
+              ]}
+            >
+              <Text
+                style={[styles.modalTitle, { color: colors.textPrimary }]}
+              >
                 Recommend a Provider
               </Text>
               <TouchableOpacity onPress={() => setPickerOpen(false)}>
@@ -491,7 +870,10 @@ export default function RequestDetailScreen() {
             <View
               style={[
                 styles.searchWrap,
-                { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
+                {
+                  backgroundColor: colors.inputBackground,
+                  borderColor: colors.inputBorder,
+                },
               ]}
             >
               <Ionicons name="search" size={16} color={colors.textTertiary} />
@@ -501,60 +883,96 @@ export default function RequestDetailScreen() {
                 onChangeText={setSearchQuery}
                 placeholder="Search by name..."
                 placeholderTextColor={colors.textTertiary}
-                onSubmitEditing={handleSearchUsers}
+                autoCorrect={false}
                 returnKeyType="search"
               />
-              <TouchableOpacity onPress={handleSearchUsers}>
-                <Text style={[styles.searchBtnText, { color: colors.primary }]}>Search</Text>
-              </TouchableOpacity>
+              {searching && (
+                <ActivityIndicator size="small" color={colors.primary} />
+              )}
             </View>
 
-            {searching ? (
-              <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 20 }} />
-            ) : (
-              <FlatList
-                data={searchResults}
-                keyExtractor={(item) => item._id}
-                style={{ maxHeight: 400 }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[styles.resultRow, { borderBottomColor: colors.inputBorder }]}
-                    onPress={() => pickRecommendedUser(item)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.resultAvatar, { backgroundColor: colors.primary }]}>
-                      <Text style={[styles.resultAvatarText, { color: colors.textInverse }]}>
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item._id}
+              style={{ maxHeight: 400 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.resultRow,
+                    { borderBottomColor: colors.inputBorder },
+                  ]}
+                  onPress={() => pickRecommendedUser(item)}
+                  activeOpacity={0.85}
+                >
+                  {item.profileImage ? (
+                    <Image
+                      source={{ uri: item.profileImage }}
+                      style={styles.resultAvatarImage}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.resultAvatar,
+                        { backgroundColor: colors.primary },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.resultAvatarText,
+                          { color: colors.textInverse },
+                        ]}
+                      >
                         {item.name?.charAt(0)?.toUpperCase() || "U"}
                       </Text>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        <Text style={[styles.resultName, { color: colors.textPrimary }]} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        {item.isVerified && (
-                          <Ionicons name="checkmark-circle" size={13} color={colors.primary} />
-                        )}
-                      </View>
-                      <Text style={[styles.resultMeta, { color: colors.textTertiary }]}>
-                        ⭐ {Number(item.rating || 0).toFixed(1)}
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.resultNameRow}>
+                      <Text
+                        style={[
+                          styles.resultName,
+                          { color: colors.textPrimary },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {item.name}
+                      </Text>
+                      {item.isVerified && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={13}
+                          color={colors.primary}
+                        />
+                      )}
+                    </View>
+                    <View style={styles.resultMetaRow}>
+                      <Ionicons name="star" size={11} color="#F59E0B" />
+                      <Text
+                        style={[
+                          styles.resultMeta,
+                          { color: colors.textTertiary },
+                        ]}
+                      >
+                        {Number(item.rating || 0).toFixed(1)}
                       </Text>
                     </View>
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  searchQuery.trim().length < 2 ? (
-                    <Text style={[styles.emptySearch, { color: colors.textTertiary }]}>
-                      Type at least 2 characters to search.
-                    </Text>
-                  ) : (
-                    <Text style={[styles.emptySearch, { color: colors.textTertiary }]}>
-                      No matches found.
-                    </Text>
-                  )
-                }
-              />
-            )}
+                  </View>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text
+                  style={[styles.emptySearch, { color: colors.textTertiary }]}
+                >
+                  {searchQuery.trim().length < 2
+                    ? "Type at least 2 characters to search."
+                    : searching
+                    ? "Searching..."
+                    : "No matches found."}
+                </Text>
+              }
+            />
           </View>
         </View>
       </Modal>
@@ -581,10 +999,52 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   headerTitle: { fontSize: 18, fontWeight: "800", flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+
+  errorIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorSub: {
+    fontSize: 13.5,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  retryBtnText: { fontSize: 13.5, fontWeight: "700" },
+
   listContent: { paddingHorizontal: 20, paddingBottom: 20 },
   requestCard: { borderRadius: 18, padding: 16, marginBottom: 16 },
-  requestTopRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  requestTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
   categoryChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   categoryChipText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.2 },
   resolvedBadge: {
@@ -596,9 +1056,19 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   resolvedText: { fontSize: 10.5, fontWeight: "800", letterSpacing: 0.2 },
-  requestTitle: { fontSize: 17, fontWeight: "800", lineHeight: 23, marginBottom: 8 },
+  requestTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    lineHeight: 23,
+    marginBottom: 8,
+  },
   requestDesc: { fontSize: 13.5, lineHeight: 19, marginBottom: 14 },
-  requestAuthor: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  requestAuthor: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+  },
   avatar: {
     width: 30,
     height: 30,
@@ -627,6 +1097,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   reopenBtnText: { fontSize: 13, fontWeight: "600" },
+
   replyCard: { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 10 },
   replyHeader: {
     flexDirection: "row",
@@ -636,6 +1107,7 @@ const styles = StyleSheet.create({
   },
   replyAuthor: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
   replyText: { fontSize: 14, lineHeight: 20, marginBottom: 10 },
+
   providerCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -652,11 +1124,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  providerAvatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
   providerAvatarText: { fontSize: 13, fontWeight: "800" },
-  providerName: { fontSize: 13.5, fontWeight: "700" },
-  providerMeta: { fontSize: 11, fontWeight: "500", marginTop: 2 },
-  empty: { alignItems: "center", paddingVertical: 40 },
-  emptyText: { fontSize: 12.5, marginTop: 10, textAlign: "center", maxWidth: 260 },
+  providerNameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  providerName: { fontSize: 13.5, fontWeight: "700", flexShrink: 1 },
+  providerMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 2,
+  },
+  providerMeta: { fontSize: 11, fontWeight: "500" },
+
+  empty: { alignItems: "center", paddingVertical: 40, paddingHorizontal: 20 },
+  emptyText: {
+    fontSize: 12.5,
+    marginTop: 10,
+    textAlign: "center",
+    maxWidth: 280,
+    lineHeight: 18,
+  },
+
   composer: {
     paddingHorizontal: 14,
     paddingTop: 10,
@@ -698,6 +1190,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -728,8 +1221,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12,
   },
-  searchInput: { flex: 1, fontSize: 14, fontWeight: "500", paddingVertical: 0 },
-  searchBtnText: { fontSize: 13, fontWeight: "700" },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+    paddingVertical: 0,
+  },
   resultRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -745,9 +1242,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  resultAvatarImage: { width: 38, height: 38, borderRadius: 19 },
   resultAvatarText: { fontSize: 14, fontWeight: "800" },
-  resultName: { fontSize: 14, fontWeight: "700" },
-  resultMeta: { fontSize: 11.5, fontWeight: "500", marginTop: 1 },
+  resultNameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  resultName: { fontSize: 14, fontWeight: "700", flexShrink: 1 },
+  resultMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 1,
+  },
+  resultMeta: { fontSize: 11.5, fontWeight: "500" },
   emptySearch: {
     fontSize: 13,
     textAlign: "center",

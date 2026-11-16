@@ -8,9 +8,11 @@ import {
   View,
   Animated,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Image,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -19,53 +21,86 @@ import { AuthContext } from "../../context/AuthContext";
 import { loginUser } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
 export default function Landing({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const { login } = useContext(AuthContext);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   const buttonScale = useRef(new Animated.Value(1)).current;
+
   // Check for stored restriction info (user got banned while logged in)
   useEffect(() => {
     const checkRestriction = async () => {
       try {
         const stored = await AsyncStorage.getItem("restrictionInfo");
-        if (stored) {
-          await AsyncStorage.removeItem("restrictionInfo");
-          const restriction = JSON.parse(stored).restriction || JSON.parse(stored);
+        if (!stored) return;
+        await AsyncStorage.removeItem("restrictionInfo");
+
+        let parsed;
+        try {
+          parsed = JSON.parse(stored);
+        } catch {
+          return; // Malformed storage — silently ignore
+        }
+
+        // Accept either { restriction: {...} } OR the raw restriction object
+        const restriction = parsed?.restriction || parsed;
+        if (
+          restriction &&
+          typeof restriction === "object" &&
+          (restriction.type === "ban" || restriction.type === "suspension")
+        ) {
           navigation.navigate("AccountRestricted", { restriction });
         }
-      } catch (e) {
-        console.log("Restriction check error:", e);
+      } catch {
+        // Silently fail — restriction check shouldn't block login
       }
     };
     checkRestriction();
   }, [navigation]);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert("Error", "All fields required");
+    if (submitting) return;
+
+    Keyboard.dismiss();
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      webAlert("Missing info", "Please enter both email and password.");
       return;
     }
 
+    setSubmitting(true);
     try {
-      const response = await loginUser({ email, password });
+      const response = await loginUser({
+        email: trimmedEmail,
+        password,
+      });
 
+      // Success path — clean single check
       if (response.token && response.user) {
-        await AsyncStorage.removeItem("restrictionInfo"); // safety net
+        // Clear any stale restriction info from previous session
+        try {
+          await AsyncStorage.removeItem("restrictionInfo");
+        } catch {}
         login(response.token, response.user);
         return;
       }
-      // Success: token + user returned
-      if (response.token && response.user) {
-        login(response.token, response.user);
-        return;
-      }
-      // Banned or suspended → show restriction screen
-      if (response.code === "ACCOUNT_BANNED" || response.code === "ACCOUNT_SUSPENDED") {
+
+      // Banned or suspended
+      if (
+        response.code === "ACCOUNT_BANNED" ||
+        response.code === "ACCOUNT_SUSPENDED"
+      ) {
         navigation.navigate("AccountRestricted", {
           restriction: response.restriction || {
             type: response.code === "ACCOUNT_BANNED" ? "ban" : "suspension",
@@ -75,22 +110,24 @@ export default function Landing({ navigation }) {
         return;
       }
 
-      // Unverified email → go to pending screen
-      if (
-        response.success === false &&
-        response.message &&
-        response.message.toLowerCase().includes("verify")
-      ) {
-        Alert.alert("Verification Required", response.message);
-        navigation.navigate("VerificationPending", { email });
+      // Unverified email — backend message mentions "verify"
+      const message = response.message || "";
+      if (/verify/i.test(message)) {
+        navigation.navigate("VerificationPending", { email: trimmedEmail });
         return;
       }
 
-      // Any other failure
-      Alert.alert("Error", response.message || "Invalid credentials");
+      // Generic failure
+      webAlert("Login failed", message || "Invalid credentials.");
     } catch (error) {
-      console.log(error);
-      Alert.alert("Error", "Server not reachable");
+      webAlert(
+        "Error",
+        error.response?.data?.message ||
+          error.message ||
+          "Server not reachable. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -118,7 +155,7 @@ export default function Landing({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ===== BRAND HEADER ===== */}
+          {/* BRAND HEADER */}
           <View style={styles.brand}>
             <Image
               source={require("../../assets/images/street_logo.png")}
@@ -133,7 +170,7 @@ export default function Landing({ navigation }) {
             </Text>
           </View>
 
-          {/* ===== LOGIN CARD ===== */}
+          {/* LOGIN CARD */}
           <View
             style={[
               styles.card,
@@ -176,6 +213,7 @@ export default function Landing({ navigation }) {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoCorrect={false}
+                editable={!submitting}
               />
             </View>
 
@@ -202,6 +240,11 @@ export default function Landing({ navigation }) {
                 style={[styles.input, { color: colors.textPrimary }]}
                 value={password}
                 onChangeText={setPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!submitting}
+                onSubmitEditing={handleLogin}
+                returnKeyType="go"
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
@@ -217,24 +260,40 @@ export default function Landing({ navigation }) {
             </View>
 
             {/* Login button */}
-            <Animated.View style={{ transform: [{ scale: buttonScale }], width: "100%" }}>
+            <Animated.View
+              style={{ transform: [{ scale: buttonScale }], width: "100%" }}
+            >
               <TouchableOpacity
                 style={[
                   styles.button,
                   {
                     backgroundColor: colors.primary,
                     shadowColor: colors.primary,
+                    opacity: submitting ? 0.7 : 1,
                   },
                 ]}
                 onPress={handleLogin}
                 onPressIn={animateButtonIn}
                 onPressOut={animateButtonOut}
                 activeOpacity={0.9}
+                disabled={submitting}
               >
-                <Text style={[styles.buttonText, { color: colors.textInverse }]}>
-                  Login
-                </Text>
-                <Ionicons name="arrow-forward" size={18} color={colors.textInverse} />
+                {submitting ? (
+                  <ActivityIndicator color={colors.textInverse} size="small" />
+                ) : (
+                  <>
+                    <Text
+                      style={[styles.buttonText, { color: colors.textInverse }]}
+                    >
+                      Login
+                    </Text>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={18}
+                      color={colors.textInverse}
+                    />
+                  </>
+                )}
               </TouchableOpacity>
             </Animated.View>
 
@@ -243,6 +302,7 @@ export default function Landing({ navigation }) {
               style={styles.registerLink}
               onPress={() => navigation.navigate("Register")}
               activeOpacity={0.7}
+              disabled={submitting}
             >
               <Text style={[styles.registerText, { color: colors.textTertiary }]}>
                 Don't have an account?{" "}
@@ -260,9 +320,6 @@ export default function Landing({ navigation }) {
   );
 }
 
-// ========================================
-// STYLES
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboardView: { flex: 1 },
@@ -272,7 +329,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
 
-  // ===== BRAND =====
   brand: {
     alignItems: "center",
     marginBottom: 26,
@@ -294,7 +350,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== CARD =====
   card: {
     borderRadius: 24,
     borderWidth: 1,
@@ -320,7 +375,6 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
 
-  // ===== INPUTS =====
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -345,7 +399,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 
-  // ===== BUTTON =====
   button: {
     flexDirection: "row",
     alignItems: "center",
@@ -366,7 +419,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== FOOTER LINK =====
   registerLink: {
     marginTop: 18,
     paddingVertical: 6,

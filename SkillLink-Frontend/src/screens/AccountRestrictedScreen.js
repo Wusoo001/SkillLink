@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,35 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Platform,
+  Keyboard,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { submitAppeal, checkRestriction } from "../services/api";
+
+const MIN_REASON_LENGTH = 20;
+
+const webAlert = (title, message, onOK) => {
+  if (Platform.OS === "web") {
+    window.alert(`${title}\n\n${message || ""}`);
+    if (onOK) onOK();
+  } else {
+    Alert.alert(title, message || "", onOK ? [{ text: "OK", onPress: onOK }] : undefined);
+  }
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
 
 export default function AccountRestrictedScreen({ navigation, route }) {
   const { colors } = useTheme();
@@ -25,72 +49,175 @@ export default function AccountRestrictedScreen({ navigation, route }) {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [inlineError, setInlineError] = useState("");
   const [appeal, setAppeal] = useState(restriction.appeal || null);
   const [currentRestriction, setCurrentRestriction] = useState(restriction);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const hasRestriction =
+    !!currentRestriction?.type &&
+    (currentRestriction.type === "ban" || currentRestriction.type === "suspension");
   const isBanned = currentRestriction.type === "ban";
-  const canAppeal = !appeal || appeal.status === "rejected";
+  const canAppeal =
+    hasRestriction && (!appeal || appeal.status === "rejected");
+
+  const goToLogin = () => {
+    // Use reset so user can't back into the restricted screen
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Landing" }],
+    });
+  };
 
   const handleCheckStatus = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert("Error", "Enter email and password to check status");
+    if (checking || submitting) return;
+
+    Keyboard.dismiss();
+    setInlineError("");
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      setInlineError("Enter your email and password.");
       return;
     }
+
     setChecking(true);
     try {
-      const res = await checkRestriction({ email: email.trim(), password });
+      const res = await checkRestriction({ email: trimmedEmail, password });
+      if (!isMountedRef.current) return;
+
       if (res.success && res.restricted === false) {
-        Alert.alert(
+        webAlert(
           "Restriction Lifted",
           "Your account is no longer restricted. Please sign in again.",
-          [{ text: "Sign In", onPress: () => navigation.navigate("Landing") }]
+          goToLogin
         );
       } else if (res.success && res.restricted === true) {
-        setCurrentRestriction(res.restriction);
-        setAppeal(res.restriction.appeal);
-        Alert.alert("Still Restricted", "Your account is still restricted.");
+        setCurrentRestriction(res.restriction || currentRestriction);
+        setAppeal(res.restriction?.appeal || null);
+        webAlert("Still Restricted", "Your account is still restricted.");
       } else {
-        Alert.alert("Error", res.message || "Could not verify status");
+        setInlineError(res.message || "Could not verify your status.");
       }
     } catch (err) {
-      Alert.alert("Error", "Network error");
+      if (!isMountedRef.current) return;
+      setInlineError(
+        err?.response?.data?.message || "Network error. Please try again."
+      );
     } finally {
-      setChecking(false);
+      if (isMountedRef.current) setChecking(false);
     }
   };
 
   const handleSubmitAppeal = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert("Error", "Email and password are required");
+    if (submitting || checking) return;
+
+    Keyboard.dismiss();
+    setInlineError("");
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) {
+      setInlineError("Enter your email and password first.");
       return;
     }
-    if (reason.trim().length < 20) {
-      Alert.alert("Error", "Please write at least 20 characters");
+    if (reason.trim().length < MIN_REASON_LENGTH) {
+      setInlineError(
+        `Please write at least ${MIN_REASON_LENGTH} characters explaining why.`
+      );
       return;
     }
 
     setSubmitting(true);
     try {
       const res = await submitAppeal({
-        email: email.trim(),
+        email: trimmedEmail,
         password,
         reason: reason.trim(),
       });
+      if (!isMountedRef.current) return;
+
       if (res.success) {
         setAppeal(res.data);
-        Alert.alert(
+        setReason("");
+        webAlert(
           "Appeal Submitted",
           "Your appeal has been submitted. You'll receive a response within 10 working days."
         );
       } else {
-        Alert.alert("Could Not Submit", res.message || "Please try again.");
+        setInlineError(res.message || "Could not submit appeal. Try again.");
       }
     } catch (err) {
-      Alert.alert("Error", "Network error. Please try again.");
+      if (!isMountedRef.current) return;
+      setInlineError(
+        err?.response?.data?.message || "Network error. Please try again."
+      );
     } finally {
-      setSubmitting(false);
+      if (isMountedRef.current) setSubmitting(false);
     }
   };
+
+  // ===== MISSING RESTRICTION FALLBACK =====
+  if (!hasRestriction) {
+    return (
+      <View
+        style={[
+          styles.safeArea,
+          {
+            backgroundColor: colors.background,
+            paddingTop: insets.top + 24,
+            paddingBottom: insets.bottom + 24,
+          },
+        ]}
+      >
+        <View style={styles.iconWrap}>
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: colors.warning + "18" },
+            ]}
+          >
+            <Ionicons
+              name="alert-circle-outline"
+              size={44}
+              color={colors.warning}
+            />
+          </View>
+        </View>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>
+          Account Restricted
+        </Text>
+        <Text style={[styles.helper, { color: colors.textTertiary, textAlign: "center" }]}>
+          We couldn't load the restriction details. Try logging in again.
+        </Text>
+        <TouchableOpacity
+          style={[styles.submitBtn, { backgroundColor: colors.primary, marginTop: 24 }]}
+          onPress={goToLogin}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="arrow-back" size={18} color={colors.textInverse} />
+          <Text style={[styles.submitText, { color: colors.textInverse }]}>
+            Back to Login
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const reasonLength = reason.length;
+  const reasonCountColor =
+    reasonLength === 0
+      ? colors.textTertiary
+      : reason.trim().length < MIN_REASON_LENGTH
+      ? colors.warning
+      : colors.success;
+
+  const modalBusy = checking || submitting;
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -100,12 +227,17 @@ export default function AccountRestrictedScreen({ navigation, route }) {
           { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.iconWrap}>
           <View
             style={[
               styles.iconCircle,
-              { backgroundColor: isBanned ? colors.danger + "18" : colors.warning + "18" },
+              {
+                backgroundColor: isBanned
+                  ? colors.danger + "18"
+                  : colors.warning + "18",
+              },
             ]}
           >
             <Ionicons
@@ -120,43 +252,59 @@ export default function AccountRestrictedScreen({ navigation, route }) {
           {isBanned ? "Account Banned" : "Account Suspended"}
         </Text>
 
-        {/* Reason card */}
+        {/* REASON CARD */}
         <View
           style={[
             styles.card,
             { backgroundColor: colors.card, borderColor: colors.inputBorder },
           ]}
         >
-          <Text style={[styles.cardLabel, { color: colors.textTertiary }]}>REASON</Text>
-          <Text style={[styles.cardValue, { color: colors.textPrimary }]}>
-            {currentRestriction.reason || "No reason provided"}
-          </Text>
-
-          {isBanned && currentRestriction.bannedAt && (
+          {currentRestriction.reason ? (
             <>
-              <Text style={[styles.cardLabel, { color: colors.textTertiary, marginTop: 14 }]}>
+              <Text style={[styles.cardLabel, { color: colors.textTertiary }]}>
+                REASON
+              </Text>
+              <Text style={[styles.cardValue, { color: colors.textPrimary }]}>
+                {currentRestriction.reason}
+              </Text>
+            </>
+          ) : null}
+
+          {isBanned && currentRestriction.bannedAt ? (
+            <>
+              <Text
+                style={[
+                  styles.cardLabel,
+                  { color: colors.textTertiary, marginTop: 14 },
+                ]}
+              >
                 BANNED ON
               </Text>
               <Text style={[styles.cardValue, { color: colors.textPrimary }]}>
-                {new Date(currentRestriction.bannedAt).toLocaleDateString()}
+                {formatDate(currentRestriction.bannedAt)}
               </Text>
             </>
-          )}
+          ) : null}
 
-          {!isBanned && currentRestriction.suspendedUntil && (
+          {!isBanned && currentRestriction.suspendedUntil ? (
             <>
-              <Text style={[styles.cardLabel, { color: colors.textTertiary, marginTop: 14 }]}>
+              <Text
+                style={[
+                  styles.cardLabel,
+                  { color: colors.textTertiary, marginTop: 14 },
+                ]}
+              >
                 SUSPENDED UNTIL
               </Text>
               <Text style={[styles.cardValue, { color: colors.textPrimary }]}>
-                {new Date(currentRestriction.suspendedUntil).toLocaleDateString()}
+                {formatDate(currentRestriction.suspendedUntil)}
               </Text>
             </>
-          )}
+          ) : null}
         </View>
 
-        {/* Existing appeal status */}
-        {appeal && (
+        {/* APPEAL STATUS */}
+        {appeal ? (
           <View
             style={[
               styles.card,
@@ -196,28 +344,57 @@ export default function AccountRestrictedScreen({ navigation, route }) {
             >
               {appeal.status}
             </Text>
-            <Text style={[styles.metaText, { color: colors.textSecondary, marginTop: 10 }]}>
-              Submitted: {new Date(appeal.submittedAt).toLocaleDateString()}
-            </Text>
-            {appeal.status === "pending" && appeal.dueBy && (
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                Response due by: {new Date(appeal.dueBy).toLocaleDateString()}
-              </Text>
-            )}
-            {appeal.adminNote && (
+            {appeal.submittedAt ? (
               <Text
                 style={[
                   styles.metaText,
-                  { color: colors.textSecondary, marginTop: 8, fontStyle: "italic" },
+                  { color: colors.textSecondary, marginTop: 10 },
+                ]}
+              >
+                Submitted: {formatDate(appeal.submittedAt)}
+              </Text>
+            ) : null}
+            {appeal.status === "pending" && appeal.dueBy ? (
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                Response due by: {formatDate(appeal.dueBy)}
+              </Text>
+            ) : null}
+            {appeal.adminNote ? (
+              <Text
+                style={[
+                  styles.metaText,
+                  {
+                    color: colors.textSecondary,
+                    marginTop: 8,
+                    fontStyle: "italic",
+                  },
                 ]}
               >
                 "{appeal.adminNote}"
               </Text>
-            )}
+            ) : null}
           </View>
-        )}
+        ) : null}
 
-        {/* ===== EMAIL + PASSWORD (shared for both Check Status and Appeal) ===== */}
+        {/* INLINE ERROR (replaces alerts on web) */}
+        {inlineError ? (
+          <View
+            style={[
+              styles.inlineError,
+              {
+                backgroundColor: colors.danger + "12",
+                borderColor: colors.danger + "40",
+              },
+            ]}
+          >
+            <Ionicons name="alert-circle" size={14} color={colors.danger} />
+            <Text style={[styles.inlineErrorText, { color: colors.danger }]}>
+              {inlineError}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* AUTH CARD */}
         <View
           style={[
             styles.card,
@@ -228,13 +405,17 @@ export default function AccountRestrictedScreen({ navigation, route }) {
             Sign In to Verify
           </Text>
           <Text style={[styles.helper, { color: colors.textTertiary }]}>
-            If your restriction was lifted, sign in to check status or submit an appeal.
+            If your restriction was lifted, sign in to check status or submit
+            an appeal.
           </Text>
 
           <View
             style={[
               styles.inputWrap,
-              { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
+              {
+                backgroundColor: colors.inputBackground,
+                borderColor: colors.inputBorder,
+              },
             ]}
           >
             <Ionicons
@@ -248,16 +429,24 @@ export default function AccountRestrictedScreen({ navigation, route }) {
               placeholderTextColor={colors.textTertiary}
               style={[styles.input, { color: colors.textPrimary }]}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(t) => {
+                setEmail(t);
+                if (inlineError) setInlineError("");
+              }}
               autoCapitalize="none"
               keyboardType="email-address"
+              autoCorrect={false}
+              editable={!modalBusy}
             />
           </View>
 
           <View
             style={[
               styles.inputWrap,
-              { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder },
+              {
+                backgroundColor: colors.inputBackground,
+                borderColor: colors.inputBorder,
+              },
             ]}
           >
             <Ionicons
@@ -271,11 +460,19 @@ export default function AccountRestrictedScreen({ navigation, route }) {
               placeholderTextColor={colors.textTertiary}
               style={[styles.input, { color: colors.textPrimary }]}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(t) => {
+                setPassword(t);
+                if (inlineError) setInlineError("");
+              }}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
+              autoCorrect={false}
+              editable={!modalBusy}
             />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              style={{ padding: 4 }}
+            >
               <Ionicons
                 name={showPassword ? "eye-off-outline" : "eye-outline"}
                 size={18}
@@ -291,18 +488,22 @@ export default function AccountRestrictedScreen({ navigation, route }) {
                 backgroundColor: colors.primaryLight,
                 borderWidth: 1,
                 borderColor: colors.primary,
-                opacity: checking ? 0.6 : 1,
+                opacity: checking || submitting ? 0.6 : 1,
               },
             ]}
             onPress={handleCheckStatus}
-            disabled={checking}
+            disabled={modalBusy}
             activeOpacity={0.9}
           >
             {checking ? (
               <ActivityIndicator color={colors.primary} />
             ) : (
               <>
-                <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+                <Ionicons
+                  name="refresh-outline"
+                  size={18}
+                  color={colors.primary}
+                />
                 <Text style={[styles.submitText, { color: colors.primary }]}>
                   Check My Status
                 </Text>
@@ -311,8 +512,8 @@ export default function AccountRestrictedScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        {/* Appeal form (only if not pending) */}
-        {canAppeal && (
+        {/* APPEAL FORM */}
+        {canAppeal ? (
           <View
             style={[
               styles.card,
@@ -320,14 +521,17 @@ export default function AccountRestrictedScreen({ navigation, route }) {
             ]}
           >
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-              {appeal?.status === "rejected" ? "Submit a New Appeal" : "Appeal This Decision"}
+              {appeal?.status === "rejected"
+                ? "Submit a New Appeal"
+                : "Appeal This Decision"}
             </Text>
             <Text style={[styles.helper, { color: colors.textTertiary }]}>
-              Explain why you believe this action was a mistake. Responses take up to 10 working days.
+              Explain why you believe this action was a mistake. Responses take
+              up to 10 working days.
             </Text>
 
             <TextInput
-              placeholder="Why should we reconsider? (min 20 chars)"
+              placeholder={`Why should we reconsider? (min ${MIN_REASON_LENGTH} chars)`}
               placeholderTextColor={colors.textTertiary}
               style={[
                 styles.textArea,
@@ -338,41 +542,56 @@ export default function AccountRestrictedScreen({ navigation, route }) {
                 },
               ]}
               value={reason}
-              onChangeText={setReason}
+              onChangeText={(t) => {
+                setReason(t);
+                if (inlineError) setInlineError("");
+              }}
               multiline
               numberOfLines={5}
               maxLength={2000}
+              editable={!modalBusy}
             />
-            <Text style={[styles.helper, { color: colors.textTertiary, textAlign: "right" }]}>
-              {reason.length} / 2000
+            <Text
+              style={[styles.helper, { color: reasonCountColor, textAlign: "right" }]}
+            >
+              {reasonLength} / 2000
             </Text>
 
             <TouchableOpacity
               style={[
                 styles.submitBtn,
-                { backgroundColor: colors.primary, opacity: submitting ? 0.6 : 1 },
+                {
+                  backgroundColor: colors.primary,
+                  opacity: submitting || checking ? 0.6 : 1,
+                },
               ]}
               onPress={handleSubmitAppeal}
-              disabled={submitting}
+              disabled={modalBusy}
               activeOpacity={0.9}
             >
               {submitting ? (
                 <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <>
-                  <Ionicons name="paper-plane-outline" size={18} color={colors.textInverse} />
-                  <Text style={[styles.submitText, { color: colors.textInverse }]}>
+                  <Ionicons
+                    name="paper-plane-outline"
+                    size={18}
+                    color={colors.textInverse}
+                  />
+                  <Text
+                    style={[styles.submitText, { color: colors.textInverse }]}
+                  >
                     Submit Appeal
                   </Text>
                 </>
               )}
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
 
         <TouchableOpacity
           style={styles.backLink}
-          onPress={() => navigation.navigate("Landing")}
+          onPress={goToLogin}
           activeOpacity={0.7}
         >
           <Text style={[styles.backText, { color: colors.textTertiary }]}>
@@ -403,7 +622,12 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   card: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16 },
-  cardLabel: { fontSize: 11, fontWeight: "800", letterSpacing: 0.6, marginBottom: 6 },
+  cardLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
   cardValue: { fontSize: 15, fontWeight: "600", lineHeight: 21 },
   metaText: { fontSize: 12.5, fontWeight: "500" },
   sectionTitle: {
@@ -442,6 +666,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   submitText: { fontWeight: "700", fontSize: 15 },
+  inlineError: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  inlineErrorText: { fontSize: 12.5, fontWeight: "600", flex: 1 },
   backLink: { alignItems: "center", paddingVertical: 16 },
   backText: { fontSize: 13.5, fontWeight: "600" },
 });

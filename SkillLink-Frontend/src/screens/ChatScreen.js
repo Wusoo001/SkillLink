@@ -12,14 +12,30 @@ import {
   Alert,
   Image,
   Linking,
+  AppState,
 } from "react-native";
-import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { AuthContext } from "../../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { getMessages, sendMessage, markChatAsRead, getProductMessages, sendProductMessage  } from "../services/api";
+import {
+  getMessages,
+  sendMessage,
+  markChatAsRead,
+  getProductMessages,
+  sendProductMessage,
+} from "../services/api";
+
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
+const sameId = (a, b) => String(a || "") === String(b || "");
+
+const LOCATION_TIMEOUT_MS = 15000;
 
 export default function ChatScreen() {
   const navigation = useNavigation();
@@ -39,18 +55,27 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [sending, setSending] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [blockedMessage, setBlockedMessage] = useState(null);
   const [otherPartyAvatar, setOtherPartyAvatar] = useState(otherPartyImage);
   const [locating, setLocating] = useState(false);
-  const [bookingMeta, setBookingMeta] = useState(null); // { client, provider, status }
+  const [bookingMeta, setBookingMeta] = useState(null);
 
   const listRef = useRef(null);
-  const pollingRef = useRef(null);
+  const chatOpenRef = useRef(true);
+  const isNearBottomRef = useRef(true);
+  const prevCountRef = useRef(0);
+  const isInitialMountRef = useRef(true);
+  const tempIdRef = useRef(0);
 
-  // ===== ROLE =====
-// Handle both string IDs and populated objects
+  // Keep chatOpen ref in sync (used inside polling interval)
+  useEffect(() => {
+    chatOpenRef.current = chatOpen;
+  }, [chatOpen]);
+
+  // ===== ROLE (string-safe) =====
   const clientId =
     typeof bookingMeta?.client === "object"
       ? bookingMeta?.client?._id
@@ -61,15 +86,16 @@ export default function ChatScreen() {
       : bookingMeta?.provider;
 
   const userRole =
-    bookingMeta && user
-      ? clientId === user._id
+    bookingMeta && user?._id
+      ? sameId(clientId, user._id)
         ? "client"
-        : providerId === user._id
+        : sameId(providerId, user._id)
         ? "provider"
         : null
       : null;
+
   // ===== LOAD =====
-    const loadMessages = useCallback(
+  const loadMessages = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
@@ -85,40 +111,110 @@ export default function ChatScreen() {
           setMessages(msgs);
           setChatOpen(res.chatOpen !== false);
           if (res.booking) setBookingMeta(res.booking);
+          setLoadError(false);
 
-          // Auto-mark as read
-          if (!productId && res.chatOpen !== false) {
-            const hasUnread = msgs.some((m) => m.sender?._id && m.sender._id !== user._id && !m.readAt);
+          // Auto-mark as read (string-safe comparison)
+          if (!productId && res.chatOpen !== false && user?._id) {
+            const hasUnread = msgs.some(
+              (m) => m.sender?._id && !sameId(m.sender._id, user._id) && !m.readAt
+            );
             if (hasUnread) markChatAsRead(bookingId).catch(() => {});
           }
 
-          if (!otherPartyImage && msgs.length > 0) {
-            const otherMsg = msgs.find((m) => m.sender?._id && m.sender._id !== user._id);
-            if (otherMsg?.sender?.profileImage) setOtherPartyAvatar(otherMsg.sender.profileImage);
+          if (!otherPartyImage && msgs.length > 0 && user?._id) {
+            const otherMsg = msgs.find(
+              (m) => m.sender?._id && !sameId(m.sender._id, user._id)
+            );
+            if (otherMsg?.sender?.profileImage) {
+              setOtherPartyAvatar(otherMsg.sender.profileImage);
+            }
           }
         }
       } catch (error) {
-        if (!silent) Alert.alert("Error", "Could not load messages");
+        if (!silent) {
+          setLoadError(true);
+        }
       } finally {
         if (!silent) setLoading(false);
       }
     },
-    [bookingId, productId, recipientId, otherPartyImage, user._id]
+    [bookingId, productId, recipientId, otherPartyImage, user?._id]
   );
 
+  // Initial load — fires ONCE
   useEffect(() => {
     loadMessages();
-    pollingRef.current = setInterval(() => loadMessages(true), 5000);
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  }, [loadMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Polling lifecycle — starts/stops based on focus + app state + chat state
   useFocusEffect(
     useCallback(() => {
-      loadMessages(true);
+      let intervalId = null;
+
+      const startPolling = () => {
+        if (intervalId) return;
+        intervalId = setInterval(() => {
+          // Skip if chat closed OR app backgrounded
+          if (!chatOpenRef.current) return;
+          loadMessages(true);
+        }, 5000);
+      };
+
+      const stopPolling = () => {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      };
+
+      // Skip first focus (initial load already ran)
+      if (isInitialMountRef.current) {
+        isInitialMountRef.current = false;
+      } else {
+        loadMessages(true);
+      }
+
+      startPolling();
+
+      const sub = AppState.addEventListener("change", (state) => {
+        if (state === "active") startPolling();
+        else stopPolling();
+      });
+
+      return () => {
+        stopPolling();
+        sub.remove();
+      };
     }, [loadMessages])
   );
+
+  // Auto-scroll: only if near bottom OR own message OR first load
+  useEffect(() => {
+    if (messages.length === 0) return;
+    if (messages.length <= prevCountRef.current) {
+      prevCountRef.current = messages.length;
+      return;
+    }
+
+    const lastMsg = messages[messages.length - 1];
+    const isOwn =
+      lastMsg?.sender?._id && user?._id && sameId(lastMsg.sender._id, user._id);
+
+    if (isOwn || isNearBottomRef.current || prevCountRef.current === 0) {
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 60);
+    }
+    prevCountRef.current = messages.length;
+  }, [messages, user?._id]);
+
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - contentOffset.y - layoutMeasurement.height;
+    isNearBottomRef.current = distanceFromBottom < 120;
+  };
 
   // ===== TEXT SEND =====
   const handleSend = async () => {
@@ -128,12 +224,13 @@ export default function ChatScreen() {
     setSending(true);
     setBlockedMessage(null);
 
+    tempIdRef.current += 1;
     const tempMsg = {
-      _id: `temp_${Date.now()}`,
+      _id: `temp_${Date.now()}_${tempIdRef.current}`,
       sender: {
-        _id: user._id,
-        name: user.name,
-        profileImage: user.profileImage,
+        _id: user?._id,
+        name: user?.name,
+        profileImage: user?.profileImage,
       },
       text: trimmed,
       createdAt: new Date().toISOString(),
@@ -149,7 +246,7 @@ export default function ChatScreen() {
       } else {
         res = await sendMessage(bookingId, trimmed);
       }
-      
+
       if (res.success) {
         setMessages((prev) =>
           prev.map((m) => (m._id === tempMsg._id ? res.data : m))
@@ -163,7 +260,9 @@ export default function ChatScreen() {
         setBlockedMessage(data.message || "Message blocked");
         setText(trimmed);
       } else {
-        Alert.alert("Error", data?.message || "Failed to send");
+        // Restore text so user can retry
+        setText(trimmed);
+        webAlert("Error", data?.message || "Failed to send");
       }
     } finally {
       setSending(false);
@@ -172,28 +271,33 @@ export default function ChatScreen() {
 
   // ===== SHARE LOCATION =====
   const shareLocation = async (type) => {
+    if (locating) return;
     setLocating(true);
     setBlockedMessage(null);
 
     try {
-      // 1. Request permission
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
+        webAlert(
           "Location Permission Needed",
           "Street needs access to your location to share it in the chat."
         );
         return;
       }
 
-      // 2. Get current position
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      // Timeout-guarded position fetch
+      const loc = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Location request timed out")),
+            LOCATION_TIMEOUT_MS
+          )
+        ),
+      ]);
 
       const { latitude, longitude } = loc.coords;
 
-      // 3. Reverse geocode for a friendly label
       let label = "";
       try {
         const addresses = await Location.reverseGeocodeAsync({
@@ -209,7 +313,6 @@ export default function ChatScreen() {
         // Silent fail — label stays empty
       }
 
-      // 4. Send as message
       const payload = {
         text:
           type === "work_location"
@@ -230,11 +333,14 @@ export default function ChatScreen() {
       if (res.success) {
         setMessages((prev) => [...prev, res.data]);
       } else {
-        Alert.alert("Error", res.message || "Could not share location");
+        webAlert("Error", res.message || "Could not share location");
       }
     } catch (error) {
-      const msg = error.response?.data?.message || "Could not get your location";
-      Alert.alert("Error", msg);
+      const msg =
+        error.response?.data?.message ||
+        error.message ||
+        "Could not get your location";
+      webAlert("Error", msg);
     } finally {
       setLocating(false);
     }
@@ -253,13 +359,11 @@ export default function ChatScreen() {
     });
   };
 
-  // ✅ Delivery status tick — only shown on own messages
   const renderTick = (msg) => {
     if (!msg || msg.pending) return null;
-    if (msg.sender?._id !== user._id) return null;
+    if (!msg.sender?._id || !user?._id || !sameId(msg.sender._id, user._id)) return null;
 
     if (msg.readAt) {
-      // Read = double blue check
       return (
         <Ionicons
           name="checkmark-done"
@@ -269,7 +373,6 @@ export default function ChatScreen() {
         />
       );
     }
-    // Sent = single white check
     return (
       <Ionicons
         name="checkmark"
@@ -279,12 +382,19 @@ export default function ChatScreen() {
       />
     );
   };
+
   // ===== RENDER MESSAGE =====
   const renderMessage = ({ item }) => {
-    const isMe = item.sender?._id === user._id;
+    const isMe =
+      item.sender?._id && user?._id && sameId(item.sender._id, user._id);
     const senderImage = item.sender?.profileImage;
     const senderInitial = item.sender?.name?.charAt(0)?.toUpperCase() || "U";
     const hasLocation = !!item.location;
+
+    // Safe coords
+    const lat = Number(item.location?.lat);
+    const lng = Number(item.location?.lng);
+    const hasValidCoords = !isNaN(lat) && !isNaN(lng);
 
     return (
       <View
@@ -305,7 +415,9 @@ export default function ChatScreen() {
                   { backgroundColor: colors.primary },
                 ]}
               >
-                <Text style={[styles.msgAvatarText, { color: colors.textInverse }]}>
+                <Text
+                  style={[styles.msgAvatarText, { color: colors.textInverse }]}
+                >
                   {senderInitial}
                 </Text>
               </View>
@@ -353,24 +465,36 @@ export default function ChatScreen() {
               </Text>
             ) : null}
 
-            <Text style={[styles.locationCoords, { color: colors.textTertiary }]}>
-              {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}
-            </Text>
-
-            <TouchableOpacity
-              style={[styles.mapButton, { backgroundColor: colors.primary }]}
-              onPress={() =>
-                openInMaps(item.location.lat, item.location.lng, item.location.label)
-              }
-              activeOpacity={0.85}
-            >
-              <Ionicons name="navigate" size={14} color={colors.textInverse} />
-              <Text style={[styles.mapButtonText, { color: colors.textInverse }]}>
-                Open in Maps
+            {hasValidCoords ? (
+              <Text
+                style={[styles.locationCoords, { color: colors.textTertiary }]}
+              >
+                {lat.toFixed(4)}, {lng.toFixed(4)}
               </Text>
-            </TouchableOpacity>
+            ) : null}
 
-            <View style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-end" }}>
+            {hasValidCoords ? (
+              <TouchableOpacity
+                style={[styles.mapButton, { backgroundColor: colors.primary }]}
+                onPress={() => openInMaps(lat, lng, item.location.label)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="navigate" size={14} color={colors.textInverse} />
+                <Text
+                  style={[styles.mapButtonText, { color: colors.textInverse }]}
+                >
+                  Open in Maps
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                alignSelf: "flex-end",
+              }}
+            >
               <Text style={[styles.msgTime, { color: colors.textTertiary }]}>
                 {new Date(item.createdAt).toLocaleTimeString([], {
                   hour: "2-digit",
@@ -398,7 +522,13 @@ export default function ChatScreen() {
             >
               {item.text}
             </Text>
-            <View style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-end" }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                alignSelf: "flex-end",
+              }}
+            >
               <Text
                 style={[
                   styles.msgTime,
@@ -419,6 +549,66 @@ export default function ChatScreen() {
       </View>
     );
   };
+
+  // ===== ERROR STATE =====
+  if (loadError && messages.length === 0) {
+    return (
+      <View style={[styles.safe, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
+        <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.inputBorder }]}>
+          <TouchableOpacity
+            style={[
+              styles.backBtn,
+              { backgroundColor: colors.background, borderColor: colors.inputBorder },
+            ]}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerMid}>
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <Text style={[styles.headerName, { color: colors.textPrimary }]}>
+                {otherPartyName}
+              </Text>
+              <Text style={[styles.headerSub, { color: colors.textTertiary }]}>
+                Chat
+              </Text>
+            </View>
+          </View>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.center}>
+          <View
+            style={[
+              styles.emptyIconWrap,
+              { backgroundColor: colors.danger + "15" },
+            ]}
+          >
+            <Ionicons name="alert-circle-outline" size={28} color={colors.danger} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+            Couldn't load chat
+          </Text>
+          <Text style={[styles.emptyText, { color: colors.textTertiary }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setLoadError(false);
+              loadMessages();
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={16} color={colors.textInverse} />
+            <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+              Retry
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
@@ -460,7 +650,9 @@ export default function ChatScreen() {
                   { backgroundColor: colors.primary },
                 ]}
               >
-                <Text style={[styles.headerAvatarText, { color: colors.textInverse }]}>
+                <Text
+                  style={[styles.headerAvatarText, { color: colors.textInverse }]}
+                >
                   {otherPartyName.charAt(0).toUpperCase()}
                 </Text>
               </View>
@@ -494,10 +686,8 @@ export default function ChatScreen() {
             renderItem={renderMessage}
             contentContainerStyle={[styles.listContent, { paddingBottom: 16 }]}
             keyboardShouldPersistTaps="handled"
-            onContentSizeChange={() =>
-              listRef.current?.scrollToEnd({ animated: true })
-            }
-            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+            onScroll={handleScroll}
+            scrollEventThrottle={100}
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Ionicons
@@ -534,7 +724,7 @@ export default function ChatScreen() {
           </View>
         ) : null}
 
-        {/* LOCATION BUTTONS — only when chat is open */}
+        {/* LOCATION BUTTONS */}
         {chatOpen && (
           <View
             style={[
@@ -737,7 +927,6 @@ const styles = StyleSheet.create({
   msgText: { fontSize: 14.5, lineHeight: 20, fontWeight: "500" },
   msgTime: { fontSize: 10.5, marginTop: 4, alignSelf: "flex-end" },
 
-  // Location bubble
   locationBubble: {
     maxWidth: "78%",
     paddingHorizontal: 12,
@@ -745,8 +934,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
   },
-  locationHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
-  locationType: { fontSize: 12, fontWeight: "800", letterSpacing: 0.2, textTransform: "uppercase" },
+  locationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  locationType: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
   locationLabel: { fontSize: 13.5, fontWeight: "600", marginBottom: 2 },
   locationCoords: { fontSize: 11, fontWeight: "500", marginBottom: 8 },
   mapButton: {
@@ -761,8 +960,31 @@ const styles = StyleSheet.create({
   mapButtonText: { fontSize: 13, fontWeight: "700" },
 
   empty: { alignItems: "center", paddingTop: 60 },
-  emptyTitle: { fontSize: 16, fontWeight: "700", marginTop: 12, marginBottom: 4 },
-  emptyText: { fontSize: 13, textAlign: "center", maxWidth: 240 },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyText: { fontSize: 13, textAlign: "center", maxWidth: 240, lineHeight: 18 },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  retryBtnText: { fontSize: 13.5, fontWeight: "700" },
 
   blockBanner: {
     flexDirection: "row",
@@ -777,7 +999,6 @@ const styles = StyleSheet.create({
   },
   blockText: { fontSize: 12.5, fontWeight: "600", flex: 1 },
 
-  // Location action bar
   locationBar: {
     paddingHorizontal: 14,
     paddingTop: 10,

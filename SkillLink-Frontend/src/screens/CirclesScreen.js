@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext } from "react";
+import React, { useState, useCallback, useContext, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  Platform,
   Alert,
 } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -15,6 +16,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { AuthContext } from "../../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { getCircles, getMyCircle, joinCircle } from "../services/api";
+
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
 
 export default function CirclesScreen() {
   const navigation = useNavigation();
@@ -26,12 +32,26 @@ export default function CirclesScreen() {
   const [myCircleMessage, setMyCircleMessage] = useState("");
   const [circles, setCircles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [joining, setJoining] = useState(false);
+  const [joiningId, setJoiningId] = useState(null);
 
-  const load = async () => {
+  const requestIdRef = useRef(0);
+  const isFirstFocusRef = useRef(true);
+
+  const load = async ({ silent = false } = {}) => {
+    const id = ++requestIdRef.current;
+    if (!silent) {
+      setLoading(true);
+      setLoadError(false);
+    }
     try {
-      const [mineRes, listRes] = await Promise.all([getMyCircle(), getCircles(1, 20)]);
+      const [mineRes, listRes] = await Promise.all([
+        getMyCircle(),
+        getCircles(1, 50),
+      ]);
+      if (id !== requestIdRef.current) return;
+
       if (mineRes?.success) {
         setMyCircle(mineRes.data);
         setMyCircleMessage(mineRes.message || "");
@@ -39,23 +59,35 @@ export default function CirclesScreen() {
       if (listRes?.success) {
         setCircles(listRes.data || []);
       }
+      if (!mineRes?.success && !listRes?.success) {
+        setLoadError(true);
+      }
     } catch (error) {
-      console.log("Load circles error:", error);
+      if (id !== requestIdRef.current) return;
+      setLoadError(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (id === requestIdRef.current && !silent) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      if (isFirstFocusRef.current) {
+        isFirstFocusRef.current = false;
+        load();
+      } else {
+        // Silent refresh on re-focus — cheap, ensures fresh member state
+        load({ silent: true });
+      }
     }, [])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    load();
+    load({ silent: true });
   };
 
   const handleOpen = (circle) => {
@@ -66,57 +98,157 @@ export default function CirclesScreen() {
   };
 
   const handleJoinAndOpen = async (circle) => {
-    if (joining) return;
-    setJoining(true);
+    if (joiningId) return;
+    setJoiningId(circle._id);
     try {
       await joinCircle(circle._id);
+      // Refresh list so "isMember" is accurate on both this screen and detail
+      await load({ silent: true });
       handleOpen(circle);
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.message || "Could not join circle");
+      webAlert(
+        "Could not join circle",
+        error.response?.data?.message || "Please try again."
+      );
     } finally {
-      setJoining(false);
+      setJoiningId(null);
     }
   };
 
-  const renderCircleCard = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.circleCard, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
-      onPress={() => handleOpen(item)}
-      activeOpacity={0.85}
-    >
-      <View style={[styles.circleIcon, { backgroundColor: colors.primaryLight }]}>
-        <Ionicons name="people" size={20} color={colors.primary} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.circleName, { color: colors.textPrimary }]} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <Text style={[styles.circleMeta, { color: colors.textTertiary }]}>
-          {item.memberCount} member{item.memberCount !== 1 ? "s" : ""} ·{" "}
-          {item.requestCount} request{item.requestCount !== 1 ? "s" : ""}
-        </Text>
-      </View>
-      {item.isMember ? (
-        <View style={[styles.badge, { backgroundColor: colors.success + "15" }]}>
-          <Text style={[styles.badgeText, { color: colors.success }]}>Member</Text>
+  const renderCircleCard = ({ item }) => {
+    const isJoining = joiningId === item._id;
+    return (
+      <TouchableOpacity
+        style={[
+          styles.circleCard,
+          { backgroundColor: colors.card, borderColor: colors.inputBorder },
+        ]}
+        onPress={() => handleOpen(item)}
+        activeOpacity={0.85}
+        disabled={isJoining}
+      >
+        <View
+          style={[styles.circleIcon, { backgroundColor: colors.primaryLight }]}
+        >
+          <Ionicons name="people" size={20} color={colors.primary} />
         </View>
-      ) : (
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-      )}
-    </TouchableOpacity>
-  );
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[styles.circleName, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
+            {item.name}
+          </Text>
+          <Text style={[styles.circleMeta, { color: colors.textTertiary }]}>
+            {item.memberCount} member{item.memberCount !== 1 ? "s" : ""} ·{" "}
+            {item.requestCount} request{item.requestCount !== 1 ? "s" : ""}
+          </Text>
+        </View>
+        {isJoining ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : item.isMember ? (
+          <View
+            style={[
+              styles.badge,
+              { backgroundColor: colors.success + "15" },
+            ]}
+          >
+            <Text style={[styles.badgeText, { color: colors.success }]}>
+              Member
+            </Text>
+          </View>
+        ) : (
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color={colors.textTertiary}
+          />
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  // ===== ERROR STATE =====
+  if (loadError && !loading && circles.length === 0 && !myCircle) {
+    return (
+      <View
+        style={[
+          styles.safeArea,
+          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
+        ]}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+            Street Circles
+          </Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.center}>
+          <View
+            style={[
+              styles.emptyIconWrap,
+              { backgroundColor: colors.danger + "15" },
+            ]}
+          >
+            <Ionicons
+              name="cloud-offline-outline"
+              size={28}
+              color={colors.danger}
+            />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+            Couldn't load circles
+          </Text>
+          <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setLoadError(false);
+              load();
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={16} color={colors.textInverse} />
+            <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+              Retry
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.safeArea, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
-      {/* Header */}
+    <View
+      style={[
+        styles.safeArea,
+        { backgroundColor: colors.background, paddingTop: insets.top + 8 },
+      ]}
+    >
       <View style={styles.header}>
         <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
+          style={[
+            styles.backButton,
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
+          ]}
           onPress={() => navigation.goBack()}
         >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Street Circles</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+          Street Circles
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -139,9 +271,13 @@ export default function CirclesScreen() {
           }
           ListHeaderComponent={
             <>
-              {/* ===== YOUR CIRCLE SECTION ===== */}
               <View style={styles.section}>
-                <Text style={[styles.sectionLabel, { color: colors.textTertiary }]}>
+                <Text
+                  style={[
+                    styles.sectionLabel,
+                    { color: colors.textTertiary },
+                  ]}
+                >
                   YOUR CIRCLE
                 </Text>
 
@@ -149,7 +285,10 @@ export default function CirclesScreen() {
                   <TouchableOpacity
                     style={[
                       styles.myCircleCard,
-                      { backgroundColor: colors.primaryLight, borderColor: colors.primary + "40" },
+                      {
+                        backgroundColor: colors.primaryLight,
+                        borderColor: colors.primary + "40",
+                      },
                     ]}
                     onPress={() =>
                       myCircle.isMember
@@ -157,20 +296,45 @@ export default function CirclesScreen() {
                         : handleJoinAndOpen(myCircle)
                     }
                     activeOpacity={0.85}
-                    disabled={joining}
+                    disabled={joiningId === myCircle._id}
                   >
                     <View style={styles.myCircleTop}>
                       <Ionicons name="home" size={22} color={colors.primary} />
-                      <Text style={[styles.myCircleName, { color: colors.textPrimary }]}>
+                      <Text
+                        style={[
+                          styles.myCircleName,
+                          { color: colors.textPrimary },
+                        ]}
+                      >
                         {myCircle.name}
                       </Text>
                     </View>
-                    <Text style={[styles.myCircleSub, { color: colors.textSecondary }]}>
-                      {myCircle.memberCount} member{myCircle.memberCount !== 1 ? "s" : ""} in your area
+                    <Text
+                      style={[
+                        styles.myCircleSub,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {myCircle.memberCount} member
+                      {myCircle.memberCount !== 1 ? "s" : ""} in your area
                     </Text>
-                    <View style={[styles.myCircleBtn, { backgroundColor: colors.primary }]}>
-                      <Text style={[styles.myCircleBtnText, { color: colors.textInverse }]}>
-                        {myCircle.isMember ? "Open Circle" : joining ? "Joining..." : "Join Circle"}
+                    <View
+                      style={[
+                        styles.myCircleBtn,
+                        { backgroundColor: colors.primary },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.myCircleBtnText,
+                          { color: colors.textInverse },
+                        ]}
+                      >
+                        {myCircle.isMember
+                          ? "Open Circle"
+                          : joiningId === myCircle._id
+                          ? "Joining..."
+                          : "Join Circle"}
                       </Text>
                       <Ionicons
                         name="arrow-forward"
@@ -183,7 +347,10 @@ export default function CirclesScreen() {
                   <View
                     style={[
                       styles.comingSoonCard,
-                      { backgroundColor: colors.card, borderColor: colors.inputBorder },
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.inputBorder,
+                      },
                     ]}
                   >
                     <Ionicons
@@ -191,10 +358,20 @@ export default function CirclesScreen() {
                       size={26}
                       color={colors.textTertiary}
                     />
-                    <Text style={[styles.comingSoonTitle, { color: colors.textPrimary }]}>
+                    <Text
+                      style={[
+                        styles.comingSoonTitle,
+                        { color: colors.textPrimary },
+                      ]}
+                    >
                       {myCircleMessage || "Your circle is coming soon"}
                     </Text>
-                    <Text style={[styles.comingSoonSub, { color: colors.textTertiary }]}>
+                    <Text
+                      style={[
+                        styles.comingSoonSub,
+                        { color: colors.textTertiary },
+                      ]}
+                    >
                       {user?.locationDetails?.city
                         ? "We'll notify you when Street Circles launches in your area."
                         : "Set your LGA in your profile to see your local circle."}
@@ -203,9 +380,13 @@ export default function CirclesScreen() {
                 )}
               </View>
 
-              {/* ===== ACTIVE CIRCLES SECTION ===== */}
               {circles.length > 0 && (
-                <Text style={[styles.sectionLabel, { color: colors.textTertiary, marginTop: 20 }]}>
+                <Text
+                  style={[
+                    styles.sectionLabel,
+                    { color: colors.textTertiary, marginTop: 20 },
+                  ]}
+                >
                   ACTIVE CIRCLES
                 </Text>
               )}
@@ -213,12 +394,24 @@ export default function CirclesScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={44} color={colors.textTertiary} />
+              <View
+                style={[
+                  styles.emptyIconWrap,
+                  { backgroundColor: colors.inputBackground },
+                ]}
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={26}
+                  color={colors.textTertiary}
+                />
+              </View>
               <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
                 No active circles yet
               </Text>
               <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
-                Street Circles is rolling out one neighborhood at a time. We'll be in your area soon.
+                Street Circles is rolling out one neighborhood at a time. We'll
+                be in your area soon.
               </Text>
             </View>
           }
@@ -246,7 +439,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   headerTitle: { fontSize: 20, fontWeight: "800" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
   listContent: { paddingHorizontal: 20, paddingBottom: 100 },
   section: { marginBottom: 8 },
   sectionLabel: {
@@ -290,11 +488,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textAlign: "center",
   },
-  comingSoonSub: {
-    fontSize: 12.5,
-    lineHeight: 18,
-    textAlign: "center",
-  },
+  comingSoonSub: { fontSize: 12.5, lineHeight: 18, textAlign: "center" },
   circleCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -320,6 +514,29 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
     paddingHorizontal: 20,
   },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
   emptyTitle: { fontSize: 16, fontWeight: "700", marginTop: 12, marginBottom: 6 },
-  emptySub: { fontSize: 13, textAlign: "center", lineHeight: 19, maxWidth: 280 },
+  emptySub: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 19,
+    maxWidth: 280,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  retryBtnText: { fontSize: 13.5, fontWeight: "700" },
 });

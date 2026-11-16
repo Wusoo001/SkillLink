@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,37 +6,125 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { resendVerificationEmail } from "../services/api";
 
+const RESEND_COOLDOWN_SECONDS = 60;
+
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
 export default function VerificationPendingScreen({ navigation, route }) {
   const { email } = route.params || {};
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
+  const [cooldownLeft, setCooldownLeft] = useState(0);
+  const [lastSentAt, setLastSentAt] = useState(null);
+
+  // Cooldown tick
+  useEffect(() => {
+    if (cooldownLeft <= 0) return;
+    const id = setInterval(() => {
+      setCooldownLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldownLeft]);
 
   const handleResend = async () => {
     if (!email) {
-      Alert.alert("Error", "No email provided");
+      webAlert("Missing email", "Please go back and register again.");
       return;
     }
+    if (loading || cooldownLeft > 0) return;
+
     setLoading(true);
     try {
       const res = await resendVerificationEmail(email);
       if (res.success) {
-        Alert.alert("Success", "Verification email sent. Check your inbox.");
+        setCooldownLeft(RESEND_COOLDOWN_SECONDS);
+        setLastSentAt(new Date());
+        webAlert(
+          "Email Sent",
+          "Check your inbox (and spam folder) for the verification link."
+        );
       } else {
-        Alert.alert("Error", res.message || "Failed to resend.");
+        webAlert("Couldn't Send", res.message || "Please try again.");
       }
     } catch (error) {
-      Alert.alert("Error", "Network error. Please try again.");
+      webAlert(
+        "Network Error",
+        error?.response?.data?.message || "Please try again."
+      );
     } finally {
       setLoading(false);
     }
   };
+
+  const handleGoToLogin = () => {
+    navigation.replace("Landing");
+  };
+
+  // ===== MISSING EMAIL FALLBACK =====
+  if (!email) {
+    return (
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.container,
+            {
+              paddingTop: insets.top + 24,
+              paddingBottom: insets.bottom + 24,
+            },
+          ]}
+        >
+          <View style={styles.iconWrap}>
+            <View
+              style={[
+                styles.iconCircle,
+                { backgroundColor: colors.warning + "20" },
+              ]}
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={40}
+                color={colors.warning}
+              />
+            </View>
+          </View>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>
+            Missing Email
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
+            Please go back and register again to receive a verification link.
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.resendButton,
+              { backgroundColor: colors.primary, shadowColor: colors.primary },
+            ]}
+            onPress={handleGoToLogin}
+            activeOpacity={0.9}
+          >
+            <Ionicons
+              name="arrow-back"
+              size={18}
+              color={colors.textInverse}
+            />
+            <Text style={[styles.resendText, { color: colors.textInverse }]}>
+              Back to Login
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -49,19 +137,20 @@ export default function VerificationPendingScreen({ navigation, route }) {
           },
         ]}
       >
-        {/* ===== ICON ===== */}
+        {/* ICON */}
         <View style={styles.iconWrap}>
           <View
-            style={[
-              styles.iconCircle,
-              { backgroundColor: colors.primaryLight },
-            ]}
+            style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}
           >
-            <Ionicons name="mail-unread-outline" size={40} color={colors.primary} />
+            <Ionicons
+              name="mail-unread-outline"
+              size={40}
+              color={colors.primary}
+            />
           </View>
         </View>
 
-        {/* ===== TITLE ===== */}
+        {/* TITLE */}
         <Text style={[styles.title, { color: colors.textPrimary }]}>
           Check Your Email
         </Text>
@@ -69,14 +158,11 @@ export default function VerificationPendingScreen({ navigation, route }) {
           We've sent a verification link to
         </Text>
 
-        {/* ===== EMAIL CHIP ===== */}
+        {/* EMAIL CHIP */}
         <View
           style={[
             styles.emailChip,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.inputBorder,
-            },
+            { backgroundColor: colors.card, borderColor: colors.inputBorder },
           ]}
         >
           <Ionicons
@@ -88,51 +174,81 @@ export default function VerificationPendingScreen({ navigation, route }) {
           <Text
             style={[styles.email, { color: colors.textPrimary }]}
             numberOfLines={1}
+            selectable
           >
-            {email || "your email"}
+            {email}
           </Text>
         </View>
 
-        {/* ===== INSTRUCTION ===== */}
+        {/* INSTRUCTION */}
         <Text style={[styles.instruction, { color: colors.textTertiary }]}>
-          Tap the link in the email to verify your account. If you don't see
-          it, check your spam folder.
+          Tap the link in the email to verify your account. If you don't see it,
+          check your spam folder.
         </Text>
 
-        {/* ===== RESEND CTA ===== */}
+        {/* PRIMARY: LOGIN */}
         <TouchableOpacity
           style={[
             styles.resendButton,
+            { backgroundColor: colors.primary, shadowColor: colors.primary },
+          ]}
+          onPress={handleGoToLogin}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="log-in-outline" size={18} color={colors.textInverse} />
+          <Text style={[styles.resendText, { color: colors.textInverse }]}>
+            I've Verified — Go to Login
+          </Text>
+        </TouchableOpacity>
+
+        {/* SECONDARY: RESEND */}
+        <TouchableOpacity
+          style={[
+            styles.secondaryBtn,
             {
-              backgroundColor: colors.primary,
-              shadowColor: colors.primary,
-              opacity: loading ? 0.7 : 1,
+              backgroundColor: colors.card,
+              borderColor: colors.inputBorder,
+              opacity: loading || cooldownLeft > 0 ? 0.6 : 1,
             },
           ]}
           onPress={handleResend}
-          disabled={loading}
-          activeOpacity={0.9}
+          disabled={loading || cooldownLeft > 0}
+          activeOpacity={0.85}
         >
           {loading ? (
-            <ActivityIndicator color={colors.textInverse} size="small" />
+            <ActivityIndicator color={colors.primary} size="small" />
           ) : (
             <>
               <Ionicons
                 name="refresh-outline"
-                size={18}
-                color={colors.textInverse}
+                size={16}
+                color={colors.primary}
               />
-              <Text style={[styles.resendText, { color: colors.textInverse }]}>
-                Resend Verification Email
+              <Text
+                style={[styles.secondaryBtnText, { color: colors.primary }]}
+              >
+                {cooldownLeft > 0
+                  ? `Resend in ${cooldownLeft}s`
+                  : "Resend Verification Email"}
               </Text>
             </>
           )}
         </TouchableOpacity>
 
-        {/* ===== LOGIN LINK ===== */}
+        {lastSentAt && (
+          <Text style={[styles.metaHint, { color: colors.textTertiary }]}>
+            Last sent:{" "}
+            {lastSentAt.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </Text>
+        )}
+
+        {/* FOOTER */}
         <TouchableOpacity
           style={styles.loginLink}
-          onPress={() => navigation.replace("Landing")}
+          onPress={handleGoToLogin}
           activeOpacity={0.7}
         >
           <Text style={[styles.loginText, { color: colors.textTertiary }]}>
@@ -147,9 +263,6 @@ export default function VerificationPendingScreen({ navigation, route }) {
   );
 }
 
-// ========================================
-// STYLES
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: {
@@ -159,11 +272,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
 
-  // ===== ICON =====
-  iconWrap: {
-    alignItems: "center",
-    marginBottom: 22,
-  },
+  iconWrap: { alignItems: "center", marginBottom: 22 },
   iconCircle: {
     width: 88,
     height: 88,
@@ -172,7 +281,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  // ===== TITLE =====
   title: {
     fontSize: 24,
     fontWeight: "800",
@@ -188,7 +296,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ===== EMAIL CHIP =====
   emailChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -206,7 +313,6 @@ const styles = StyleSheet.create({
     maxWidth: 240,
   },
 
-  // ===== INSTRUCTION =====
   instruction: {
     fontSize: 13,
     textAlign: "center",
@@ -216,7 +322,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // ===== RESEND CTA =====
   resendButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -225,28 +330,35 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 14,
     width: "100%",
-    marginBottom: 16,
+    marginBottom: 12,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.22,
     shadowRadius: 12,
     elevation: 4,
   },
-  resendText: {
-    fontWeight: "700",
-    fontSize: 15.5,
-    letterSpacing: 0.1,
-  },
+  resendText: { fontWeight: "700", fontSize: 15.5, letterSpacing: 0.1 },
 
-  // ===== LOGIN LINK =====
-  loginLink: {
-    paddingVertical: 8,
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 48,
+    borderRadius: 12,
+    width: "100%",
+    borderWidth: 1,
+    marginBottom: 8,
   },
-  loginText: {
-    fontSize: 13.5,
+  secondaryBtnText: { fontWeight: "600", fontSize: 14 },
+
+  metaHint: {
+    fontSize: 11.5,
     fontWeight: "500",
     textAlign: "center",
+    marginBottom: 8,
   },
-  loginHighlight: {
-    fontWeight: "800",
-  },
+
+  loginLink: { paddingVertical: 8, marginTop: 8 },
+  loginText: { fontSize: 13.5, fontWeight: "500", textAlign: "center" },
+  loginHighlight: { fontWeight: "800" },
 });

@@ -1,5 +1,5 @@
-import { useNavigation, useRoute } from "@react-navigation/native";
-import { useContext, useEffect, useState, useCallback, useRef } from "react";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useContext, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -13,17 +13,16 @@ import {
   Alert,
   Platform,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 
-import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../../context/AuthContext";
 import { api, deletePost, savePost, likePost, unlikePost, getUserPosts } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { isUserActive } from "../utils/helpers";
 import ReportModal from "./ReportModal";
-import BookingSheet from "../components/BookingSheet"; // ✅ NEW
+import BookingSheet from "../components/BookingSheet";
 
 // ==============================
 // VideoItem
@@ -59,7 +58,7 @@ const PostItem = ({
   onLikePress,
   isSaved,
   onSavePress,
-  onBook, // ✅ NEW
+  onBook,
 }) => {
   const navigation = useNavigation();
   const bookScale = useRef(new Animated.Value(1)).current;
@@ -106,7 +105,6 @@ const PostItem = ({
         },
       ]}
     >
-      {/* Description + actions */}
       <View style={styles.postHeader}>
         <Text
           style={[styles.description, { color: colors.textPrimary }]}
@@ -134,7 +132,6 @@ const PostItem = ({
         )}
       </View>
 
-      {/* Media */}
       {item.media && item.mediaType === "image" && (
         <Image source={{ uri: item.media }} style={styles.mediaImage} resizeMode="cover" />
       )}
@@ -142,7 +139,6 @@ const PostItem = ({
         <VideoItem uri={item.media} style={styles.mediaVideo} />
       )}
 
-      {/* Tags */}
       {item.tags?.length > 0 && (
         <View style={styles.tagRow}>
           {item.tags.slice(0, 3).map((tag, idx) => (
@@ -163,10 +159,8 @@ const PostItem = ({
         </View>
       )}
 
-      {/* Divider */}
       <View style={[styles.divider, { backgroundColor: colors.inputBorder }]} />
 
-      {/* Actions row */}
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={styles.actionButton}
@@ -215,7 +209,6 @@ const PostItem = ({
         </TouchableOpacity>
       </View>
 
-      {/* Book CTA */}
       <Animated.View style={{ transform: [{ scale: bookScale }] }}>
         <TouchableOpacity
           style={[
@@ -240,7 +233,7 @@ const PostItem = ({
 };
 
 // ==============================
-// Main UserProfileScreen
+// Main Screen
 // ==============================
 export default function UserProfileScreen() {
   const navigation = useNavigation();
@@ -256,57 +249,70 @@ export default function UserProfileScreen() {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [resetKey, setResetKey] = useState(0);
+  const [loadError, setLoadError] = useState(false);
 
   const [likedPosts, setLikedPosts] = useState([]);
   const [savedPosts, setSavedPosts] = useState([]);
 
-  // ✅ NEW: report modal state
   const [reportModalVisible, setReportModalVisible] = useState(false);
-
-  // ✅ NEW: booking sheet state
   const [bookingSheetVisible, setBookingSheetVisible] = useState(false);
   const [selectedPost, setSelectedPost] = useState(null);
 
-  const isOwnProfile = user?._id === resolvedUserId;
-  const userActive = isUserActive(userInfo?.lastActive);
+  // Race-condition guard — only the latest request wins
+  const loadRequestIdRef = useRef(0);
 
-  // ===== LOAD USER DATA =====
- const loadUserData = async (id) => {
-  setLoading(true);
-  try {
-    const res = await api.get(`/users/${id}`);
-    setUserInfo(res.data);
-    const userPosts = await getUserPosts(id);
-    setUserPosts(userPosts || []);
-    setResetKey((prev) => prev + 1);
-  } catch (error) {
-    console.log("User profile load error:", error);
-    setUserInfo(null);
-    setUserPosts([]);
-  } finally {
-    setLoading(false);
-  }
-};
+  // String comparison — safe against ObjectId vs string
+  const isOwnProfile =
+    String(user?._id || "") === String(resolvedUserId || "");
+  const userActive = isUserActive(userInfo?.lastActive);
+  const hasReviews = Number(userInfo?.rating || 0) > 0;
+
+  // ===== LOAD (race-safe + silent refresh support) =====
+  const loadUserData = useCallback(async (id, { silent = false } = {}) => {
+    if (!id) return;
+    const requestId = ++loadRequestIdRef.current;
+    if (!silent) {
+      setLoading(true);
+      setLoadError(false);
+    }
+
+    try {
+      const res = await api.get(`/users/${id}`);
+      if (requestId !== loadRequestIdRef.current) return;
+      setUserInfo(res.data);
+
+      const posts = await getUserPosts(id);
+      if (requestId !== loadRequestIdRef.current) return;
+      setUserPosts(posts || []);
+    } catch (error) {
+      if (requestId !== loadRequestIdRef.current) return;
+      console.log("User profile load error:", error);
+      if (!silent) {
+        setLoadError(true);
+        setUserInfo(null);
+        setUserPosts([]);
+      }
+    } finally {
+      if (requestId === loadRequestIdRef.current && !silent) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData(resolvedUserId);
+    }, [resolvedUserId, loadUserData])
+  );
 
   const onRefresh = useCallback(async () => {
     if (!resolvedUserId) return;
     setRefreshing(true);
-    await loadUserData(resolvedUserId);
+    await loadUserData(resolvedUserId, { silent: true });
     setRefreshing(false);
-  }, [resolvedUserId]);
+  }, [resolvedUserId, loadUserData]);
 
-  useEffect(() => {
-    if (resolvedUserId) loadUserData(resolvedUserId);
-  }, [resolvedUserId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (resolvedUserId) loadUserData(resolvedUserId);
-    }, [resolvedUserId])
-  );
-
-  // ✅ NEW: Booking sheet handlers
+  // ===== BOOKING =====
   const openBookingSheet = (post) => {
     setSelectedPost(post);
     setBookingSheetVisible(true);
@@ -317,55 +323,52 @@ export default function UserProfileScreen() {
     setSelectedPost(null);
   };
 
-const handleBookingConfirm = async ({ message, scheduledDate }) => {
-  if (!selectedPost) return;
+  const handleBookingConfirm = async ({ message, scheduledDate }) => {
+    if (!selectedPost) return;
 
-  const provider = selectedPost.user;
-  const post = selectedPost;
-  if (provider?._id === user?._id) {
-    throw new Error("You cannot book your own service.");
-  }
+    const provider = selectedPost.user;
+    const post = selectedPost;
 
-  // Map prefilledDate option to actual scheduledDate
-  let scheduledDateObj = new Date();
-  if (scheduledDate === "tomorrow") {
-    scheduledDateObj = new Date();
-    scheduledDateObj.setDate(scheduledDateObj.getDate() + 1);
-  } else if (scheduledDate === "flexible") {
-    scheduledDateObj = new Date();
-    scheduledDateObj.setDate(scheduledDateObj.getDate() + 3);
-  }
-
-  // Create booking FIRST; close sheet + navigate ONLY on success
-  try {
-    const res = await api.post("/bookings", {
-      client: user?._id,
-      provider: provider?._id || resolvedUserId,
-      post: post._id,
-      serviceTitle: post.description || post.skill || "Service",
-      scheduledDate: scheduledDateObj,
-      price: Number(post.price),
-      message: message,
-      status: "pending_acceptance",
-    });
-
-    if (!res.data?.success) {
-      throw new Error(res.data?.message || "Failed to create booking");
+    // String-safe own-service check
+    if (String(provider?._id || "") === String(user?._id || "")) {
+      throw new Error("You cannot book your own service.");
     }
 
-    // Success — close sheet, navigate to the existing booking
-    closeBookingSheet();
-    navigation.navigate("BookingScreen", {
-      bookingId: res.data.data._id,
-    });
-  } catch (error) {
-    const msg =
-      error.response?.data?.message || error.message || "Failed to create booking";
-    throw new Error(msg); // re-throw so BookingSheet shows the error inline
-  }
-};
+    let scheduledDateObj = new Date();
+    if (scheduledDate === "tomorrow") {
+      scheduledDateObj = new Date();
+      scheduledDateObj.setDate(scheduledDateObj.getDate() + 1);
+    } else if (scheduledDate === "flexible") {
+      scheduledDateObj = new Date();
+      scheduledDateObj.setDate(scheduledDateObj.getDate() + 3);
+    }
 
-  // ===== EDIT & DELETE =====
+    try {
+      const res = await api.post("/bookings", {
+        client: user?._id,
+        provider: provider?._id || resolvedUserId,
+        post: post._id,
+        serviceTitle: post.description || post.skill || "Service",
+        scheduledDate: scheduledDateObj,
+        price: Number(post.price),
+        message: message,
+        status: "pending_acceptance",
+      });
+
+      if (!res.data?.success) {
+        throw new Error(res.data?.message || "Failed to create booking");
+      }
+
+      closeBookingSheet();
+      navigation.navigate("BookingScreen", { bookingId: res.data.data._id });
+    } catch (error) {
+      const msg =
+        error.response?.data?.message || error.message || "Failed to create booking";
+      throw new Error(msg);
+    }
+  };
+
+  // ===== EDIT / DELETE =====
   const handleEditPost = (post) => {
     navigation.navigate("CreatePostScreen", { editPost: post });
   };
@@ -374,73 +377,83 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
     try {
       await deletePost(postId);
       setUserPosts((prev) => prev.filter((p) => p._id !== postId));
-      Alert.alert("Deleted", "Post deleted successfully.");
+      if (Platform.OS === "web") {
+        window.alert("Post deleted successfully.");
+      } else {
+        Alert.alert("Deleted", "Post deleted successfully.");
+      }
     } catch (error) {
-      Alert.alert("Error", "Could not delete post.");
+      if (Platform.OS === "web") {
+        window.alert("Could not delete post.");
+      } else {
+        Alert.alert("Error", "Could not delete post.");
+      }
     }
   };
 
-  // ===== LIKE =====
+  // ===== LIKE (with rollback) =====
   const toggleLike = async (postId) => {
-    const isLiked = likedPosts.includes(postId);
+    const wasLiked = likedPosts.includes(postId);
+    const previousLiked = likedPosts;
+    const previousPosts = userPosts;
+
     setLikedPosts((prev) =>
-      isLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
+      wasLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
     );
     setUserPosts((prev) =>
       prev.map((post) =>
         post._id === postId
           ? {
               ...post,
-              likesCount: isLiked ? (post.likesCount || 1) - 1 : (post.likesCount || 0) + 1,
+              likesCount: wasLiked
+                ? Math.max(0, (post.likesCount || 1) - 1)
+                : (post.likesCount || 0) + 1,
             }
           : post
       )
     );
+
     try {
-      if (isLiked) await unlikePost(postId);
+      if (wasLiked) await unlikePost(postId);
       else await likePost(postId);
     } catch (error) {
-      await loadUserData(resolvedUserId);
+      // Rollback
+      setLikedPosts(previousLiked);
+      setUserPosts(previousPosts);
     }
   };
 
-  // ===== SAVE =====
+  // ===== SAVE (functional update — fixes stale closure) =====
   const toggleSave = async (postId) => {
+    const wasSaved = savedPosts.includes(postId);
+    setSavedPosts((prev) =>
+      wasSaved ? prev.filter((id) => id !== postId) : [...prev, postId]
+    );
     try {
       await savePost(postId);
-      if (savedPosts.includes(postId)) {
-        setSavedPosts(savedPosts.filter((id) => id !== postId));
-      } else {
-        setSavedPosts([...savedPosts, postId]);
-      }
     } catch (error) {
-      Alert.alert("Error", "Could not save post.");
+      // Rollback
+      setSavedPosts((prev) =>
+        wasSaved ? [...prev, postId] : prev.filter((id) => id !== postId)
+      );
+      if (Platform.OS === "web") window.alert("Could not save post.");
+      else Alert.alert("Error", "Could not save post.");
     }
   };
 
   // ===== LOGOUT =====
   const handleLogout = () => {
-    // Web doesn't support Alert.alert — use window.confirm
     if (Platform.OS === "web") {
-      const confirmed = window.confirm("Are you sure you want to log out?");
-      if (confirmed) logout();
+      if (window.confirm("Are you sure you want to log out?")) logout();
       return;
     }
-
-    Alert.alert(
-      "Log Out",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Log Out",
-          style: "destructive",
-          onPress: () => logout(),
-        },
-      ]
-    );
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log Out", style: "destructive", onPress: () => logout() },
+    ]);
   };
 
+  // ===== LOADING STATE =====
   if (loading || authLoading || !resolvedUserId) {
     return (
       <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -451,10 +464,61 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
     );
   }
 
-  // ===== PROFILE HEADER =====
-  const ProfileHeader = () => (
+  // ===== ERROR STATE =====
+  if (loadError || !userInfo) {
+    return (
+      <View
+        style={[
+          styles.safeArea,
+          { backgroundColor: colors.background, paddingTop: insets.top },
+        ]}
+      >
+        <View style={styles.errorContainer}>
+          <View
+            style={[
+              styles.errorIconWrap,
+              { backgroundColor: colors.danger + "15" },
+            ]}
+          >
+            <Ionicons name="alert-circle-outline" size={32} color={colors.danger} />
+          </View>
+          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>
+            Couldn't load profile
+          </Text>
+          <Text style={[styles.errorSub, { color: colors.textTertiary }]}>
+            Check your connection and try again.
+          </Text>
+          <View style={styles.errorActions}>
+            <TouchableOpacity
+              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+              onPress={() => loadUserData(resolvedUserId)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="refresh" size={16} color={colors.textInverse} />
+              <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.backBtnError, { borderColor: colors.inputBorder }]}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[styles.backBtnErrorText, { color: colors.textSecondary }]}
+              >
+                Go Back
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // ===== PROFILE HEADER (JSX, not a component — no remount per render) =====
+  const renderProfileHeader = () => (
     <View style={styles.profileSection}>
-      {/* Back + actions row */}
       <View style={styles.backRow}>
         <TouchableOpacity
           style={[
@@ -467,7 +531,6 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
 
-        {/* Right side: Settings + Logout (own) OR Report (other) */}
         {isOwnProfile ? (
           <View style={{ flexDirection: "row", gap: 8 }}>
             <TouchableOpacity
@@ -478,9 +541,12 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
               onPress={() => navigation.navigate("Settings")}
               activeOpacity={0.7}
             >
-              <Ionicons name="settings-outline" size={18} color={colors.textPrimary} />
+              <Ionicons
+                name="settings-outline"
+                size={18}
+                color={colors.textPrimary}
+              />
             </TouchableOpacity>
-
             <TouchableOpacity
               style={[
                 styles.backButton,
@@ -506,7 +572,6 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
         )}
       </View>
 
-      {/* Avatar + name + bio row */}
       <View style={styles.profileTop}>
         <View style={styles.avatarWrap}>
           {userInfo?.profileImage ? (
@@ -538,15 +603,29 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
         </View>
 
         <View style={styles.profileInfo}>
-          <Text
-            style={[styles.name, { color: colors.textPrimary }]}
-            numberOfLines={1}
-          >
-            {userInfo?.name || "User"}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text
+              style={[styles.name, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              {userInfo?.name || "User"}
+            </Text>
+            {userInfo?.isVerified && (
+              <Ionicons
+                name="checkmark-circle"
+                size={18}
+                color={colors.primary}
+                style={{ marginLeft: 4 }}
+              />
+            )}
+          </View>
           {userInfo?.location ? (
             <View style={styles.locationRow}>
-              <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+              <Ionicons
+                name="location-outline"
+                size={12}
+                color={colors.textTertiary}
+              />
               <Text
                 style={[styles.locationText, { color: colors.textTertiary }]}
                 numberOfLines={1}
@@ -558,7 +637,6 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
         </View>
       </View>
 
-      {/* Bio */}
       <Text
         style={[styles.bio, { color: colors.textSecondary }]}
         numberOfLines={3}
@@ -566,7 +644,6 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
         {userInfo?.bio || "No description provided"}
       </Text>
 
-      {/* Stats + Edit button row */}
       <View style={styles.statsRow}>
         <View
           style={[
@@ -578,21 +655,44 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
           ]}
         >
           <View style={styles.statItem}>
-            <Ionicons name="star" size={14} color="#F59E0B" />
-            <Text style={[styles.statValue, { color: colors.textPrimary }]}>
-              {Number(userInfo?.rating || 0).toFixed(1)}
+            {hasReviews ? (
+              <>
+                <Ionicons name="star" size={14} color="#F59E0B" />
+                <Text
+                  style={[styles.statValue, { color: colors.textPrimary }]}
+                >
+                  {Number(userInfo?.rating || 0).toFixed(1)}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="sparkles" size={14} color={colors.primary} />
+                <Text style={[styles.statValue, { color: colors.primary }]}>
+                  New
+                </Text>
+              </>
+            )}
+            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>
+              {hasReviews ? "Rating" : "No reviews"}
             </Text>
-            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Rating</Text>
           </View>
 
-          <View style={[styles.statDivider, { backgroundColor: colors.inputBorder }]} />
+          <View
+            style={[styles.statDivider, { backgroundColor: colors.inputBorder }]}
+          />
 
           <View style={styles.statItem}>
-            <Ionicons name="briefcase-outline" size={14} color={colors.primary} />
+            <Ionicons
+              name="briefcase-outline"
+              size={14}
+              color={colors.primary}
+            />
             <Text style={[styles.statValue, { color: colors.textPrimary }]}>
               {userInfo?.jobsCompleted || 0}
             </Text>
-            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Jobs</Text>
+            <Text style={[styles.statLabel, { color: colors.textTertiary }]}>
+              Jobs
+            </Text>
           </View>
         </View>
 
@@ -602,8 +702,14 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
             onPress={() => navigation.navigate("EditProfile", { userInfo })}
             activeOpacity={0.85}
           >
-            <Ionicons name="create-outline" size={15} color={colors.textInverse} />
-            <Text style={[styles.editButtonText, { color: colors.textInverse }]}>
+            <Ionicons
+              name="create-outline"
+              size={15}
+              color={colors.textInverse}
+            />
+            <Text
+              style={[styles.editButtonText, { color: colors.textInverse }]}
+            >
               Edit
             </Text>
           </TouchableOpacity>
@@ -612,8 +718,7 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
     </View>
   );
 
-  // ===== SECTION HEADER =====
-  const SectionHeader = () => (
+  const renderSectionHeader = () => (
     <View style={styles.sectionHeader}>
       <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
         Services
@@ -637,14 +742,16 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
         ]}
       >
         <FlatList
-          key={resetKey}
           data={userPosts}
           keyExtractor={(item) => item._id}
           renderItem={({ item }) => (
             <PostItem
               item={item}
               userId={resolvedUserId}
-              isOwnPost={isOwnProfile && item.user?._id === user?._id}
+              isOwnPost={
+                isOwnProfile &&
+                String(item.user?._id || "") === String(user?._id || "")
+              }
               onEdit={handleEditPost}
               onDelete={handleDeletePost}
               colors={colors}
@@ -653,15 +760,15 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
               onLikePress={toggleLike}
               isSaved={savedPosts.includes(item._id)}
               onSavePress={toggleSave}
-              onBook={openBookingSheet} // ✅ NEW
+              onBook={openBookingSheet}
             />
           )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <>
-              <ProfileHeader />
-              <SectionHeader />
+              {renderProfileHeader()}
+              {renderSectionHeader()}
             </>
           }
           refreshControl={
@@ -680,12 +787,18 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
                   { backgroundColor: colors.inputBackground },
                 ]}
               >
-                <Ionicons name="cube-outline" size={28} color={colors.textTertiary} />
+                <Ionicons
+                  name="cube-outline"
+                  size={28}
+                  color={colors.textTertiary}
+                />
               </View>
               <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
                 No services yet
               </Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+              <Text
+                style={[styles.emptySubtitle, { color: colors.textTertiary }]}
+              >
                 {isOwnProfile
                   ? "Create your first service post"
                   : "This user hasn't posted any services"}
@@ -696,7 +809,6 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
         />
       </View>
 
-      {/* ✅ Report Modal */}
       <ReportModal
         visible={reportModalVisible}
         onClose={() => setReportModalVisible(false)}
@@ -704,7 +816,6 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
         targetId={resolvedUserId}
       />
 
-      {/* ✅ Booking Sheet */}
       <BookingSheet
         visible={bookingSheetVisible}
         onClose={closeBookingSheet}
@@ -717,14 +828,57 @@ const handleBookingConfirm = async ({ message, scheduledDate }) => {
   );
 }
 
-// ========================================
-// STYLES (unchanged)
-// ========================================
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1 },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
 
+  // ===== ERROR STATE =====
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  errorIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorSub: {
+    fontSize: 13.5,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 24,
+  },
+  errorActions: { flexDirection: "row", gap: 10 },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  retryBtnText: { fontSize: 14, fontWeight: "700" },
+  backBtnError: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  backBtnErrorText: { fontSize: 14, fontWeight: "600" },
+
+  // ===== PROFILE =====
   profileSection: {
     paddingHorizontal: 20,
     paddingTop: 4,
@@ -744,15 +898,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
   },
-  logoutButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-
   profileTop: {
     flexDirection: "row",
     alignItems: "center",
@@ -784,27 +929,22 @@ const styles = StyleSheet.create({
     borderWidth: 3,
   },
   profileInfo: { flex: 1 },
+  nameRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
   name: {
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.4,
-    marginBottom: 4,
+    flexShrink: 1,
   },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   locationText: { fontSize: 12.5, fontWeight: "500" },
-
   bio: {
     fontSize: 13.5,
     lineHeight: 19,
     fontWeight: "400",
     marginBottom: 14,
   },
-
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
+  statsRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   statsBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -814,11 +954,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     flex: 1,
   },
-  statItem: {
-    flex: 1,
-    alignItems: "center",
-    gap: 2,
-  },
+  statItem: { flex: 1, alignItems: "center", gap: 2 },
   statValue: {
     fontSize: 15,
     fontWeight: "800",
@@ -831,7 +967,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   statDivider: { width: 1, height: 28 },
-
   editButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -865,10 +1000,7 @@ const styles = StyleSheet.create({
   },
   sectionBadgeText: { fontSize: 12.5, fontWeight: "800" },
 
-  listContent: {
-    paddingBottom: 110,
-    minHeight: "100%",
-  },
+  listContent: { paddingBottom: 110, minHeight: "100%" },
 
   card: {
     marginHorizontal: 20,
@@ -893,11 +1025,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     flex: 1,
   },
-  postActions: {
-    flexDirection: "row",
-    gap: 6,
-    marginLeft: 10,
-  },
+  postActions: { flexDirection: "row", gap: 6, marginLeft: 10 },
   actionIcon: {
     width: 30,
     height: 30,
@@ -905,7 +1033,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   mediaImage: {
     width: "100%",
     aspectRatio: 1.5,
@@ -919,7 +1046,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     marginBottom: 10,
   },
-
   tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -930,9 +1056,7 @@ const styles = StyleSheet.create({
   tag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   tagText: { fontSize: 11.5, fontWeight: "600" },
   moreTagsText: { fontSize: 12, fontWeight: "600", marginLeft: 2 },
-
   divider: { height: 1, marginBottom: 8 },
-
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -949,7 +1073,6 @@ const styles = StyleSheet.create({
   },
   actionRight: { marginLeft: "auto" },
   actionButtonText: { fontWeight: "600", fontSize: 13.5 },
-
   bookButton: {
     height: 48,
     paddingHorizontal: 16,
@@ -979,7 +1102,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12.5,
   },
-
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",

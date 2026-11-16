@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,17 +19,28 @@ import { AuthContext } from "../../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { requestAccountDeletion, cancelAccountDeletion } from "../services/api";
 
+const webAlert = (title, message) => {
+  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
+  else Alert.alert(title, message || "");
+};
+
+const webConfirm = (message) => {
+  if (Platform.OS === "web") return window.confirm(message);
+  return true; // For native, use Alert.alert separately
+};
+
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout, updateUser } = useContext(AuthContext);
 
   const [deleting, setDeleting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
 
   const isPendingDeletion = !!user?.scheduledDeletionAt;
 
@@ -40,6 +52,7 @@ export default function SettingsScreen() {
     if (Platform.OS === "web") {
       if (window.confirm(message)) {
         setPassword("");
+        setPasswordError("");
         setPasswordModalVisible(true);
       }
       return;
@@ -52,6 +65,7 @@ export default function SettingsScreen() {
         style: "destructive",
         onPress: () => {
           setPassword("");
+          setPasswordError("");
           setPasswordModalVisible(true);
         },
       },
@@ -60,10 +74,16 @@ export default function SettingsScreen() {
 
   // ===== STEP 2: Submit with password =====
   const handleConfirmDelete = async () => {
-    if (!password || password.length < 6) {
-      const msg = "Please enter your password";
-      if (Platform.OS === "web") window.alert(msg);
-      else Alert.alert("Error", msg);
+    if (deleting) return;
+
+    setPasswordError("");
+
+    if (!password) {
+      setPasswordError("Please enter your password.");
+      return;
+    }
+    if (password.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
       return;
     }
 
@@ -73,6 +93,7 @@ export default function SettingsScreen() {
 
       setPasswordModalVisible(false);
       setPassword("");
+      setPasswordError("");
 
       if (res.success) {
         const successMsg =
@@ -87,40 +108,69 @@ export default function SettingsScreen() {
           ]);
         }
       } else {
+        // Show inline error — could be wrong password
         const msg = res.message || "Failed to schedule deletion";
-        if (Platform.OS === "web") window.alert(msg);
-        else Alert.alert("Error", msg);
+        setPasswordError(msg);
+        setPasswordModalVisible(true);
       }
     } catch (error) {
       const msg =
-        error.response?.data?.message || "Could not schedule deletion. Try again.";
-      if (Platform.OS === "web") window.alert(msg);
-      else Alert.alert("Error", msg);
+        error.response?.data?.message ||
+        "Could not schedule deletion. Try again.";
+      setPasswordError(msg);
+      setPasswordModalVisible(true);
     } finally {
       setDeleting(false);
     }
   };
 
   // ===== CANCEL DELETION =====
-  const handleCancelDeletion = async () => {
-    setCancelling(true);
-    try {
-      const res = await cancelAccountDeletion();
-      if (res.success) {
-        const msg = "Your account is safe. Welcome back!";
-        if (Platform.OS === "web") window.alert(msg);
-        else Alert.alert("Cancelled", msg);
+  const handleCancelDeletion = () => {
+    const message =
+      "This will cancel the scheduled deletion. Your account will remain active. Continue?";
+
+    const onConfirm = async () => {
+      setCancelling(true);
+      try {
+        const res = await cancelAccountDeletion();
+        if (res.success) {
+          // ✅ Update context so isPendingDeletion flips to false immediately
+          if (updateUser) {
+            updateUser({ scheduledDeletionAt: null, deleteRequestedAt: null });
+          }
+          webAlert("Welcome back!", "Your account is safe.");
+        } else {
+          webAlert("Error", res.message || "Could not cancel deletion.");
+        }
+      } catch (error) {
+        webAlert(
+          "Error",
+          error.response?.data?.message ||
+            "Could not cancel deletion. Please try again."
+        );
+      } finally {
+        setCancelling(false);
       }
-    } catch (error) {
-      const msg = "Could not cancel deletion. Please try again.";
-      if (Platform.OS === "web") window.alert(msg);
-      else Alert.alert("Error", msg);
-    } finally {
-      setCancelling(false);
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) onConfirm();
+    } else {
+      Alert.alert("Cancel Deletion?", message, [
+        { text: "Keep Scheduled", style: "cancel" },
+        { text: "Cancel Deletion", onPress: onConfirm },
+      ]);
     }
   };
 
-  const Row = ({ icon, label, onPress, danger = false, success = false, loading = false }) => (
+  const Row = ({
+    icon,
+    label,
+    onPress,
+    danger = false,
+    success = false,
+    loading = false,
+  }) => (
     <TouchableOpacity
       style={[styles.row, { borderBottomColor: colors.inputBorder }]}
       onPress={onPress}
@@ -131,7 +181,9 @@ export default function SettingsScreen() {
         <Ionicons
           name={icon}
           size={20}
-          color={danger ? colors.danger : success ? colors.success : colors.textPrimary}
+          color={
+            danger ? colors.danger : success ? colors.success : colors.textPrimary
+          }
         />
         <Text
           style={[
@@ -149,7 +201,10 @@ export default function SettingsScreen() {
         </Text>
       </View>
       {loading ? (
-        <ActivityIndicator size="small" color={success ? colors.success : colors.danger} />
+        <ActivityIndicator
+          size="small"
+          color={success ? colors.success : colors.danger}
+        />
       ) : (
         <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       )}
@@ -158,7 +213,6 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
-      {/* HEADER */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
           style={[
@@ -183,7 +237,6 @@ export default function SettingsScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Pending Deletion Banner */}
         {isPendingDeletion && (
           <View
             style={[
@@ -199,7 +252,9 @@ export default function SettingsScreen() {
               <Text style={[styles.pendingTitle, { color: colors.danger }]}>
                 Deletion scheduled
               </Text>
-              <Text style={[styles.pendingText, { color: colors.textSecondary }]}>
+              <Text
+                style={[styles.pendingText, { color: colors.textSecondary }]}
+              >
                 Your account will be deleted on{" "}
                 {new Date(user.scheduledDeletionAt).toLocaleDateString()}.
               </Text>
@@ -207,7 +262,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {/* Legal */}
         <Text style={[styles.sectionLabel, { color: colors.textTertiary }]}>
           LEGAL
         </Text>
@@ -229,7 +283,6 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* Danger Zone */}
         <Text style={[styles.sectionLabel, { color: colors.textTertiary }]}>
           DANGER ZONE
         </Text>
@@ -258,7 +311,6 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {/* Info block */}
         {!isPendingDeletion && (
           <View
             style={[
@@ -286,17 +338,23 @@ export default function SettingsScreen() {
         </Text>
       </ScrollView>
 
-      {/* ===== PASSWORD MODAL ===== */}
+      {/* PASSWORD MODAL */}
       <Modal
         visible={passwordModalVisible}
         transparent
         animationType="slide"
         onRequestClose={() => {
-          setPasswordModalVisible(false);
-          setPassword("");
+          if (!deleting) {
+            setPasswordModalVisible(false);
+            setPassword("");
+            setPasswordError("");
+          }
         }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
           <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
             <View
               style={[
@@ -319,19 +377,24 @@ export default function SettingsScreen() {
                 styles.passwordWrap,
                 {
                   backgroundColor: colors.inputBackground,
-                  borderColor: colors.inputBorder,
+                  borderColor: passwordError ? colors.danger : colors.inputBorder,
                 },
               ]}
             >
               <TextInput
                 style={[styles.passwordInput, { color: colors.textPrimary }]}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(t) => {
+                  setPassword(t);
+                  if (passwordError) setPasswordError("");
+                }}
                 placeholder="Enter your password"
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry={!showPassword}
                 autoFocus
                 autoCapitalize="none"
+                autoCorrect={false}
+                editable={!deleting}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
@@ -346,22 +409,53 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
 
+            {passwordError ? (
+              <View
+                style={[
+                  styles.errorBox,
+                  {
+                    backgroundColor: colors.danger + "12",
+                    borderColor: colors.danger + "40",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="alert-circle"
+                  size={14}
+                  color={colors.danger}
+                />
+                <Text style={[styles.errorText, { color: colors.danger }]}>
+                  {passwordError}
+                </Text>
+              </View>
+            ) : null}
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.inputBackground }]}
+                style={[
+                  styles.modalButton,
+                  { backgroundColor: colors.inputBackground },
+                ]}
                 onPress={() => {
                   setPasswordModalVisible(false);
                   setPassword("");
+                  setPasswordError("");
                 }}
+                disabled={deleting}
               >
-                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>
+                <Text
+                  style={[styles.modalButtonText, { color: colors.textPrimary }]}
+                >
                   Cancel
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.modalButton,
-                  { backgroundColor: colors.danger, opacity: deleting ? 0.7 : 1 },
+                  {
+                    backgroundColor: colors.danger,
+                    opacity: deleting ? 0.7 : 1,
+                  },
                 ]}
                 onPress={handleConfirmDelete}
                 disabled={deleting}
@@ -376,7 +470,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -441,14 +535,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: -8,
   },
-  infoText: {
-    flex: 1,
-    fontSize: 12.5,
-    fontWeight: "500",
-    lineHeight: 17,
-  },
+  infoText: { flex: 1, fontSize: 12.5, fontWeight: "500", lineHeight: 17 },
 
-  // Pending banner
   pendingBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -463,13 +551,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
     marginBottom: 2,
   },
-  pendingText: {
-    fontSize: 12,
-    fontWeight: "500",
-    lineHeight: 16,
-  },
+  pendingText: { fontSize: 12, fontWeight: "500", lineHeight: 16 },
 
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -512,7 +595,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 14,
     height: 50,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   passwordInput: {
     flex: 1,
@@ -520,11 +603,19 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     paddingVertical: 0,
   },
-  modalButtons: {
+  errorBox: {
     flexDirection: "row",
-    gap: 10,
+    alignItems: "center",
+    gap: 6,
     width: "100%",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 12,
   },
+  errorText: { fontSize: 12.5, fontWeight: "600", flex: 1 },
+  modalButtons: { flexDirection: "row", gap: 10, width: "100%" },
   modalButton: {
     flex: 1,
     paddingVertical: 13,
