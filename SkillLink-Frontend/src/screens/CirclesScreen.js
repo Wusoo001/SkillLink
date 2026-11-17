@@ -1,13 +1,12 @@
-import React, { useState, useCallback, useContext, useRef } from "react";
+import React, { useState, useCallback, useContext } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
+  ScrollView,
   ActivityIndicator,
   RefreshControl,
-  Platform,
   Alert,
 } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -15,12 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { AuthContext } from "../../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { getCircles, getMyCircle, joinCircle } from "../services/api";
-
-const webAlert = (title, message) => {
-  if (Platform.OS === "web") window.alert(`${title}\n\n${message || ""}`);
-  else Alert.alert(title, message || "");
-};
+import { getMyCircle, joinCircle } from "../services/api";
 
 export default function CirclesScreen() {
   const navigation = useNavigation();
@@ -29,394 +23,216 @@ export default function CirclesScreen() {
   const insets = useSafeAreaInsets();
 
   const [myCircle, setMyCircle] = useState(null);
-  const [myCircleMessage, setMyCircleMessage] = useState("");
-  const [circles, setCircles] = useState([]);
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [joiningId, setJoiningId] = useState(null);
+  const [joining, setJoining] = useState(false);
 
-  const requestIdRef = useRef(0);
-  const isFirstFocusRef = useRef(true);
-
-  const load = async ({ silent = false } = {}) => {
-    const id = ++requestIdRef.current;
-    if (!silent) {
-      setLoading(true);
-      setLoadError(false);
-    }
+  const load = async () => {
     try {
-      const [mineRes, listRes] = await Promise.all([
-        getMyCircle(),
-        getCircles(1, 50),
-      ]);
-      if (id !== requestIdRef.current) return;
-
-      if (mineRes?.success) {
-        setMyCircle(mineRes.data);
-        setMyCircleMessage(mineRes.message || "");
-      }
-      if (listRes?.success) {
-        setCircles(listRes.data || []);
-      }
-      if (!mineRes?.success && !listRes?.success) {
-        setLoadError(true);
+      const res = await getMyCircle();
+      if (res?.success) {
+        setMyCircle(res.data);
+        setMessage(res.message || "");
       }
     } catch (error) {
-      if (id !== requestIdRef.current) return;
-      setLoadError(true);
+      console.log("Load my circle error:", error);
     } finally {
-      if (id === requestIdRef.current && !silent) {
-        setLoading(false);
-        setRefreshing(false);
-      }
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      if (isFirstFocusRef.current) {
-        isFirstFocusRef.current = false;
-        load();
-      } else {
-        // Silent refresh on re-focus — cheap, ensures fresh member state
-        load({ silent: true });
-      }
+      load();
     }, [])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    load({ silent: true });
+    load();
   };
 
-  const handleOpen = (circle) => {
-    navigation.navigate("CircleDetail", {
-      circleId: circle._id,
-      circleName: circle.name,
-    });
-  };
-
-  const handleJoinAndOpen = async (circle) => {
-    if (joiningId) return;
-    setJoiningId(circle._id);
+  const handleJoin = async () => {
+    if (!myCircle || joining) return;
+    setJoining(true);
     try {
-      await joinCircle(circle._id);
-      // Refresh list so "isMember" is accurate on both this screen and detail
-      await load({ silent: true });
-      handleOpen(circle);
-    } catch (error) {
-      webAlert(
-        "Could not join circle",
-        error.response?.data?.message || "Please try again."
-      );
+      await joinCircle(myCircle._id);
+      await load();
+    } catch (err) {
+      Alert.alert("Error", err.response?.data?.message || "Could not join circle");
     } finally {
-      setJoiningId(null);
+      setJoining(false);
     }
   };
 
-  const renderCircleCard = ({ item }) => {
-    const isJoining = joiningId === item._id;
-    return (
-      <TouchableOpacity
-        style={[
-          styles.circleCard,
-          { backgroundColor: colors.card, borderColor: colors.inputBorder },
-        ]}
-        onPress={() => handleOpen(item)}
-        activeOpacity={0.85}
-        disabled={isJoining}
-      >
-        <View
-          style={[styles.circleIcon, { backgroundColor: colors.primaryLight }]}
-        >
-          <Ionicons name="people" size={20} color={colors.primary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text
-            style={[styles.circleName, { color: colors.textPrimary }]}
-            numberOfLines={1}
-          >
-            {item.name}
-          </Text>
-          <Text style={[styles.circleMeta, { color: colors.textTertiary }]}>
-            {item.memberCount} member{item.memberCount !== 1 ? "s" : ""} ·{" "}
-            {item.requestCount} request{item.requestCount !== 1 ? "s" : ""}
-          </Text>
-        </View>
-        {isJoining ? (
-          <ActivityIndicator size="small" color={colors.primary} />
-        ) : item.isMember ? (
-          <View
-            style={[
-              styles.badge,
-              { backgroundColor: colors.success + "15" },
-            ]}
-          >
-            <Text style={[styles.badgeText, { color: colors.success }]}>
-              Member
-            </Text>
-          </View>
-        ) : (
-          <Ionicons
-            name="chevron-forward"
-            size={18}
-            color={colors.textTertiary}
-          />
-        )}
-      </TouchableOpacity>
-    );
+  const handleOpen = () => {
+    if (!myCircle) return;
+    navigation.navigate("CircleDetail", {
+      circleId: myCircle._id,
+      circleName: myCircle.name,
+    });
   };
 
-  // ===== ERROR STATE =====
-  if (loadError && !loading && circles.length === 0 && !myCircle) {
+  if (loading) {
     return (
-      <View
-        style={[
-          styles.safeArea,
-          { backgroundColor: colors.background, paddingTop: insets.top + 8 },
-        ]}
-      >
-        <View style={styles.header}>
+      <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity
-            style={[
-              styles.backButton,
-              { backgroundColor: colors.card, borderColor: colors.inputBorder },
-            ]}
+            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
             onPress={() => navigation.goBack()}
           >
             <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-            Street Circles
-          </Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Street Circles</Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.center}>
-          <View
-            style={[
-              styles.emptyIconWrap,
-              { backgroundColor: colors.danger + "15" },
-            ]}
-          >
-            <Ionicons
-              name="cloud-offline-outline"
-              size={28}
-              color={colors.danger}
-            />
-          </View>
-          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-            Couldn't load circles
-          </Text>
-          <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
-            Check your connection and try again.
-          </Text>
-          <TouchableOpacity
-            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-            onPress={() => {
-              setLoadError(false);
-              load();
-            }}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="refresh" size={16} color={colors.textInverse} />
-            <Text style={[styles.retryBtnText, { color: colors.textInverse }]}>
-              Retry
-            </Text>
-          </TouchableOpacity>
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </View>
     );
   }
 
+  const noLgaSet = !user?.locationDetails?.city || !user?.locationDetails?.state;
+
   return (
-    <View
-      style={[
-        styles.safeArea,
-        { backgroundColor: colors.background, paddingTop: insets.top + 8 },
-      ]}
-    >
+    <View style={[styles.safeArea, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
       <View style={styles.header}>
         <TouchableOpacity
-          style={[
-            styles.backButton,
-            { backgroundColor: colors.card, borderColor: colors.inputBorder },
-          ]}
+          style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.inputBorder }]}
           onPress={() => navigation.goBack()}
         >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-          Street Circles
-        </Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Street Circles</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={circles}
-          keyExtractor={(item) => item._id}
-          renderItem={renderCircleCard}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          }
-          ListHeaderComponent={
-            <>
-              <View style={styles.section}>
-                <Text
-                  style={[
-                    styles.sectionLabel,
-                    { color: colors.textTertiary },
-                  ]}
-                >
-                  YOUR CIRCLE
-                </Text>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
+          Ask neighbors. Get real recommendations.
+        </Text>
+        <Text style={[styles.heroSub, { color: colors.textTertiary }]}>
+          Your local circle connects you with people nearby who actually know who's good at what.
+        </Text>
 
-                {myCircle ? (
-                  <TouchableOpacity
-                    style={[
-                      styles.myCircleCard,
-                      {
-                        backgroundColor: colors.primaryLight,
-                        borderColor: colors.primary + "40",
-                      },
-                    ]}
-                    onPress={() =>
-                      myCircle.isMember
-                        ? handleOpen(myCircle)
-                        : handleJoinAndOpen(myCircle)
-                    }
-                    activeOpacity={0.85}
-                    disabled={joiningId === myCircle._id}
-                  >
-                    <View style={styles.myCircleTop}>
-                      <Ionicons name="home" size={22} color={colors.primary} />
-                      <Text
-                        style={[
-                          styles.myCircleName,
-                          { color: colors.textPrimary },
-                        ]}
-                      >
-                        {myCircle.name}
-                      </Text>
-                    </View>
-                    <Text
-                      style={[
-                        styles.myCircleSub,
-                        { color: colors.textSecondary },
-                      ]}
-                    >
-                      {myCircle.memberCount} member
-                      {myCircle.memberCount !== 1 ? "s" : ""} in your area
-                    </Text>
-                    <View
-                      style={[
-                        styles.myCircleBtn,
-                        { backgroundColor: colors.primary },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.myCircleBtnText,
-                          { color: colors.textInverse },
-                        ]}
-                      >
-                        {myCircle.isMember
-                          ? "Open Circle"
-                          : joiningId === myCircle._id
-                          ? "Joining..."
-                          : "Join Circle"}
-                      </Text>
-                      <Ionicons
-                        name="arrow-forward"
-                        size={14}
-                        color={colors.textInverse}
-                      />
-                    </View>
-                  </TouchableOpacity>
-                ) : (
-                  <View
-                    style={[
-                      styles.comingSoonCard,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: colors.inputBorder,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name="time-outline"
-                      size={26}
-                      color={colors.textTertiary}
-                    />
-                    <Text
-                      style={[
-                        styles.comingSoonTitle,
-                        { color: colors.textPrimary },
-                      ]}
-                    >
-                      {myCircleMessage || "Your circle is coming soon"}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.comingSoonSub,
-                        { color: colors.textTertiary },
-                      ]}
-                    >
-                      {user?.locationDetails?.city
-                        ? "We'll notify you when Street Circles launches in your area."
-                        : "Set your LGA in your profile to see your local circle."}
-                    </Text>
-                  </View>
-                )}
+        {myCircle ? (
+          <View
+            style={[
+              styles.circleCard,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
+          >
+            <View style={styles.circleHeader}>
+              <View style={[styles.circleIconWrap, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name="location" size={22} color={colors.primary} />
               </View>
-
-              {circles.length > 0 && (
+              <View style={{ flex: 1 }}>
                 <Text
-                  style={[
-                    styles.sectionLabel,
-                    { color: colors.textTertiary, marginTop: 20 },
-                  ]}
+                  style={[styles.circleName, { color: colors.textPrimary }]}
+                  numberOfLines={1}
                 >
-                  ACTIVE CIRCLES
+                  {myCircle.name}
                 </Text>
-              )}
-            </>
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <View
-                style={[
-                  styles.emptyIconWrap,
-                  { backgroundColor: colors.inputBackground },
-                ]}
-              >
-                <Ionicons
-                  name="people-outline"
-                  size={26}
-                  color={colors.textTertiary}
-                />
+                <Text style={[styles.circleMeta, { color: colors.textTertiary }]}>
+                  {myCircle.memberCount} member{myCircle.memberCount !== 1 ? "s" : ""}
+                  {" · "}
+                  {myCircle.requestCount} request{myCircle.requestCount !== 1 ? "s" : ""}
+                </Text>
               </View>
-              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-                No active circles yet
-              </Text>
-              <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
-                Street Circles is rolling out one neighborhood at a time. We'll
-                be in your area soon.
-              </Text>
             </View>
-          }
-        />
-      )}
+
+            {myCircle.memberCount < 5 && (
+              <View style={[styles.earlyNudge, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name="sparkles-outline" size={14} color={colors.primary} />
+                <Text style={[styles.earlyNudgeText, { color: colors.primary }]}>
+                  You're among the first here. Every neighbor who joins makes this circle stronger.
+                </Text>
+              </View>
+            )}
+
+            {myCircle.isMember ? (
+              <TouchableOpacity
+                style={[styles.openBtn, { backgroundColor: colors.primary }]}
+                onPress={handleOpen}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.openBtnText, { color: colors.textInverse }]}>
+                  Open Circle
+                </Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.textInverse} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.openBtn,
+                  { backgroundColor: colors.primary, opacity: joining ? 0.6 : 1 },
+                ]}
+                onPress={handleJoin}
+                disabled={joining}
+                activeOpacity={0.9}
+              >
+                {joining ? (
+                  <ActivityIndicator color={colors.textInverse} size="small" />
+                ) : (
+                  <>
+                    <Text style={[styles.openBtnText, { color: colors.textInverse }]}>
+                      Join Your Circle
+                    </Text>
+                    <Ionicons name="arrow-forward" size={16} color={colors.textInverse} />
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.emptyCard,
+              { backgroundColor: colors.card, borderColor: colors.inputBorder },
+            ]}
+          >
+            <View style={[styles.emptyIcon, { backgroundColor: colors.inputBackground }]}>
+              <Ionicons
+                name={noLgaSet ? "location-outline" : "time-outline"}
+                size={32}
+                color={colors.textTertiary}
+              />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              {noLgaSet ? "Set Your LGA to Join" : message || "Your circle is coming soon"}
+            </Text>
+            <Text style={[styles.emptySub, { color: colors.textTertiary }]}>
+              {noLgaSet
+                ? "Street Circles is organized by your local area. Add your LGA in your profile to see your neighbors' circle."
+                : "We'll be in your area soon."}
+            </Text>
+            {noLgaSet && (
+              <TouchableOpacity
+                style={[styles.ctaBtn, { backgroundColor: colors.primary }]}
+                onPress={() => navigation.navigate("EditProfile")}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.ctaBtnText, { color: colors.textInverse }]}>
+                  Update Profile
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -439,104 +255,99 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   headerTitle: { fontSize: 20, fontWeight: "800" },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-  },
-  listContent: { paddingHorizontal: 20, paddingBottom: 100 },
-  section: { marginBottom: 8 },
-  sectionLabel: {
-    fontSize: 11.5,
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  scroll: { paddingHorizontal: 20 },
+  heroTitle: {
+    fontSize: 22,
     fontWeight: "800",
-    letterSpacing: 0.6,
-    marginBottom: 10,
+    letterSpacing: -0.4,
+    marginBottom: 8,
   },
-  myCircleCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 16,
+  heroSub: {
+    fontSize: 13.5,
+    lineHeight: 19,
+    marginBottom: 24,
   },
-  myCircleTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 4,
-  },
-  myCircleName: { fontSize: 16, fontWeight: "800", letterSpacing: -0.2 },
-  myCircleSub: { fontSize: 12.5, fontWeight: "500", marginBottom: 14 },
-  myCircleBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 11,
-    borderRadius: 12,
-  },
-  myCircleBtnText: { fontSize: 14, fontWeight: "700" },
-  comingSoonCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 20,
-    alignItems: "center",
-  },
-  comingSoonTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    marginTop: 10,
-    marginBottom: 6,
-    textAlign: "center",
-  },
-  comingSoonSub: { fontSize: 12.5, lineHeight: 18, textAlign: "center" },
   circleCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 18,
+  },
+  circleHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 10,
-  },
-  circleIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  circleName: { fontSize: 14.5, fontWeight: "700", marginBottom: 2 },
-  circleMeta: { fontSize: 11.5, fontWeight: "500" },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  badgeText: { fontSize: 10.5, fontWeight: "800", letterSpacing: 0.2 },
-  emptyContainer: {
-    alignItems: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 20,
-  },
-  emptyIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
     marginBottom: 14,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", marginTop: 12, marginBottom: 6 },
-  emptySub: {
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 19,
-    maxWidth: 280,
+  circleIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  retryBtn: {
+  circleName: {
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+    marginBottom: 3,
+  },
+  circleMeta: { fontSize: 12.5, fontWeight: "500" },
+  earlyNudge: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: 11,
+    borderRadius: 12,
+    marginBottom: 14,
+  },
+  earlyNudgeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
+  },
+  openBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    paddingVertical: 11,
-    paddingHorizontal: 22,
-    borderRadius: 12,
-    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
   },
-  retryBtnText: { fontSize: 13.5, fontWeight: "700" },
+  openBtnText: { fontSize: 14.5, fontWeight: "700", letterSpacing: 0.1 },
+  emptyCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+  },
+  emptyIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+    letterSpacing: -0.2,
+  },
+  emptySub: {
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginBottom: 20,
+    maxWidth: 280,
+  },
+  ctaBtn: {
+    paddingVertical: 13,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+  },
+  ctaBtnText: { fontSize: 14, fontWeight: "700" },
 });

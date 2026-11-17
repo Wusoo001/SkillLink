@@ -132,11 +132,15 @@ const PostItem = ({
         )}
       </View>
 
-      {item.media && item.mediaType === "image" && (
-        <Image source={{ uri: item.media }} style={styles.mediaImage} resizeMode="cover" />
-      )}
-      {item.media && item.mediaType === "video" && (
-        <VideoItem uri={item.media} style={styles.mediaVideo} />
+      {/* Media — edge-to-edge */}
+      {item.media && (
+        <View style={styles.mediaBleed}>
+          {item.mediaType === "image" ? (
+            <Image source={{ uri: item.media }} style={styles.mediaImage} resizeMode="cover" />
+          ) : (
+            <VideoItem uri={item.media} style={styles.mediaVideo} />
+          )}
+        </View>
       )}
 
       {item.tags?.length > 0 && (
@@ -1033,19 +1037,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  mediaImage: {
-    width: "100%",
-    aspectRatio: 1.5,
-    borderRadius: 14,
-    backgroundColor: "#E2E8F0",
-    marginBottom: 10,
-  },
-  mediaVideo: {
-    width: "100%",
-    aspectRatio: 1.5,
-    borderRadius: 14,
-    marginBottom: 10,
-  },
+ mediaBleed: {
+  marginHorizontal: -14,   // cancels card's 14px padding
+  marginBottom: 10,
+},
+mediaImage: {
+  width: "100%",
+  aspectRatio: 1.5,
+  backgroundColor: "#E2E8F0",
+  // borderRadius removed
+},
+mediaVideo: {
+  width: "100%",
+  aspectRatio: 1.5,
+  // borderRadius removed
+},
   tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",

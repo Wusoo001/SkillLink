@@ -290,15 +290,18 @@ const PostCard = ({
         ) : null}
 
         {/* MEDIA */}
-        {item.media && item.mediaType === "image" && (
-          <Image
-            source={{ uri: item.media }}
-            style={styles.media}
-            resizeMode="cover"
-          />
-        )}
-        {item.media && item.mediaType === "video" && (
-          <VideoItem uri={item.media} style={styles.media} />
+        {item.media && (
+          <View style={styles.mediaBleed}>
+            {item.mediaType === "image" ? (
+              <Image
+                source={{ uri: item.media }}
+                style={styles.media}
+                resizeMode="cover"
+              />
+            ) : (
+              <VideoItem uri={item.media} style={styles.media} />
+            )}
+          </View>
         )}
 
         {/* TAGS */}
@@ -1593,13 +1596,16 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     marginBottom: 12,
   },
-  media: {
-    width: "100%",
-    aspectRatio: 1.5,
-    borderRadius: 14,
-    backgroundColor: "#E2E8F0",
-    marginBottom: 12,
-  },
+ mediaBleed: {
+  marginHorizontal: -14,   // cancels card's 14px padding → bleeds to card edges
+  marginBottom: 12,
+},
+media: {
+  width: "100%",
+  aspectRatio: 1.5,
+  backgroundColor: "#E2E8F0",
+  // borderRadius removed — sharp edges like Facebook
+},
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
   tag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   tagText: { fontSize: 12, fontWeight: "600" },

@@ -8,7 +8,7 @@ const circleSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["active", "coming_soon"],
-      default: "coming_soon",
+      default: "active",
       index: true,
     },
     memberCount: { type: Number, default: 0 },
