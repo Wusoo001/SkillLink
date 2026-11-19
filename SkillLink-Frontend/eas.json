@@ -19,6 +19,10 @@
       "android": {
         "buildType": "apk"
       },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://skilllink-api-7jue.onrender.com/api"
+      }
+    },
     "ios-simulator": {
       "distribution": "internal",
       "ios": {
